@@ -53,6 +53,13 @@ admin-web/lib/migrations/
 admin-web/testsprite_tests/
 testsprite_tests/
 
+# ===== AI assistant notes (ใช้ในเครื่องเท่านั้น) =====
+CLAUDE.md
+**/CLAUDE.md
+.claude/
+.cursor/
+.aider*
+
 # ===== Editor / OS =====
 .idea/
 .vscode/
