@@ -1,0 +1,28 @@
+# Environment variables (sensitive - copy from .env.example)
+.env
+
+# Go build output
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+food_and_fit_api
+
+# Test binary
+*.test
+
+# Go coverage
+*.out
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+migrations/backups/
+uploads_backup_20260712/

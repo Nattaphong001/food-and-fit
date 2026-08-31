@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>QA Checklist — ระยะ 2 (Live Test)</title>
+<style>
+  :root{
+    --bg:#0e1210;
+    --panel:#161c19;
+    --panel-2:#1c2320;
+    --line:#2a332e;
+    --text:#e8ede9;
+    --text-dim:#8fa397;
+    --accent:#4fd1a5;
+    --accent-dim:#2c6b52;
+    --fail:#e0645a;
+    --fail-dim:#4a2a27;
+    --pending:#c9a24a;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:var(--sans); padding:0 0 60px 0;
+  }
+  .wrap{max-width:900px; margin:0 auto; padding:28px 20px 0;}
+  header{
+    border-bottom:1px solid var(--line);
+    padding-bottom:18px; margin-bottom:18px;
+  }
+  .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em;
+    color:var(--accent); text-transform:uppercase; margin-bottom:6px;
+  }
+  h1{font-size:22px; margin:0 0 4px; font-weight:650; letter-spacing:-.01em;}
+  .sub{color:var(--text-dim); font-size:13.5px; line-height:1.5;}
+
+  .progress-bar-outer{
+    height:6px; background:var(--panel-2); border-radius:4px; overflow:hidden; margin-top:16px;
+    border:1px solid var(--line);
+  }
+  .progress-bar-inner{height:100%; background:linear-gradient(90deg,var(--accent-dim),var(--accent)); width:0%; transition:width .3s ease;}
+  .stats-row{
+    display:flex; gap:18px; margin-top:10px; font-family:var(--mono); font-size:12px; color:var(--text-dim); flex-wrap:wrap;
+  }
+  .stats-row b{color:var(--text); font-weight:600;}
+  .stats-row .fail-stat b{color:var(--fail);}
+  .stats-row .pass-stat b{color:var(--accent);}
+
+  .toolbar{display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;}
+  .toolbar button{
+    background:var(--panel-2); color:var(--text-dim); border:1px solid var(--line);
+    border-radius:6px; padding:6px 12px; font-size:12px; font-family:var(--mono); cursor:pointer;
+  }
+  .toolbar button:hover{color:var(--text); border-color:var(--accent-dim);}
+
+  .section{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    margin-bottom:14px; overflow:hidden;
+  }
+  .section-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:13px 16px; cursor:pointer; user-select:none;
+  }
+  .section-head:hover{background:var(--panel-2);}
+  .section-title{display:flex; align-items:center; gap:10px;}
+  .section-letter{
+    font-family:var(--mono); font-size:11px; color:var(--bg); background:var(--accent);
+    width:20px; height:20px; border-radius:5px; display:flex; align-items:center; justify-content:center;
+    font-weight:700; flex-shrink:0;
+  }
+  .section-name{font-size:14.5px; font-weight:600;}
+  .section-count{font-family:var(--mono); font-size:11.5px; color:var(--text-dim);}
+  .chevron{color:var(--text-dim); font-size:11px; transition:transform .2s;}
+  .section.open .chevron{transform:rotate(90deg);}
+
+  .items{max-height:0; overflow:hidden; transition:max-height .25s ease;}
+  .section.open .items{max-height:4000px;}
+  .item{
+    display:flex; gap:11px; padding:10px 16px; border-top:1px solid var(--line);
+    align-items:flex-start;
+  }
+  .status-btn{
+    flex-shrink:0; width:22px; height:22px; border-radius:6px; margin-top:1px;
+    border:1.5px solid var(--line); background:var(--panel-2); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; font-size:13px; color:transparent;
+    transition:all .15s;
+  }
+  .status-btn.pass{background:var(--accent-dim); border-color:var(--accent); color:var(--accent); font-weight:700;}
+  .status-btn.fail{background:var(--fail-dim); border-color:var(--fail); color:var(--fail); font-weight:700;}
+  .item-body{flex:1; min-width:0;}
+  .item-text{font-size:13.5px; line-height:1.5;}
+  .item.pass .item-text{color:var(--text-dim);}
+  .item.fail .item-text{color:var(--text);}
+  .item-note{
+    width:100%; margin-top:6px; background:var(--panel-2); border:1px solid var(--line);
+    border-radius:6px; color:var(--text); font-size:12.5px; padding:6px 8px; font-family:var(--sans);
+    resize:vertical; min-height:30px; display:none;
+  }
+  /* โชว์กล่องหมายเหตุทั้ง pass/fail (ไม่ใช่แค่ fail) — ข้อที่ pass บางข้อ verify จากโค้ด
+     ไม่ใช่กดทดสอบบนเครื่องจริง ต้องมีหมายเหตุกำกับไว้เพื่อ recheck ทีหลัง */
+  .item.pass .item-note, .item.fail .item-note{display:block;}
+  .item.fail .item-note{border-color:var(--fail-dim);}
+  .item-note::placeholder{color:var(--text-dim);}
+
+  footer{
+    max-width:900px; margin:24px auto 0; padding:0 20px; color:var(--text-dim);
+    font-size:11.5px; font-family:var(--mono); text-align:center;
+  }
+  .loading{color:var(--text-dim); font-family:var(--mono); font-size:12px; padding:20px; text-align:center;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">ระยะ 2 — Live Test</div>
+    <h1>QA Checklist ฝั่งสมาชิก</h1>
+    <div class="sub">70 ข้อ ครอบคลุม Auth → Onboarding → Home → Nutrition → Workout → Cardio → Dashboard → Notifications → Cross-cutting<br>
+    กดวงกลมเพื่อไล่สถานะ: ยังไม่เทส → ✓ ผ่าน → ✕ ไม่ผ่าน (พิมพ์บันทึกได้เมื่อไม่ผ่าน)</div>
+    <div class="progress-bar-outer"><div class="progress-bar-inner" id="progressBar"></div></div>
+    <div class="stats-row">
+      <span>ทดสอบแล้ว <b id="statTested">0</b> / 70</span>
+      <span class="pass-stat">ผ่าน <b id="statPass">0</b></span>
+      <span class="fail-stat">ไม่ผ่าน <b id="statFail">0</b></span>
+      <span id="saveStatus"></span>
+    </div>
+    <div class="toolbar">
+      <button id="expandAll">ขยายทั้งหมด</button>
+      <button id="collapseAll">ย่อทั้งหมด</button>
+      <button id="resetAll">ล้างสถานะทั้งหมด</button>
+    </div>
+  </header>
+  <div id="sections"><div class="loading">กำลังโหลด…</div></div>
+  <footer>บันทึกอัตโนมัติในเบราว์เซอร์นี้ — สถานะจะยังอยู่เมื่อกลับมาเปิดใหม่</footer>
+</div>
+
+<script>
+const DATA = [
+  {letter:"A", name:"Auth (ก่อนเข้าแอป)", items:[
+    "Welcome → กด \"ล็อกอิน\"/\"สมัครสมาชิก\" ไปถูกหน้า",
+    "Register → อีเมลซ้ำ → error ชัดเจน ไม่สมัครซ้ำ",
+    "Register → รหัสผ่าน <8 ตัว → error ทันที ไม่ให้ submit",
+    "Register → กรอกครบถูกต้อง → ไปหน้า OTP",
+    "OTP → กรอกผิด → error ไม่ยืนยันผ่าน",
+    "OTP → กรอกถูก (6 หลัก) → สำเร็จ ไป Onboarding",
+    "OTP → กด \"ส่งรหัสใหม่\" → ได้ OTP ใหม่จริง (เช็คอีเมล)",
+    "Login → อีเมล/รหัสผ่านผิด → error ไม่ล็อกอินผ่าน",
+    "Login → ถูกต้อง → เข้า Home สำเร็จ (สมาชิกเก่าข้าม onboarding)",
+    "Forgot Password → อีเมลไม่มีในระบบ → error handle เหมาะสม",
+    "Forgot Password → ได้ OTP จริง → ตั้งรหัสใหม่สำเร็จ → login ได้",
+    "Change Password → รหัสเดิมผิด → error",
+    "Change Password → สำเร็จ → รหัสเดิมใช้ไม่ได้, รหัสใหม่ใช้ได้",
+  ]},
+  {letter:"B", name:"Onboarding (สมาชิกใหม่)", items:[
+    "Personalize Profile → น้ำหนัก/ส่วนสูงนอกช่วง (<20/>300kg, <50/>250cm) → error",
+    "เลือกเพศ/วันเกิด/กิจกรรม(5)/เป้าหมายครบ → ไป Onboarding Result",
+    "Onboarding Result → BMI/BMR/TDEE/เป้าหมายตรงกับที่กรอกจริง",
+    "กดยืนยันเข้าแอป → เข้า Home ได้ ครั้งต่อไปไม่ onboard ซ้ำ",
+  ]},
+  {letter:"C", name:"Home Tab", items:[
+    "เปิดแอปครั้งแรกในแต่ละวัน → โหลดถูกต้อง ไม่ค้าง spinner",
+    "การ์ดโปรไฟล์ → แก้ไขโปรไฟล์ (ชื่อ/รูป/เพศ/วันเกิด) สำเร็จ กลับมาเห็นค่าที่แก้",
+    "กด \"แก้ไขข้อมูลร่างกาย\" → ไปหน้า Edit Body Stats",
+    "แก้ข้อมูลร่างกายสำเร็จ → alert โชว์ BMR/TDEE/เป้าหมายใหม่ (ไม่ใช่แค่ \"บันทึกสำเร็จ\")",
+    "แก้ข้อมูลร่างกายสำเร็จ → กลับ Home ตัวเลขอัปเดตทันที ไม่ต้องปิดเปิดแอป",
+    "ปุ่มแจ้งเตือน (กระดิ่ง) → ไปหน้า Notifications ได้",
+  ]},
+  {letter:"D", name:"Nutrition Tab", items:[
+    "เข้าแท็บครั้งแรก → โหลดรายการวันนี้ถูก (loading/error/empty ครบ)",
+    "กด + เพิ่มอาหาร → ไปหน้า Food List",
+    "Food List → filter หมวดหมู่ถูก, ค้นหาชื่ออาหารได้ (ใกล้เคียง)",
+    "เลือกอาหาร+ปริมาณ → บันทึกสำเร็จ → เห็นรายการใหม่+ยอดแคล/มาโครอัปเดตทันที",
+    "ปัดลบอาหาร → undo snackbar → กด \"เลิกทำ\" ทัน → กลับมาเหมือนเดิม",
+    "ปล่อย undo หมดเวลาเอง → ลบจริง ยอดแคลลดตาม",
+    "เปลี่ยนวันที่ดู → รายการ+ยอดสรุปเปลี่ยนตามวันจริง ไม่ค้างวันเก่า",
+    "แก้เป้าหมายจาก Home แล้วสลับมาแท็บนี้ทันที → ตัวเลขเป้าหมายเป็นค่าใหม่",
+    "เปอร์เซ็นต์ macro pill คิดจาก kcal ถ่วงน้ำหนัก (4/4/9) ไม่ใช่กรัมดิบ",
+  ]},
+  {letter:"E", name:"Workout Tab — เลือกแผน", items:[
+    "ยังไม่มีแผน active → เข้าแท็บ Workout ต้องพาไปเลือกแผน",
+    "เลือกแผนระบบ → active สำเร็จ → กลับมาเห็นตารางวันนี้ตามแผน",
+    "กด \"สร้างแผนส่วนตัว\" → ตั้งชื่อ → สร้าง+active สำเร็จ → เข้าหน้าแก้ตารางอัตโนมัติ",
+    "จำลอง network error ตอนสร้างแผนส่วนตัว → error alert ชัดเจน ไม่พาเข้าหน้าแก้ตารางแบบเงียบๆ",
+    "Workout Days Selection → เลือกวัน/จำนวนวัน → บันทึกสะท้อนในตารางถูก",
+    "มีหลายแผน สลับ active ไปมา → แผนที่ active ตรงกับที่กดล่าสุดเสมอ",
+  ]},
+  {letter:"F", name:"Workout Tab — เวทเทรนนิ่ง", items:[
+    "Weight Training Schedule → กรองตามกลุ่มกล้ามเนื้อถูก",
+    "เพิ่ม/ลบ/แก้ท่าฝึกได้ทั้งแผนระบบและแผนส่วนตัว (แผนระบบเปลี่ยนสถานะเป็น \"ปรับแต่งแล้ว\" กดรีเซ็ทคืนต้นฉบับได้ — ไม่ใช่ปุ่มหาย/error)",
+    "Weight Training Detail → วิดีโอเล่นได้, กลุ่มกล้ามเนื้อ/ประวัติ/กราฟพัฒนาการถูก",
+    "หน้าฝึกจริง → จับเวลาพักระหว่างเซตนับเวลาเดินหน้า (count-up) พร้อมแจ้งเตือนเป็นช่วงๆ",
+    "บันทึกหลายเซต (น้ำหนัก+ครั้ง) → ครบตามจำนวน sets ที่กำหนด",
+    "จบการฝึก → บันทึก DB สำเร็จ, แคลอรี่ = (METs−1)×น้ำหนัก×เวลาเซสชันเฉลี่ย (METs: 1=เบา 3.5, 2=กลาง 5.0, 3=หนัก 6.0) สมเหตุสมผล — หมายเหตุ: แอปยังไม่มี UI เลือก level เลย ทดสอบผ่านแอปได้แค่ level 1 เท่านั้น",
+    "Est. 1RM = น้ำหนัก×(1+reps/30) → เช็คด้วยมือ 1 ค่าว่าตรง",
+  ]},
+  {letter:"G", name:"Workout Tab — คาร์ดิโอ", items:[
+    "Cardio Activity → รายการครบ, กดเข้า detail ได้",
+    "Cardio Activity Detail → สถิติ/ประวัติ/กราฟพัฒนาการถูก",
+    "หน้าฝึกจริง → จับเวลาถูก, ระบุระยะทางได้",
+    "จบคาร์ดิโอ → แคลอรี่สมเหตุสมผล, บันทึกสำเร็จ",
+  ]},
+  {letter:"H", name:"Dashboard Tab — รายงาน", items:[
+    "การ์ด \"ตารางพลังงานวันนี้\" → กินเข้า/BMR×1.2/เผาจากออกกำลังกาย/เป้าหมาย/สมดุล ครบและสมเหตุสมผล",
+    "ยังไม่ตั้งเป้าหมาย (ยังไม่กรอกข้อมูลร่างกาย) → empty state บอกให้ไปกรอก ไม่ error/พัง",
+    "เปลี่ยนวันที่ดูเป็นอดีต → BMR/TDEE/เป้าหมาย/Baseline เป็นค่าที่ใช้จริงวันนั้น ไม่ใช่ค่าปัจจุบัน",
+    "\"เป้าหมายรายสัปดาห์\" → นับวันที่แคลอรี่อยู่ในช่วง ±10% ถูก, badge X/7 ตรง",
+    "กราฟ \"แคลอรี่ 7 วัน\" → แท่งกิน/เผาตรงกับที่บันทึกจริง, วันไม่มีบันทึก = แท่ง 0",
+    "เปลี่ยนเป้าหมายกลางสัปดาห์ → เส้นประ target บนกราฟ 7 วันสลับระดับตรงวันที่เปลี่ยน",
+    "กราฟ \"แคลอรี่รายเดือน\" → เหมือน 7 วันแต่ดูช่วงเดือน, เลื่อนดูเดือนก่อนหน้าได้",
+    "\"เทียบกับเดือนที่แล้ว\" → บันทึกไม่ครบ 7 วัน → โชว์ \"ข้อมูลยังไม่พอ\" ไม่เทียบ % มั่ว",
+    "แนวโน้ม BMI/น้ำหนักรายเดือน (กราฟเส้น) → ตรงกับประวัติจริง",
+    "เคยเปลี่ยนกิจกรรม/เป้าหมาย → กราฟ BMI/น้ำหนักมีจุดสีส้ม+เส้นประ mark ตรงวันที่เปลี่ยน พร้อมคำอธิบาย",
+    "ตารางน้ำหนัก/BMI ย้อนหลัง → แถวที่เปลี่ยนกิจกรรม/เป้าหมายมี \"●\" ต่อท้ายวันที่",
+    "Streak → หยุดนับถูกเมื่อขาดตอนจริง, ไม่หยุดถ้าวันนี้ยังไม่บันทึกแต่เมื่อวานมี",
+    "Muscle Coverage → โชว์ครบ 7 วันล่าสุด ตรงกับที่ฝึกจริง",
+    "สลับไป Dashboard ทันทีหลังแก้ข้อมูลร่างกายจาก Home → ทุกการ์ดอัปเดตค่าใหม่",
+    "โหมดตาราง (สลับจากกราฟ) → ตัวเลขตรงกับที่กราฟโหมดโชว์",
+  ]},
+  {letter:"I", name:"Notifications", items:[
+    "รายการแจ้งเตือนครบ (แจ้งความสำเร็จ, เตือนออกกำลังกาย ฯลฯ)",
+    "กดแจ้งเตือน → พาไปหน้า/แท็บที่เกี่ยวข้องถูกจุด",
+  ]},
+  {letter:"J", name:"Cross-cutting (เช็คซ้ำทุกหน้า)", items:[
+    "ทุกหน้าที่ดึงข้อมูล API มีครบ 3 สถานะ: loading / error / empty",
+    "รูปแบบตัวเลขตรงกันทุกหน้า: แคลอรี่=จำนวนเต็ม, น้ำหนัก/ระยะทาง=1-2 ตำแหน่ง, BMI=2 ตำแหน่งเสมอ",
+    "ปุ่มย้อนกลับทุกหน้าย่อย กลับไปหน้าที่เปิดมาถูกต้อง",
+    "หมุนจอ/ปิดแอปกลางทาง (เช่น กลางจับเวลา) แล้วเปิดใหม่ → ไม่ crash, ข้อมูลไม่หายแบบไม่มีเตือน",
+  ]},
+];
+
+const STORAGE_KEY = "qa-checklist-phase2-state";
+
+// ผลทดสอบจริงบนเครื่อง (Samsung S938B) — 70/70 ข้อ (2026-08-21 รอบดึก, ครบทุกข้อแล้ว)
+// รอบนี้ทำเพิ่ม: หมวด H ตรวจซ้ำจริงบนเครื่อง+เทียบ DB ตรงๆ (12/15 ผ่าน, บั๊กจริงใหม่ 1 จุดที่ H8)
+//              หมวด I ทดสอบเท่าที่ทำได้ (I2 ข้ามตามคำสั่งผู้ใช้ — ไม่มีแจ้งเตือนจริงให้กด)
+//              หมวด J ทดสอบครบ 4/4 — พบบั๊กใหญ่ที่ J4 (persistent login ไม่ทำงาน + overflow แนวนอนตอนจับเวลา)
+// (2026-08-22) D9/E4/F4 live-test จริงบนเครื่องแล้ว ผ่านทั้ง 3 → พลิกเป็น pass
+//              F6/G4 พบสูตรแคลอรี่เดิมผิดหลักการ (นับซ้ำ Baseline + ฐานเวลาไม่ตรงนิยาม METs)
+//              แก้สูตรทั้งเวท+คาร์ดิโอเป็น NET (METs−1)×น้ำหนัก×เวลา ร่วมกับผู้ใช้ แล้ว live-test
+//              สูตรใหม่บนเครื่องสำเร็จทั้งคู่ (ตัวเลขตรงสูตรมือเป๊ะ) → พลิกเป็น pass
+//              H-section รีเช็คซ้ำหลังแก้สูตรแคลอรี่: H1/H3 รีคอนเฟิร์มด้วยข้อมูลสด, H8 (เทียบเดือน
+//              ก่อน) บั๊กเดิมหายแล้ว → pass, H12 (Streak) มีข้อมูลจริง 2 วันติดกันแล้วให้ทดสอบ badge
+//              ได้จริง + โค้ดยืนยัน edge case ชัดเจน → pass, H13 (Muscle Coverage) ทดสอบเคสมีข้อมูล
+//              จริงได้ครั้งแรก (Back Squat) ตรง DB 100% → คงเป็น pass พร้อมหลักฐานเพิ่ม
+//              รวมทั้งไฟล์: 65 pass / 5 fail (เหลือ F2, H2, I1, I2, J4 ที่ยังจริง)
+const DEFAULT_STATE = {
+  // ── A. Auth (13/13 — ทั้งหมดผ่าน) ──────────────────────────────────────────
+  "0-0": { status: "pass", note: "" }, // A1
+  "0-1": { status: "pass", note: "" }, // A2
+  "0-2": { status: "pass", note: "" }, // A3
+  "0-3": { status: "pass", note: "" }, // A4
+  "0-4": { status: "pass", note: "" }, // A5
+  "0-5": { status: "pass", note: "" }, // A6
+  "0-6": { status: "pass", note: "" }, // A7
+  "0-7": { status: "pass", note: "" }, // A8
+  "0-8": { status: "pass", note: "" }, // A9
+  "0-9": { status: "pass", note: "สำเร็จ แต่พฤติกรรมเป็นการตั้งใจ ไม่ใช่บั๊ก: อีเมลไม่มีในระบบ -> ไม่สร้าง OTP ไม่ส่งเมลจริง -> ตอบ success message เฉยๆ (เป็นการหลอก). อีเมลมีในระบบ -> สร้าง OTP บันทึกลง mb_otp/mb_otp_expired + ส่งเมลจริงผ่าน SMTP (บรรทัด 100-123 ฝั่ง backend). ฝั่ง user เห็น response หน้าตาเหมือนกันทั้ง 2 เคส (ข้อความ success) เพื่อไม่ให้แยกออกว่าอีเมลนี้มีในระบบหรือเปล่า แต่เบื้องหลังเช็คและทำงานต่างกันจริง — ป้องกัน email enumeration ตั้งใจ (แก้จากที่เคยมาร์ค fail รอบก่อน หลังตรวจเพิ่มเติมด้วย OTP มั่ว)." }, // A10
+  "0-10": { status: "pass", note: "" }, // A11
+  "0-11": { status: "pass", note: "" }, // A12
+  "0-12": { status: "pass", note: "" }, // A13 (รอบก่อนมีติดขัดเรื่อง verify login รอบสุดท้าย ตอนนี้ผ่านครบแล้ว)
+
+  // ── B. Onboarding (4/4 — ทั้งหมดผ่าน) ─────────────────────────────────────
+  "1-0": { status: "pass", note: "" }, // B1
+  "1-1": { status: "pass", note: "" }, // B2
+  "1-2": { status: "pass", note: "" }, // B3
+  "1-3": { status: "pass", note: "" }, // B4
+
+  // ── C. Home Tab (6/6 — ทั้งหมดผ่าน) ───────────────────────────────────────
+  "2-0": { status: "pass", note: "" }, // C1
+  "2-1": { status: "pass", note: "" }, // C2
+  "2-2": { status: "pass", note: "" }, // C3
+  "2-3": { status: "pass", note: "" }, // C4
+  "2-4": { status: "pass", note: "" }, // C5
+  "2-5": { status: "pass", note: "" }, // C6
+
+  // ── D. Nutrition Tab (8 pass / 1 fail) ────────────────────────────────────
+  "3-0": { status: "pass", note: "" }, // D1
+  "3-1": { status: "pass", note: "" }, // D2
+  "3-2": { status: "pass", note: "" }, // D3
+  "3-3": { status: "pass", note: "" }, // D4
+  "3-4": { status: "pass", note: "" }, // D5
+  "3-5": { status: "pass", note: "" }, // D6
+  "3-6": { status: "pass", note: "" }, // D7
+  "3-7": { status: "pass", note: "" }, // D8
+  "3-8": { status: "pass", note: "ยืนยันจริงบนเครื่อง+DB 2026-08-22: บันทึกอาหารจริง 'บะหมี่เกี๊ยวหมูแดงน้ำ' 1 หน่วย เช็ค DB ตรง (ntt_id=1: protein=3.6g, carbs=8.5g, fat=2.2g — ค่าละเอียดจริง ไม่ใช่ 4/9/2g ที่ปัดโชว์จอ) คำนวณมือ pKcal=14.4 cKcal=34.0 fKcal=19.8 total=68.2 → P=21.1%→21 C=49.9%→50 F=29.0%→29 เทียบ pill บนเครื่องจริง: P21% C50% F29% ตรงเป๊ะทุกตัว ยืนยันถ่วงน้ำหนัก kcal/g (4/4/9) จริง ไม่ใช่กรัมดิบ ปิดเคสนี้ได้" }, // D9 — macro pill %
+
+  // ── E. Workout Tab — เลือกแผน (5 pass / 1 fail) ───────────────────────────
+  "4-0": { status: "pass", note: "" }, // E1
+  "4-1": { status: "pass", note: "" }, // E2
+  "4-2": { status: "pass", note: "" }, // E3
+  "4-3": { status: "pass", note: "ยืนยันจริงบนเครื่อง 2026-08-22: ปิด backend server จริง (ลองปิด wifi ก่อนแล้วเจอ Android auto-reconnect ทำให้ request หลุดผ่านได้จริงระหว่างเทส ต้องเปลี่ยนวิธีเป็นปิด server ตรงๆถึงเชื่อถือได้) กดสร้างแผนส่วนตัว → banner แดงเด้งทันที 'เชื่อมต่อเครือข่ายไม่สำเร็จ กรุณาลองใหม่' ไม่พาเข้าหน้าแก้ตารางเลย รายการแผนเดิม (ขุนแผน, Push/Pull/Legs) ไม่หาย/ไม่เพี้ยน เช็ค DB ยืนยันไม่มีแถวใหม่ถูกสร้างตอน error alert หายเองใน ~4 วิ ตามดีไซน์ ไม่ค้าง ไม่ crash ปิดเคสนี้ได้\n\nพบเพิ่ม (นอกสโคปข้อนี้ ยังไม่แก้): หน้า 'แผนของฉัน' (my_workout_plans_view.dart) ตอน initial fetch ล่มเพราะ network ก็โชว์ 'ยังไม่มีแผนการฝึก' เฉยๆ ไม่มี error alert แยกจาก empty state จริง — ผิดกติกา 3-state (loading/error/empty) ในข้อ J1" }, // E4 — จำลอง network error ตอนสร้างแผนส่วนตัว
+  "4-4": { status: "pass", note: "" }, // E5
+  "4-5": { status: "pass", note: "" }, // E6
+
+  // ── F. Workout Tab — เวทเทรนนิ่ง (4 pass / 3 fail) ────────────────────────
+  "5-0": { status: "pass", note: "" }, // F1
+  "5-1": { status: "fail", note: "รอตรวจสอบ\n\n** แผนระบบ\n1. ถ้าวันฝึก >< ที่ตั้งไว้ หรือ != แผนระบบที่เลือกมาใช้ = แผนระบบที่มีการแก้ไข\n2. ถ้าวันฝึก = ที่ระบบตั้งไว้ = แผนระบบดังเดิม — ผู้ใช้เลือกท่าฝึกที่เหมาะสมได้ +/- แก้ไขข้อมูลท่า และท่าฝึกวันนั้นๆ ได้ ที่ไม่กระทบจำนวนวันจากแผนที่เลือก = แผนระบบดังเดิม\n\n** แผนส่วนตัว\nเพิ่ม ลบ แก้ไขจำนวนวันฝึกได้ตามต้องการ\n\n[หมายเหตุเสริมจากอ่านโค้ด 2026-08-21: ปุ่ม + และปัดลบท่าไม่เช็ค isCustomPlan เลย (weight_training_schedule_view.dart:557, 902-905) ตรงกับกฎข้างต้น — แผนระบบเปลี่ยนเป็น is_modified=true ได้โดยไม่กระทบจำนวนวัน (my_workout_plans_view.dart:197,482-492) แต่ยังไม่ได้กดยืนยันจริงบนเครื่องรอบนี้]" }, // F2
+  "5-2": { status: "pass", note: "" }, // F3
+  "5-3": { status: "pass", note: "เราใช้นับไปข้างหน้าในการพัก แล้วแจ้งเตือนเป็นช่วงๆ (ยืนยันถูกต้องตามที่ตั้งใจ ไม่ใช่บั๊ก)\n\nยืนยันจริงบนเครื่อง 2026-08-22: ระหว่างพักจริงหลังทำเซต Back Squat เห็น alert เด้งขึ้นจอจริงตรงวินาที '🧘 30 วิ · เริ่มฟื้นตัวดีแล้ว' และ '🧘 60 วิ · พร้อมลุยเซตต่อไปหรือยัง?' นาฬิกาพักนับขึ้นต่อเนื่อง 00:14→02:24 ไม่หยุด ไม่รีเซ็ต ปิดเคสนี้ได้ (90วิ/120วิ ไม่ได้รอครบเวลาเทส แต่ pattern เดียวกับ 30/60 ที่เห็นจริง เชื่อถือได้)" }, // F4
+  "5-4": { status: "pass", note: "" }, // F5
+  "5-5": { status: "pass", note: "🔴→✅ พบบั๊กจริง 2026-08-22 แล้วแก้เสร็จ: live-test บนเครื่องด้วยสูตรเดิม (gross, ฐานเวลารายเซ็ต) ตัวเลขตรงสูตรเป๊ะ (3.5×120kg×8วิ/3600=0.93 ตรง DB) — แต่สูตรเดิม 'คำนวณถูกต้องตามตัวเอง แต่ผิดหลักการ' 2 จุด: (1) analytics_controller.go เอา SUM(wtrs_calories) บวกตรงเข้า Total Daily Energy Output ที่มี Baseline(BMR×1.2) รวมอยู่แล้ว → นับพลังงานพื้นฐานซ้ำสองรอบ (2) ฐานเวลาเดิม (เฉพาะช่วงออกแรงต่อเซต) ไม่ตรงนิยาม METs ซึ่งเป็นค่าเฉลี่ยทั้งเซสชันรวมพักตาม Compendium of Physical Activities\n\nแก้แล้ว: wtrs_calories = (METs−1)×น้ำหนัก×เวลา, เวลา=_globalSeconds ทั้งเซสชัน(รวมพัก) หารเฉลี่ยเท่ากันทุกเซ็ตที่บันทึกจริง — แก้ทั้ง workout_controller.go + weight_training_exercise_view.dart แก้คาร์ดิโอ(cdors_calories)พร้อมกันด้วยเหตุผลเดียวกัน\n\n✅ live-test สูตรใหม่บนเครื่องแล้ว 2026-08-22 (ผู้ใช้เทสเอง): เซต 4-6 ท่า Back Squat (wtrs_id 519-521) ได้ calories=0.50 kcal เท่ากันทั้ง 3 เซต เช็คสูตรมือ (3.5−1)×120kg×(6วิ/3600)=0.50 ตรง DB เป๊ะ ยืนยันทั้งสูตร NET และการหารเฉลี่ยเท่ากันทุกเซ็ตในเซสชันทำงานถูกต้องจริง — ปิดเคสได้\n\nข้อมูลเก่าก่อน 2026-08-22 (501 แถวเวท/18 แถวคาร์ดิโอ) ยังเป็น gross อยู่ ผู้ใช้จะล้างเองทีหลังตอนระบบเสร็จ ไม่ backfill\n\n📋 เจอเพิ่ม (นอกสโคป ยังไม่แก้): ไม่มีหน้าไหนในแอปให้เลือก intensity level 1/2/3 เลย — payload จาก _saveWorkoutToApi ไม่เคยส่ง wtrs_intensity_level → backend fallback level=1(เบา) เสมอทุกเซตไม่ว่ายกหนักแค่ไหนจริง ยังไม่ตัดสินใจว่าจะเพิ่ม UI เลือกไหม" }, // F6 — METs calories หลังจบการฝึก
+  "5-6": { status: "pass", note: "" }, // F7
+
+  // ── G. Workout Tab — คาร์ดิโอ (4/4 — ทั้งหมดผ่าน) ─────────────────────────
+  "6-0": { status: "pass", note: "" }, // G1
+  "6-1": { status: "pass", note: "" }, // G2
+  "6-2": { status: "pass", note: "" }, // G3
+  "6-3": { status: "pass", note: "ยืนยันจริงบนเครื่อง+DB 2026-08-22 (หลังแก้สูตรเป็น NET): เทส 'เดินชันบนสายพาน' (MET 7.0) 1 นาที บันทึกสำเร็จ (cdors_id=21) DB: cdors_calories=12.00 เช็คสูตรมือ (7.0−1)×120kg×(1/60)=12.0 ตรงเป๊ะ ยืนยันสูตรคาร์ดิโอ NET ทำงานถูกต้องจริงบนเครื่อง บันทึก DB สำเร็จไม่มี error" }, // G4
+
+  // ── H. Dashboard Tab — รายงาน (7 pass / 8 fail) ───────────────────────────
+  "7-0": { status: "pass", note: "ยืนยันจริงบนเครื่อง 2026-08-21 (Samsung S938B, mb_id=16): การ์ดพลังงานเข้า-ออก กินเข้า=321, พลังงานพื้นฐาน=2562 (=BMR2135×1.2 ตรงเป๊ะ), ออกกำลัง=10, Balance=-2251 (=321-(2562+10) ตรงเป๊ะ) การ์ดแคลอรี่วันนี้: เป้าหมาย4665/รับแล้ว321/คงเหลือ4344 (4665-321=4344 ตรง) ครบทั้ง 5 ค่า สมเหตุสมผลตามสูตร\n\nรีเช็คซ้ำจริงบนเครื่อง 2026-08-22 (หลังแก้สูตรแคลอรี่ออกกำลังกายเป็น NET แล้ว): กินเข้า=68, พลังงานพื้นฐาน=2562(BMR2135×1.2 ตรงเดิม), ออกกำลัง=16(=SUM wtrs_calories+cdors_calories วันนี้ 3.59+12=15.59→ปัด16), Balance=-2510(=68-(2562+16) ตรงเป๊ะ) การ์ดแคลอรี่วันนี้ เป้าหมาย4665/รับแล้ว68/เหลือ4597(4665-68=4597ตรง) — สูตรใหม่ไหลเข้า TDEO/Balance ถูกต้อง ไม่พังจากการแก้สูตรแคลอรี่ออกกำลังกาย" }, // H1
+  "7-1": { status: "fail", note: "ระบบบังคับให้แล้ว ไม่เลือกก็เริ่มต้น = รักษาน้ำหนัก ไม่สามารถข้ามการเลือกเป็นค่าว่างได้ (สถานการณ์ \"ยังไม่ตั้งเป้าหมาย\" ในข้อนี้เกิดขึ้นจริงไม่ได้ตาม flow ปัจจุบัน)" }, // H2
+  "7-2": { status: "pass", note: "ยืนยันจริงบนเครื่อง 2026-08-22: เลื่อนดูวันที่ 21 ส.ค. (เมื่อวาน) จากหน้า วันนี้=22 ส.ค. → ตัวเลขเปลี่ยนเป็น กินเข้า=321, เผาผลาญ=2572, เป้าหมาย=4665, เหลือ=4344 ตรงกับ snapshot ที่บันทึกไว้จริงของวันที่ 21 ส.ค. (จากข้อ H1 รอบก่อน) เป๊ะทุกตัว — ไม่ใช่ค่าของวันนี้ (68/2578/4597) ที่ค้างมา ยืนยัน BMR/TDEE/เป้าหมาย/Baseline ดึงตามวันที่เลือกจริง ไม่ใช่ค่าปัจจุบัน" }, // H3
+  "7-3": { status: "pass", note: "ยืนยันจริงบนเครื่อง 2026-08-21: มีแค่วันนี้บันทึก 321kcal (เป้า 4665, ช่วง±10%=4198.5-5131.5) — 321 อยู่นอกช่วงมาก + อีก 6 วันไม่มีข้อมูล(=0, นอกช่วง) → badge โชว์ '0/7 วัน ✓' ตรงตามจริง ไม่มั่ว\n\n[โค้ด: _weeklyGoalDays (336-344) filter ±_kTargetTolerance=0.10 (431) ตรงสเปก]" }, // H4 — เป้าหมายรายสัปดาห์ ±10%
+  "7-4": { status: "pass", note: "ยืนยันจริงบนเครื่อง 2026-08-21: 6 วันไม่มีข้อมูลโชว์แท่งเตี้ยที่ 0 (ไม่ crash ไม่หาย) ตรงกับ caption 'แท่งเตี้ยที่ 0 = ยังไม่ได้บันทึกข้อมูลวันนั้น' วันนี้ (พฤ) โชว์แท่งกิน(เขียว)+เผา(ส้ม) สูงตามจริง" }, // H5
+  "7-5": { status: "pass", note: "" }, // H6
+  "7-6": { status: "pass", note: "ยืนยันจริงบนเครื่อง 2026-08-21: กดลูกศรย้อนกลับ 1 เดือน → header เปลี่ยนเป็น 'ก.ค. 2569' จริง กราฟเดือนที่ไม่มีข้อมูลเลยโชว์เส้นแบน 0 ไม่ crash แกน x เปลี่ยนเป็น 07-01/07-16/07-31 ตรง กดลูกศรถัดไปกลับมาปัจจุบันได้ปกติ" }, // H7
+  "7-7": { status: "pass", note: "✅ บั๊กเดิมหายแล้ว — ยืนยันจริงบนเครื่อง 2026-08-22: เลื่อนดู ก.ค. 2569 (เดือนก่อน, ไม่มีข้อมูลเลย) → การ์ด 'เทียบกับเดือนที่แล้ว' โชว์ 'เดือนนี้ -' และ 'เดือนที่แล้ว -' ทั้งคู่ (บันทึก 0 วัน) + ข้อความ 'ข้อมูลยังไม่พอสำหรับเปรียบเทียบ' ถูกต้องตามบริบทเดือนก.ค.จริง ไม่ค้างข้อมูลสิงหาคมแล้ว\n\nกดลูกศรกลับมาเดือนปัจจุบัน (ส.ค.) → การ์ดสลับกลับเป็น 'เดือนนี้ 195 kcal' ถูกต้องตามบริบทปัจจุบันทันที ยืนยัน 2 ทิศทาง (ไปเดือนว่าง + กลับเดือนปัจจุบัน) ทำงานถูกทั้งคู่\n\n[หมายเหตุ: บั๊กเดิม (2026-08-21) ที่เคยพบคือ getMonthlyComparison ไม่ส่ง _selectedMonth ไปเลย ใช้ NOW() เสมอ — ไม่ได้แก้เองในเซสชันนี้ ดูเหมือนถูกแก้ไปแล้วก่อนหน้า ยืนยันผลลัพธ์ปัจจุบันถูกต้องจริงตามที่เห็นบนเครื่อง]" }, // H8 — เทียบกับเดือนที่แล้ว
+  "7-8": { status: "pass", note: "ยืนยันจริงบนเครื่อง+DB 2026-08-21: กราฟแนวโน้ม BMI โชว์ BMI24.69→37.04 ตรงกับ member_body_stats จริง (น้ำหนัก 80→120kg, ส่วนสูง180cm: 80/1.8²=24.69, 120/1.8²=37.04 ตรงเป๊ะ)" }, // H9
+  "7-9": { status: "pass", note: "ยืนยันจริงบนเครื่อง+DB 2026-08-21 (ตรวจ pixel-level): mb_id=16 มี body_stats 10 แถววันนี้ (แก้ activity/target สลับกันไปมาหลายรอบ) เทียบ DB จริงทีละแถวกับจุดส้ม/เส้นประที่ขึ้นจริงบนกราฟ — ตรงเป๊ะทุกจุด 100% (เช่นแถวที่ activity/target เหมือนแถวก่อนหน้าไม่ขึ้นจุดส้ม ถูกต้อง, แถวที่เปลี่ยนขึ้นจุดส้ม+เส้นประถูกต้อง) รายละเอียดการ diff ดูในข้อ H11 (ที่มาเดียวกัน)" }, // H10 — จุดสีส้ม mark เปลี่ยนกิจกรรม/เป้าหมาย
+  "7-10": { status: "pass", note: "ยืนยันจริงบนเครื่อง+DB 2026-08-21 — เทียบทีละแถว: mb_id=16 mbs_id 49-58 (activity/target) vs ตารางที่ขึ้นจริง:\n49(1.9,2)→ไม่มี●(แถวแรกไม่มีก่อนหน้า) ถูก\n50(1.2,1) เปลี่ยนจาก49→● ถูก\n51(1.2,2) target เปลี่ยนจาก50→● ถูก\n52(1.2,3) target เปลี่ยนจาก51→● ถูก\n53(1.2,1) target เปลี่ยนจาก52→● ถูก\n54(1.2,1) เหมือน53เป๊ะ→ไม่มี● ถูก\n55(1.9,2) เปลี่ยนจาก54→● ถูก\n56/57/58(1.9,2) เหมือน55เป๊ะ→ไม่มี● ทั้ง3แถว ถูก\nตรง 10/10 แถว 100% — ● มาจากที่เดียวกับจุดส้มในกราฟ (H10) ยืนยันครบ" }, // H11 — ตาราง ● ต่อท้ายวันที่
+  "7-11": { status: "pass", note: "ทดสอบบนเครื่องบางส่วน 2026-08-21: mb_id=16 มีข้อมูลแค่วันนี้วันเดียว → _activeStreak=1 → badge เงื่อนไข 'ถ้า >1' ไม่ผ่าน → ไม่โชว์ 🔥 ตรงตามโค้ด (ไม่ผิด) แต่ตอนนั้นยังไม่ได้ทดสอบเคส 2+ วันติดกันจริง\n\nอัปเดต 2026-08-22: ตอนนี้บัญชีมีกิจกรรมจริง 2 วันติดกัน (21+22 ส.ค. — cardio ทั้ง 2 วัน) เช็ค DB ยืนยัน (daily_nutrition/cardio_result/weight_training_result มีแถว 2026-08-21 และ 2026-08-22 เท่านั้น ไม่มีวันอื่นแทรก ไม่มีช่องว่าง) → header badge โชว์ '🔥 2 วันติดกัน' จริงบนเครื่อง ตรงกับข้อมูล 100%\n\nกรณี 'วันนี้ยังไม่บันทึกแต่เมื่อวานมี ไม่ควรหยุดนับ' — ยืนยันด้วยโค้ด (new_dashboard_view.dart:284-315 _activeStreak): บรรทัด 303-304 `if (!active(pts[start])) start--;` เดินถอยไปเริ่มจากเมื่อวานถ้าวันนี้ว่าง ตรงตามที่ checklist ต้องการ ตามคอมเมนต์ในโค้ดเอง (บรรทัด 299-302 อ้างอิงพฤติกรรมสไตล์ Duolingo) — ไม่ได้ reproduce สภาวะนี้ตรงๆบนเครื่อง (วันนี้มีข้อมูลอยู่แล้วเลยบังคับให้ 'วันนี้ว่าง' ไม่ได้ในบัญชีนี้ตอนนี้) แต่โค้ดอ่านชัดเจนตรงประเด็น ปิดเคสได้ในระดับความเชื่อมั่นสูง\n\nกรณี 'ขาดตอนจริงต้องหยุดนับ' — โค้ด break ทันทีที่เจอวันไม่ active (บรรทัด 308-314) อ่านโค้ดแล้วถูกต้อง แต่ไม่ได้ reproduce gap จริงบนเครื่อง (ต้องรอข้ามคืนแบบมีช่องว่างจริง หรือแก้ DB จำลอง ซึ่งเลี่ยงไว้เพราะไม่อยากปนข้อมูลเทียบเท่าจริง)" }, // H12 — Streak
+  "7-12": { status: "pass", note: "ยืนยันจริงบนเครื่อง+DB 2026-08-21: mb_id=16 ตาราง weight_training_result ว่างเปล่าจริง (0 แถว) → หน้าจอโชว์ 'กล้ามเนื้อที่ฝึก 7 วัน / ยังไม่ได้ฝึกสัปดาห์นี้' ตรงกับความจริง ไม่ error ไม่ค้าง (ตอนนั้นยังไม่ได้ทดสอบเคสมีข้อมูลจริงเพราะบัญชีไม่เคยบันทึกเวทเทรนนิ่งเลย)\n\nอัปเดต 2026-08-22 — ทดสอบเคสมีข้อมูลจริงแล้ว: บันทึก Back Squat 6 เซต (wet_id=26) → หน้าจอโชว์ '4 กลุ่ม': ส่วนล่าง(ก้นและหลังขา 1วัน, ขา 1วัน), แกนกลาง(หน้าท้องและแกนกลาง 1วัน), ส่วนบน(หลัง 1วัน) เช็ค DB ตรง `exercise_muscle_details WHERE wet_id=26` มี 4 แถวพอดี: ขา(primary), ก้นและหลังขา(primary), หน้าท้องและแกนกลาง(secondary), หลัง(secondary) — ตรงกับที่แอปโชว์ 100% ทั้งจำนวนกลุ่มและชื่อกลุ่ม ปิดเคสได้ทั้ง empty และ populated state" }, // H13 — Muscle Coverage
+  "7-13": { status: "pass", note: "" }, // H14
+  "7-14": { status: "pass", note: "ยืนยันจริงบนเครื่อง 2026-08-21: สลับ BMI tab เป็นโหมดตารางแล้วสลับกลับกราฟ ตัวเลขตรงกันเป๊ะทุกจุด (แถวตาราง 80.0กก./24.69 ตรงกับช่วงเส้นแบนในกราฟ, 120.0กก./37.04 ตรงกับช่วงเส้นพุ่งขึ้นปลายกราฟ) ไม่มีเบี้ยว" }, // H15 — โหมดตาราง vs กราฟ
+
+  // ── I. Notifications (0 pass / 0 fail — I2 ข้ามตามที่ผู้ใช้สั่ง) ──────────
+  "8-0": { status: "fail", note: "ทดสอบบางส่วน 2026-08-21: บัญชีทดสอบยังไม่มีแจ้งเตือนเลย (local-only เก็บใน GetStorage บนเครื่อง ไม่ใช่ DB) → หน้าโชว์ empty state 'ยังไม่มีการแจ้งเตือน' ถูกต้อง ไม่ crash แต่ยังไม่เคยเห็นรายการแจ้งเตือนจริงเลยสักครั้ง เลยยืนยัน 'รายการครบ/ประเภทครบ' ไม่ได้ ต้องรอแจ้งเตือนจริงเกิดขึ้นเอง (scheduled/smart reminder) ก่อน" }, // I1
+  "8-1": { status: "fail", note: "ข้ามตามที่ผู้ใช้สั่ง (2026-08-21) — ทดสอบจริงไม่ได้เพราะไม่มีแจ้งเตือนให้กดในบัญชีทดสอบตอนนี้\n\n[โค้ดรีวิว: notifications_view.dart _onTap (38-61) — type 'nutrition'→pop+targetTab=1, 'workout'→pop+targetTab=2, main_shell.dart:50-57 ฟัง targetTab แล้ว setState(_currentIndex) จริง — wiring ถูกต้องตามโค้ด แต่ไม่ได้กดยืนยันภาพจริง]" }, // I2
+
+  // ── J. Cross-cutting (3 pass / 1 fail — พบบั๊กใหญ่ที่ J4) ─────────────────
+  "9-0": { status: "pass", note: "สุ่มเช็คจริงบนเครื่อง 2026-08-21: Home/Nutrition/Dashboard(ทุก tab ทุกโหมด)/Notifications โหลดลื่น ไม่ค้าง spinner ไม่ crash, empty state ขึ้นถูกจุดทุกหน้าที่เจอ (Notifications ว่าง, Muscle Coverage ว่าง, เดือนไม่มีข้อมูล)" }, // J1
+  "9-1": { status: "pass", note: "ยืนยันจริงบนเครื่อง 2026-08-21 ด้วยตัวเลขจริงข้ามหน้า: แคลอรี่ทุกจุด=จำนวนเต็ม (321, 2562, 4665, 4344 ฯลฯ), น้ำหนัก=1ตำแหน่ง (80.0กก./120.0กก.), BMI=2ตำแหน่งเสมอ (37.04/24.69), กรัมสารอาหาร=จำนวนเต็ม (11/41/13, 350/583/104) ตรงกันทุกหน้าที่เช็ค (Home, Nutrition, Dashboard ทุก tab)" }, // J2
+  "9-2": { status: "pass", note: "ยืนยันจริงบนเครื่อง 2026-08-21: ปุ่มย้อนกลับหน้า Notifications กลับ Home ถูกต้อง" }, // J3
+  "9-3": { status: "fail", note: "พบบั๊กจริง 2 จุดบนเครื่อง 2026-08-21 ระหว่างทดสอบ (เริ่มคาร์ดิโอ 'เดินชันบนสายพาน' แล้วปล่อยไทม์เมอร์วิ่ง):\n\n1) หมุนจอเป็นแนวนอนกลางไทม์เมอร์ (นาทีที่ 00:00:14) → เจอ Flutter overflow banner 'BOTTOM OVERFLOWED BY 79 PIXELS' จริง แถบเหลืองดำเต็มจอด้านล่าง ปุ่ม pause/stop หลุดจากจอมองไม่เห็น (เข้าถึงไม่ได้ในแนวนอน) หมุนกลับแนวตั้งไทม์เมอร์รอดต่อเนื่อง (00:00:23 ไม่รีเซ็ต) ไม่ crash แต่ layout พังตอนแนวนอน\n\n2) [บั๊กใหญ่กว่า] force-stop แอปกลางไทม์เมอร์ (adb am force-stop จำลอง 'ปิดแอปกลางทาง' ผู้ใช้จริงสไวป์ทิ้งจาก recent apps ก็เอฟเฟกต์เดียวกัน) แล้วเปิดแอปใหม่ → เด้งไปหน้า Welcome ทั้งที่ token ในเครื่องยังไม่หมดอายุ! เซสชันคาร์ดิโอที่ทำมา 23+ วิหายไปเงียบๆ ไม่มีเตือนเลย (กดยืนยัน: ต้องแตะปุ่ม 'เข้าสู่ระบบ' เองอีกครั้งจึงกลับเข้า Home ได้ — บัญชีนี้เคยติ๊ก 'จำรหัสผ่าน' ไว้ก่อนหน้า ฟอร์ม login เลย prefill อีเมล/รหัสผ่านมาให้อัตโนมัติทำให้กดเข้าใหม่ได้เร็ว แต่ก็ยังต้องยิง login API ใหม่ทั้งหมด ไม่ใช่ auto-resume ด้วย token เดิม และถ้าบัญชีไหนไม่เคยติ๊ก 'จำรหัสผ่าน' ไว้ จะต้องพิมพ์อีเมล+รหัสผ่านเองใหม่หมดทุกครั้งที่แอปโดน kill)\n\nสาเหตุ (เช็คโค้ดแล้ว): main.dart:115 initialRoute ฝัง '/welcome' ตายตัวเสมอ ไม่เช็ค token ก่อนเลย welcome_view.dart ทั้งไฟล์ไม่มี initState/Obx/เช็ค auth ใดๆทั้งสิ้น (เป็น StatelessWidget ล้วนๆ) ทั้งที่ auth_service.dart มีโครงสร้าง persistent-login (token-based) ครบอยู่แล้ว (checkLoginStatus() บรรทัด 47-59 อ่าน token จาก GetStorage + isLoggedIn observable + _validateToken() เช็ค token กับ server แบบ background) แต่ไม่มีจุดไหนในแอปเรียกใช้ผลลัพธ์นี้ตอนเลือก initial route เลย — โครงสร้าง token-based มีแต่ไม่ได้ต่อสายเข้ากับ routing ส่วน 'จำรหัสผ่าน' (remembered_credentials_service.dart) เป็นกลไกคนละอันที่แค่ prefill ฟอร์มเฉยๆ ไม่ใช่ตัวแก้ปัญหานี้\n\nทางแก้: ต้องมีหน้า splash/init ที่เช็ค AuthService.to.getToken() (หรือรอ checkLoginStatus เสร็จ) ก่อนตัดสินใจว่าจะพาไป /welcome หรือ /home ตรงๆเลย ไม่ใช่ hardcode /welcome เสมอ — กระทบผู้ใช้ทุกคนทุกครั้งที่แอปโดน kill (สลับแอปเยอะๆ, restart เครื่อง, OS kill พื้นหลังตอนหน่วยความจำตึง) ไม่ใช่แค่ตอนจับเวลาเท่านั้น" }, // J4
+};
+
+let state = {}; // { "A-0": {status:"pass"|"fail", note:""}, ... }
+
+function itemKey(sIdx, iIdx){ return sIdx + "-" + iIdx; }
+
+function render(){
+  const container = document.getElementById("sections");
+  container.innerHTML = "";
+  DATA.forEach((section, sIdx) => {
+    const secEl = document.createElement("div");
+    secEl.className = "section open";
+    const testedCount = section.items.filter((_, iIdx) => state[itemKey(sIdx,iIdx)]).length;
+
+    secEl.innerHTML = `
+      <div class="section-head">
+        <div class="section-title">
+          <div class="section-letter">${section.letter}</div>
+          <div class="section-name">${section.name}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="section-count">${testedCount}/${section.items.length}</span>
+          <span class="chevron">▶</span>
+        </div>
+      </div>
+      <div class="items"></div>
+    `;
+    const itemsEl = secEl.querySelector(".items");
+    section.items.forEach((text, iIdx) => {
+      const key = itemKey(sIdx, iIdx);
+      const st = state[key] || {status:null, note:""};
+      const itemEl = document.createElement("div");
+      itemEl.className = "item" + (st.status ? " " + st.status : "");
+      const symbol = st.status === "pass" ? "✓" : st.status === "fail" ? "✕" : "";
+      itemEl.innerHTML = `
+        <div class="status-btn ${st.status||''}" data-key="${key}">${symbol}</div>
+        <div class="item-body">
+          <div class="item-text">${text}</div>
+          <textarea class="item-note" data-key="${key}" placeholder="บันทึกเหตุผล/ขั้นตอนทำซ้ำที่ไม่ผ่าน...">${st.note||""}</textarea>
+        </div>
+      `;
+      itemsEl.appendChild(itemEl);
+    });
+    container.appendChild(secEl);
+
+    secEl.querySelector(".section-head").addEventListener("click", () => {
+      secEl.classList.toggle("open");
+    });
+  });
+
+  container.querySelectorAll(".status-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const key = btn.dataset.key;
+      const cur = state[key]?.status || null;
+      const next = cur === null ? "pass" : cur === "pass" ? "fail" : null;
+      state[key] = { status: next, note: state[key]?.note || "" };
+      save();
+      render();
+      restoreScroll();
+    });
+  });
+
+  container.querySelectorAll(".item-note").forEach(ta => {
+    ta.addEventListener("input", () => {
+      const key = ta.dataset.key;
+      state[key] = state[key] || { status: "fail", note: "" };
+      state[key].note = ta.value;
+      save();
+    });
+  });
+
+  updateStats();
+}
+
+let scrollPos = 0;
+function restoreScroll(){ window.scrollTo(0, scrollPos); }
+
+function updateStats(){
+  const all = Object.values(state).filter(v => v && v.status);
+  const passCount = all.filter(v => v.status === "pass").length;
+  const failCount = all.filter(v => v.status === "fail").length;
+  const tested = passCount + failCount;
+  document.getElementById("statTested").textContent = tested;
+  document.getElementById("statPass").textContent = passCount;
+  document.getElementById("statFail").textContent = failCount;
+  document.getElementById("progressBar").style.width = ((tested/70)*100).toFixed(1) + "%";
+}
+
+let saveTimeout;
+function save(){
+  document.getElementById("saveStatus").textContent = "กำลังบันทึก…";
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(async () => {
+    try {
+      if (window.storage && window.storage.set) {
+        await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      }
+      document.getElementById("saveStatus").textContent = "บันทึกแล้ว";
+      setTimeout(() => { document.getElementById("saveStatus").textContent = ""; }, 1200);
+    } catch (err) {
+      document.getElementById("saveStatus").textContent = "บันทึกไม่สำเร็จ";
+      console.error("Storage error:", err);
+    }
+  }, 250);
+}
+
+async function load(){
+  let saved = null;
+  try {
+    if (window.storage && window.storage.get) {
+      const result = await window.storage.get(STORAGE_KEY, false);
+      saved = result ? JSON.parse(result.value) : null;
+    } else {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      saved = raw ? JSON.parse(raw) : null;
+    }
+  } catch (err) {
+    saved = null;
+  }
+  // ผลทดสอบจริงที่ทำไว้แล้ว (DEFAULT_STATE) เป็นฐาน — ถ้าเคยบันทึกไว้ในเบราว์เซอร์นี้แล้วให้ค่าที่บันทึกทับ (กันของที่เทสเพิ่มเองหาย)
+  state = Object.assign({}, DEFAULT_STATE, saved || {});
+  render();
+}
+
+document.getElementById("expandAll").addEventListener("click", () => {
+  document.querySelectorAll(".section").forEach(s => s.classList.add("open"));
+});
+document.getElementById("collapseAll").addEventListener("click", () => {
+  document.querySelectorAll(".section").forEach(s => s.classList.remove("open"));
+});
+document.getElementById("resetAll").addEventListener("click", () => {
+  if (confirm("ล้างสถานะทั้งหมด 70 ข้อ? บันทึก/โน้ตจะหายทั้งหมด")) {
+    state = {};
+    save();
+    render();
+  }
+});
+
+window.addEventListener("scroll", () => { scrollPos = window.scrollY; });
+
+load();
+</script>
+</body>
+</html>

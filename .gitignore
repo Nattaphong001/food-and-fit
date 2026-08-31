@@ -1,0 +1,60 @@
+# ===== Flutter (mobile & admin-web) =====
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+ios/Pods/
+ios/.symlinks/
+android/.gradle/
+android/local.properties
+android/key.properties
+*.jks
+*.keystore
+
+# ===== Go (backend) =====
+bin/
+tmp/
+*.exe
+*.exe~
+*.test
+vendor/
+*.log
+
+# ===== User uploads (PDPA - ห้ามขึ้น repo) =====
+# เก็บโครงสร้างโฟลเดอร์ uploads/ ไว้ (.gitkeep) แต่ไม่เก็บไฟล์อัปโหลดจริงของสมาชิก
+# หมายเหตุ: ต้อง unignore ตัวโฟลเดอร์ (**/) ด้วย ไม่งั้น git จะไม่ไล่เข้าไปดู .gitkeep ที่อยู่ข้างในเลย
+backend/uploads/**
+!backend/uploads/**/
+!backend/uploads/**/.gitkeep
+
+# ===== Secrets =====
+.env
+.env.local
+*.pem
+config.json
+
+# ===== Database dumps (อาจมีข้อมูลจริง/PII/credential — ห้ามขึ้น repo) =====
+backend/migrations/*.sql
+!backend/migrations/schema.sql
+!backend/migrations/seed_master.sql
+!backend/migrations/2*.sql
+backend/migrations/backups/
+*.dump
+*.bak
+
+# ===== ไฟล์หลุดที่ไม่ควรอยู่ใน mobile source เลย (มี PII/credential จริง) =====
+mobile/lib/migrations/
+admin-web/lib/migrations/
+*food_and_fit_db*.sql
+
+# ===== Test artifacts (มี credential ฝัง — TestSprite ใช้ plaintext password จริง) =====
+admin-web/testsprite_tests/
+testsprite_tests/
+
+# ===== Editor / OS =====
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
