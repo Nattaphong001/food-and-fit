@@ -275,7 +275,7 @@ class _MemberDetailViewState extends State<MemberDetailView> {
   // [FEATURE] REPORT
   // [FUNCTION] _bmiChangePoints (getter)
   // [DESCRIPTION] กรอง _bmrAscending ให้เหลือเฉพาะจุดที่ BMI เปลี่ยนจากแถวก่อนหน้าจริง — BMI
-  //               เป็นฟังก์ชันของน้ำหนัก/ส่วนสูงเท่านั้น (ดู docs/SPEC.md ข้อ 5) การแก้
+  //               เป็นฟังก์ชันของน้ำหนัก/ส่วนสูงเท่านั้น การแก้
   //               activity_level/target ไม่ทำให้ BMI เปลี่ยน ถ้าพล็อตทุกแถวเหมือนกราฟ
   //               BMR/TDEE จะเห็นจุดแบนราบซ้ำๆ ที่ไม่สื่อความหมายอะไรเพิ่ม
   // [INPUT] _bmrAscending

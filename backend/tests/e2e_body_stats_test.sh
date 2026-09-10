@@ -2,7 +2,7 @@
 # ============================================================================
 # e2e_body_stats_test.sh — 2026-09-05
 # ทดสอบ endpoint /member/body-stats และ /member/profile หลังแก้ FIX-HEIGHT-VALIDATION,
-# FIX-DOUBLE-WRITE, GUARD-SHORT-INTERVAL-EDIT (ดู docs/SPEC.md ข้อ 6 D10)
+# FIX-DOUBLE-WRITE, GUARD-SHORT-INTERVAL-EDIT
 #
 # ก่อนรัน:
 #   1. เปิด XAMPP MySQL (port 3306)

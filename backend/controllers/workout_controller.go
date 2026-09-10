@@ -38,7 +38,7 @@ var (
 // daysPerWeek: wpt_days_per_week ของแผนต้นทาง — ต้องแปลง ptd_day_number (1..N วันในแผน) เป็น
 // weekday (1-7) ก่อนเทียบกับ wsch_day_number เสมอ เพราะ copySystemPlanToSchedule เขียน weekday
 // ลง DB ไม่ใช่วันในแผนดิบๆ (บั๊กเดิม: เทียบกันตรงๆ โดยไม่แปลง ทำให้ is_modified ขึ้น true เท็จ
-// สำหรับทุกแผนที่ daysPerWeek != 7 — ดู docs/SPEC.md ข้อ 6 D3.3)
+// สำหรับทุกแผนที่ daysPerWeek != 7)
 func isSystemPlanModified(db *gorm.DB, mbID uint, wptID uint, daysPerWeek int) bool {
 	type scheduleRow struct {
 		DayNumber int

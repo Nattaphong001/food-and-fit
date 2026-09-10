@@ -74,8 +74,8 @@ func ConnectDatabase() {
 	// mb_id NOT NULL: gorm tag ของ struct 3 ตัวนี้ตรงกับ DB จริงไม่ครบ (type/size/not null)
 	// ทำให้ AutoMigrate เงียบๆ เด้ง schema กลับทุกครั้งที่ restart server — ยืนยันด้วยการรัน
 	// server จริงแล้วพบ wtrs_date/cdors_date หลุด NOT NULL, wtrs_set_no/wtrs_reps/
-	// cdors_duration ถูกแปลงจาก tinyint/smallint unsigned เป็น bigint(20) เงียบๆ (ดู
-	// docs/SPEC.md ข้อ 6 D10) เหตุผลเดียวกับที่ WorkoutSchedule ถูกถอดไปก่อนแล้ว (D3.2) — จัดการ schema
+	// cdors_duration ถูกแปลงจาก tinyint/smallint unsigned เป็น bigint(20) เงียบๆ —
+	// เหตุผลเดียวกับที่ WorkoutSchedule ถูกถอดไปก่อนแล้ว — จัดการ schema
 	// ผ่าน migration script เท่านั้น
 	if err := DB.AutoMigrate(&models.RevokedToken{}, &models.AuditLog{}); err != nil {
 		log.Printf("⚠️  AutoMigrate warning (security tables): %v", err)

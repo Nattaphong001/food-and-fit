@@ -207,8 +207,8 @@ func CreateWeightExercise(c *gin.Context) {
 		return
 	}
 	// wet_base_met: MET พื้นฐานของท่านี้ ใช้ใน Smart Auto Calorie (services.CalculateWeightTrainingCalories)
-	// ไม่ส่งมา → default 4.5 (compound ช่วงบน — ตรงกับ DEFAULT ของคอลัมน์) ดูช่วงค่าที่ใช้จริงในระบบ
-	// ที่ docs/SPEC.md ข้อ 5: 3.0=isolation, 4.5=compound บน, 5.5=compound ล่าง, 7.0=full-body
+	// ไม่ส่งมา → default 4.5 (compound ช่วงบน — ตรงกับ DEFAULT ของคอลัมน์) ช่วงค่าที่ใช้จริงในระบบ:
+	// 3.0=isolation, 4.5=compound บน, 5.5=compound ล่าง, 7.0=full-body
 	wetBaseMet := 4.5
 	if baseMetStr := c.PostForm("wet_base_met"); baseMetStr != "" {
 		parsed, err := strconv.ParseFloat(baseMetStr, 64)

@@ -17,7 +17,7 @@ import (
 
 // endpoint ใหม่สำหรับหน้าฐานข้อมูลโภชนาการฝั่ง Admin Web — กรอง+เรียง+pagination ระดับ SQL
 // แยกจาก GetAllNutrition (/api/nutrition/foods) เพราะตัวนั้นแอปมือถือเรียกใช้อยู่จริง (ดู
-// nutrition_service.dart) ห้ามแก้ signature/response เดิม (docs/SPEC.md ข้อ 2) จึงเพิ่ม endpoint
+// nutrition_service.dart) ห้ามแก้ signature/response เดิม จึงเพิ่ม endpoint
 // ใหม่นี้แทน อยู่ใต้ adminProtected เท่านั้น
 
 // sort_by ต้องตรงกับ enum จริงใน manage_food_items_view.dart (_sortKeys) ไม่ใช่เดาเอง —

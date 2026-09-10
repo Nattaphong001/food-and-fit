@@ -120,7 +120,7 @@ func SetupRouter() *gin.Engine {
 
 				// 🍎🏋️ endpoint กรอง+pagination ระดับ SQL สำหรับหน้าฐานข้อมูลโภชนาการ/ท่าฝึกเวท —
 				// แยกจาก /api/nutrition/foods และ /api/exercises/weights เดิมเพราะแอปมือถือเรียก
-				// สองตัวนั้นอยู่จริง (ห้ามแก้ signature/response เดิม ดู docs/SPEC.md ข้อ 2)
+				// สองตัวนั้นอยู่จริง (ห้ามแก้ signature/response เดิม)
 				adminProtected.GET("/nutrition/foods", controllers.GetAdminNutritionFoods)
 				adminProtected.GET("/exercises/weights", controllers.GetAdminWeightExercises)
 

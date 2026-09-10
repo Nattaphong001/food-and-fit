@@ -1711,7 +1711,7 @@ class _NewDashboardViewState extends State<NewDashboardView>
       final sets = entry.value..sort((a, b) => a.setNo.compareTo(b.setNo));
       final volume = sets.fold(0.0, (s, w) => s + w.weight * w.reps);
       // สูตร Epley คลาดเคลื่อนมากเมื่อ reps > 12 — คิดเฉพาะเซตที่อยู่ในช่วงที่แม่นยำ
-      // 1RM = weight × (1 + reps/30) ตาม docs/SPEC.md ข้อ 5 — ไม่จำกัด reps
+      // 1RM = weight × (1 + reps/30) — ไม่จำกัด reps
       // (เดิมกรองเฉพาะ reps<=12 จุดนี้จุดเดียว ทำให้ไม่ตรงกับ backend และอีก 3 จุดใน
       // frontend ที่ไม่จำกัด reps — เอา cap ออกให้สูตรตรงกันทั้งระบบ แม้สูตรจะคลาดเคลื่อน
       // มากขึ้นตาม comment เดิมด้านบนก็ตาม เพื่อให้ตรงกับ backend เป็น single source of truth)

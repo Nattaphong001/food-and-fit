@@ -7,7 +7,7 @@
 // [USES_FEATURES] PROFILE
 //
 // เดิมมีคอลัมน์/dropdown กรอง "สถานะ" (ใช้งานอยู่/รอลบถาวร) ตัดออกแล้ว 2026-08-29 พร้อม
-// mb_status=2 ทั้งระบบ (ดู docs/SPEC.md ข้อ 6 D8) — mb_status เหลือค่าเดียว
+// mb_status=2 ทั้งระบบ (ฟีเจอร์ Grace Period ไม่เคยถูกใช้จริง) — mb_status เหลือค่าเดียว
 // เสมอ ไม่มีอะไรให้กรอง/แสดงเป็นป้ายสถานะอีกต่อไป
 
 import 'package:dio/dio.dart';

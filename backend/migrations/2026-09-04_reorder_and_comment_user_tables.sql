@@ -10,7 +10,7 @@
 ALTER TABLE member_body_stats
   MODIFY COLUMN mbs_weight decimal(5,2) DEFAULT NULL COMMENT 'น้ำหนักตัว (กก.)' AFTER mbs_id,
   MODIFY COLUMN mbs_height decimal(5,2) DEFAULT NULL COMMENT 'ส่วนสูง (ซม.)' AFTER mbs_weight,
-  MODIFY COLUMN mbs_activity_level decimal(4,3) DEFAULT NULL COMMENT 'Activity Factor ใช้คูณ BMR หา TDEE (1.2/1.375/1.55/1.725/1.9) — ไม่ใช่ความถี่ออกกำลังกาย/สัปดาห์ (ดู docs/SPEC.md ข้อ 6 D5)' AFTER mbs_height,
+  MODIFY COLUMN mbs_activity_level decimal(4,3) DEFAULT NULL COMMENT 'Activity Factor ใช้คูณ BMR หา TDEE (1.2/1.375/1.55/1.725/1.9) — ไม่ใช่ความถี่ออกกำลังกาย/สัปดาห์' AFTER mbs_height,
   MODIFY COLUMN mbs_target tinyint(4) DEFAULT NULL COMMENT 'เป้าหมาย (1=ลดน้ำหนัก, 2=เพิ่มน้ำหนัก/กล้ามเนื้อ, 3=รักษาน้ำหนัก)' AFTER mbs_activity_level,
   MODIFY COLUMN mbs_recorded_date datetime DEFAULT NULL COMMENT 'วันเวลาที่บันทึกค่านี้' AFTER mbs_target,
   MODIFY COLUMN mb_id int(11) DEFAULT NULL COMMENT 'รหัสสมาชิก [FK -> member_profile]' AFTER mbs_recorded_date;
@@ -56,7 +56,7 @@ ALTER TABLE weight_training_result
   MODIFY COLUMN wtrs_reps bigint(20) DEFAULT NULL COMMENT 'จำนวนครั้งที่ทำได้จริงในเซตนี้',
   MODIFY COLUMN wtrs_weight decimal(5,2) DEFAULT NULL COMMENT 'น้ำหนักที่ยกจริง (กก.)',
   MODIFY COLUMN wtrs_intensity_level tinyint(4) DEFAULT 2 COMMENT 'ระดับความหนัก (1=เบา METs 3.5, 2=กลาง METs 5.0, 3=หนัก METs 6.0)',
-  MODIFY COLUMN wtrs_calories decimal(7,2) DEFAULT NULL COMMENT 'แคลอรี่ที่เผาผลาญสุทธิ (NET, หัก 1 MET แล้ว — ดู docs/SPEC.md ข้อ 5)',
+  MODIFY COLUMN wtrs_calories decimal(7,2) DEFAULT NULL COMMENT 'แคลอรี่ที่เผาผลาญสุทธิ (NET, หัก 1 MET แล้ว)',
   MODIFY COLUMN mb_id int(11) DEFAULT NULL COMMENT 'รหัสสมาชิก [FK -> member_profile]',
   MODIFY COLUMN wet_id int(10) unsigned DEFAULT NULL COMMENT 'รหัสท่าฝึกเวท [FK -> weight_exercises]',
   MODIFY COLUMN wsch_id int(10) unsigned DEFAULT NULL COMMENT 'รหัสรายการในแผนฝึกที่ทำท่านี้ [FK -> workout_schedules] NULL = ไม่ได้ผูกกับแผน';
@@ -68,7 +68,7 @@ ALTER TABLE cardio_result
   MODIFY COLUMN cdors_date date DEFAULT NULL COMMENT 'วันที่ออกกำลังกายจริง',
   MODIFY COLUMN cdors_duration bigint(20) DEFAULT NULL COMMENT 'ระยะเวลาที่ทำ (นาที)',
   MODIFY COLUMN cdors_distance decimal(5,2) DEFAULT 0.00 COMMENT 'ระยะทางที่ทำได้ (กม.) ถ้ากิจกรรมนั้นมีระยะทาง',
-  MODIFY COLUMN cdors_calories decimal(7,2) DEFAULT NULL COMMENT 'แคลอรี่ที่เผาผลาญสุทธิ (NET, หัก 1 MET แล้ว — ดู docs/SPEC.md ข้อ 5)',
+  MODIFY COLUMN cdors_calories decimal(7,2) DEFAULT NULL COMMENT 'แคลอรี่ที่เผาผลาญสุทธิ (NET, หัก 1 MET แล้ว)',
   MODIFY COLUMN mb_id int(11) DEFAULT NULL COMMENT 'รหัสสมาชิก [FK -> member_profile]',
   MODIFY COLUMN cdo_id int(10) unsigned DEFAULT NULL COMMENT 'รหัสกิจกรรมคาร์ดิโอ [FK -> cardio]';
 

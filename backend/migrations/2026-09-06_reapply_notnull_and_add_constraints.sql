@@ -6,10 +6,10 @@
 -- WeightTrainingResult.MbID / CardioResult.MbID).
 -- Also narrows member_body_stats.mbs_height to decimal(4,1) (checked live data: all rows are
 -- whole-number heights stored as X.00, no precision lost) and adds missing UNIQUE/index
--- constraints reviewed against docs/SPEC.md ข้อ 3.6/D10 before writing this file.
+-- constraints reviewed against the append-only design of member_bmr_history before writing this file.
 --
 -- Deliberately NOT included: UNIQUE (mb_id, mbh_record_date) on member_bmr_history — that
--- table is append-only by design (docs/SPEC.md ข้อ 3.6), adding a unique key would break
+-- table is append-only by design, adding a unique key would break
 -- legitimate same-day repeat inserts. Do not add this later without re-reading that section.
 --
 -- Checked before running (0 rows / 0 duplicates in all cases):

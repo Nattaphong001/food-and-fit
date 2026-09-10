@@ -6,7 +6,7 @@
 -- and queried information_schema.COLUMNS before/after — confirmed the corruption happens
 -- on every restart. Fixed in the same commit: gorm tags corrected (models/exercise.go) and
 -- these two structs removed from config/database.go's AutoMigrate call entirely (same
--- treatment WorkoutSchedule already got — see docs/SPEC.md ข้อ 6 D3.2/D10).
+-- treatment WorkoutSchedule already got in an earlier migration).
 --
 -- Backup: migrations/backups/backup_before_20260906_repair_automigrate_corruption.sql
 --

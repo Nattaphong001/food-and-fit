@@ -22,7 +22,7 @@ import "time"
 type RevokedToken struct {
 	// comment: tag ต้องมีทุก field ที่ไม่ใช่ PK — GORM MigrateColumn เทียบ COLUMN_COMMENT ด้วย
 	// ถ้า tag ไม่มี comment แต่ DB มี มันจะ ALTER ลบ comment ทิ้งทุกครั้งที่ restart server
-	// (คอลัมน์ PK ถูกข้ามการเทียบ เลยไม่ต้องใส่ — ดู docs/SPEC.md ข้อ 6 D10.1 บทเรียนเดียวกัน)
+	// (คอลัมน์ PK ถูกข้ามการเทียบ เลยไม่ต้องใส่)
 	ID        uint      `gorm:"primaryKey;autoIncrement"`
 	Jti       string    `gorm:"column:jti;type:varchar(64);uniqueIndex;not null;comment:รหัสอ้างอิงโทเคน (JWT claim jti) ที่ถูกเพิกถอน"`
 	ExpiresAt time.Time `gorm:"column:expires_at;not null;index;comment:วันและเวลาที่โทเคนหมดอายุตามค่า exp ใน JWT"`

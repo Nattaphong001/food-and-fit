@@ -15,7 +15,7 @@ import (
 // อ่านอย่างเดียว (read-only) ตามสเปก — ไม่มี endpoint แก้ไข/ลบสมาชิกในรอบนี้
 // ไม่คืน mb_password_hash / mb_otp / mb_otp_expired เด็ดขาด (build gin.H เอง ไม่ dump struct ตรงๆ)
 // mb_status/mb_deleted_at ถูกถอดออกจากระบบไปแล้วทั้งคอลัมน์ (ฟีเจอร์ลบบัญชีแบบ Grace Period ไม่เคย
-// ใช้จริง ดู docs/SPEC.md ข้อ 6 D8) ห้าม re-add
+// ใช้จริง) ห้าม re-add
 //
 // member_profile ไม่มีคอลัมน์เบอร์โทร (ตรวจ models/member.go แล้ว มีแค่ mb_email) search จึง
 // match แค่ชื่อ+อีเมล ไม่ใช่ "ชื่อ/อีเมล/เบอร์โทร" ตามที่ร่างสเปกไว้ (ยืนยันกับผู้ใช้แล้ว 2026-08-29)

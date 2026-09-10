@@ -324,7 +324,7 @@ class NutritionViewState extends State<NutritionView> with RouteAware {
     final consumed = _totalCalories;
     final progress = (consumed / _targetCalories).clamp(0.0, 1.0);
     final remaining = (_targetCalories - consumed).clamp(0.0, double.infinity);
-    // สถานะเทียบเป้า ±10% → Over/On/Under Target (สูตรตาม docs/SPEC.md ข้อ 5) — ของเดิมเช็คแค่
+    // สถานะเทียบเป้า ±10% → Over/On/Under Target — ของเดิมเช็คแค่
     // เกิน/ไม่เกิน ไม่มี "ต่ำกว่าเป้า" เลย ไม่ตรงสูตร
     final pctOfTarget = _targetCalories > 0 ? consumed / _targetCalories : 0.0;
     final isOver = pctOfTarget > 1.10;

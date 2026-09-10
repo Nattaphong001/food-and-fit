@@ -319,7 +319,7 @@
 //    Estimated 1RM ที่ดีที่สุดของสมาชิกในท่านี้ (1=เบา RI<50%, 2=กลาง 50-69%, 3=หนัก ≥70%) — ตั้งแต่
 //    2026-09-08 เปลี่ยนจากให้ผู้ใช้เลือกเองเป็นระบบคำนวณให้ (Smart Auto Calorie) [Default: 2]
 // 9. `wtrs_calories` (DECIMAL 7,2) - แคลอรี่ที่เผาผลาญของเซตนี้ (SessionKcal หารเท่ากันทุกเซตของ
-//    เซสชัน, สุทธิ หักฐาน 1 MET แล้ว) — ดูสูตร Smart Auto Calorie ที่ docs/SPEC.md ข้อ 5.3
+//    เซสชัน, สุทธิ หักฐาน 1 MET แล้ว) — ใช้สูตร Smart Auto Calorie (services/calculator.go)
 // 10. `mb_id` (INT) - รหัสสมาชิก [FK (Member Profile), NOT NULL]
 // 11. `wet_id` (INT UNSIGNED NULL) - รหัสท่าฝึกเวทเทรนนิ่ง [FK (Weight Exercises), ON DELETE SET NULL]
 // 12. `wsch_id` (INT UNSIGNED NULL) - รหัสตารางกำหนดการออกกำลังกาย [FK (Workout Schedules), ON DELETE SET NULL]
@@ -342,7 +342,7 @@
 // 4. `cdors_distance` (DECIMAL 5,2 NULL) - ระยะทาง (กม.) เก็บ NULL เมื่อกิจกรรมนั้นไม่วัดระยะทาง
 //    (cdo_has_distance=0) — ไม่ใช่ default 0.00 เหมือนเดิม (แก้แล้วดู migration
 //    2026-09-06_align_defaults_and_nullability.sql) ค่านี้เก็บไว้แสดงผล/สถิติเท่านั้น ไม่ได้เป็น
-//    ส่วนหนึ่งของสูตรคำนวณแคลอรี่คาร์ดิโอ (ดู docs/SPEC.md ข้อ 5.2)
+//    ส่วนหนึ่งของสูตรคำนวณแคลอรี่คาร์ดิโอ
 // 5. `cdors_calories` (DECIMAL 7,2) - แคลอรี่ที่เผาผลาญ (สุทธิ หักฐาน 1 MET แล้ว)
 // 6. `mb_id` (INT) - รหัสสมาชิก [FK (Member Profile), NOT NULL]
 // 7. `cdo_id` (INT UNSIGNED NULL) - รหัสคาร์ดิโอ [FK (Cardio), ON DELETE SET NULL]

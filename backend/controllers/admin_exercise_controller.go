@@ -14,7 +14,7 @@ import (
 
 // endpoint ใหม่สำหรับหน้าท่าฝึกเวทฝั่ง Admin Web — กรอง+pagination ระดับ SQL แยกจาก
 // GetWeightExercises (/api/exercises/weights) เพราะตัวนั้นแอปมือถือเรียกใช้อยู่จริง (ดู
-// exercise_service.dart) ห้ามแก้ signature/response เดิม (docs/SPEC.md ข้อ 2) จึงเพิ่ม endpoint
+// exercise_service.dart) ห้ามแก้ signature/response เดิม จึงเพิ่ม endpoint
 // ใหม่นี้แทน อยู่ใต้ adminProtected เท่านั้น
 //
 // ไม่มี sort_by/sort_order ตามสเปกฝั่ง Flutter (หน้านี้ไม่มี sort control ให้ผู้ใช้เลือกเอง) —

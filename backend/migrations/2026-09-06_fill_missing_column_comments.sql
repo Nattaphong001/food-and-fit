@@ -18,7 +18,7 @@
 --
 --   ⚠️ ห้ามรัน 3 ไฟล์ add_comments_*.sql นั้นอีก — MODIFY COLUMN ในไฟล์ยังระบุชนิดเก่า
 --   (decimal(7,2), bigint(20), mb_id DEFAULT NULL) ถ้ารันจะทำ schema พังกลับไปเป็นสภาพก่อนซ่อม
---   AutoMigrate corruption (ดู docs/SPEC.md ข้อ 6 D10.1)
+--   AutoMigrate corruption ที่ซ่อมไปแล้วในรอบก่อน
 --
 -- ไฟล์นี้แก้ "เฉพาะ COMMENT เท่านั้น" — ชนิดข้อมูล/NULL/NOT NULL/DEFAULT/PK/FK/INDEX/ลำดับคอลัมน์
 -- ทุกตัวคัดลอกมาจากค่าที่อยู่ใน live DB ตอนนี้เป๊ะ ๆ ไม่มีการเปลี่ยนแปลงใด ๆ
