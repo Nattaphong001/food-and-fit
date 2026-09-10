@@ -10,7 +10,7 @@ import '../services/workout_service.dart';
 import '../views/member/home/home_view.dart';
 import '../views/member/nutrition/nutrition_view.dart';
 import '../views/member/workout/workout_view.dart';
-import '../views/member/dashboard/new_dashboard_view.dart';
+import '../views/member/dashboard/dashboard_view.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -41,7 +41,7 @@ class _MainShellState extends State<MainShell> {
       NutritionView(key: _nutritionKey, dashboardRefreshNotifier: _dashboardRefresh,
           profileRefreshNotifier: _profileRefresh),
       WorkoutView(dashboardRefreshNotifier: _dashboardRefresh),
-      NewDashboardView(refreshNotifier: _dashboardRefresh, profileRefreshNotifier: _profileRefresh),
+      DashboardView(refreshNotifier: _dashboardRefresh, profileRefreshNotifier: _profileRefresh),
     ];
     _checkDailyWorkoutReminder();
     WidgetsBinding.instance.addPostFrameCallback((_) {

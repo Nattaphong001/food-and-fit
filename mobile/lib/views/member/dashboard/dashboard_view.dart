@@ -16,18 +16,18 @@ import '../../../core/utils/health_calculations.dart' as calc;
 
 enum _ViewMode { graph, table }
 
-class NewDashboardView extends StatefulWidget {
+class DashboardView extends StatefulWidget {
   final ValueNotifier<int>? refreshNotifier;
   // แยกจาก refreshNotifier — bump จาก HomeView เมื่อแก้ข้อมูลร่างกาย/เป้าหมายสำเร็จเท่านั้น
   // (refreshNotifier ตัวเดิมถูก bump จาก NutritionView เองด้วย ใช้ตัวเดียวกันจะวนลูปโหลดซ้ำ)
   final ValueNotifier<int>? profileRefreshNotifier;
-  const NewDashboardView({super.key, this.refreshNotifier, this.profileRefreshNotifier});
+  const DashboardView({super.key, this.refreshNotifier, this.profileRefreshNotifier});
 
   @override
-  State<NewDashboardView> createState() => _NewDashboardViewState();
+  State<DashboardView> createState() => _DashboardViewState();
 }
 
-class _NewDashboardViewState extends State<NewDashboardView>
+class _DashboardViewState extends State<DashboardView>
     with SingleTickerProviderStateMixin {
   late TabController _sectionTab;
   int _selectedPeriod = 0;
