@@ -26,8 +26,13 @@ class ApiClient {
   //      บล็อกอุปกรณ์ในวงเดียวกันคุยกันเอง → ต่อ IP จริงไม่ติดแน่นอน
   //      ทางแก้ชั่วคราว: ต่อสาย USB แล้วรัน `adb reverse tcp:8081 tcp:8081`
   //      จากนั้นเปลี่ยนค่าด้านล่างเป็น '127.0.0.1' แทน IP จริง
+  //
+  //    ไม่อยากแก้โค้ดทุกครั้งที่ IP เปลี่ยน? ใส่ IP ผ่านคำสั่งรันแทนได้:
+  //    flutter run --dart-define=DEVICE=real --dart-define=REAL_IP=<IP ปัจจุบันของ PC>
+  //    ไม่ใส่ REAL_IP มา = ใช้ค่า default ด้านล่าง
   // ============================================================
-  static const _realDeviceIp = '192.168.1.50';
+  static const _realDeviceIp =
+      String.fromEnvironment('REAL_IP', defaultValue: '192.168.1.50');
 
   // ตัวเลือก: 'emulator' (default) | 'real'
   // กำหนดผ่าน --dart-define=DEVICE=real ตอน run (ดู .vscode/launch.json)
