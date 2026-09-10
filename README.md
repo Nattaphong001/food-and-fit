@@ -24,6 +24,10 @@
 |---|---|---|
 | <img src="docs/screenshots/weight-training-session.jpg" width="240"> | <img src="docs/screenshots/weight-training-summary.jpg" width="240"> | <img src="docs/screenshots/food-log-daily.jpg" width="240"> |
 
+| ค้นหาเมนูอาหาร | เลือกท่าฝึกเวทเทรนนิ่ง |
+|---|---|
+| <img src="docs/screenshots/food-search.jpg" width="240"> | <img src="docs/screenshots/exercise-picker.jpg" width="240"> |
+
 **ฝั่งแอดมิน (admin-web)**
 
 | Dashboard ภาพรวม | รายงานระบบ |
