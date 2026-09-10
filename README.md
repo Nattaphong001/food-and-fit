@@ -50,7 +50,7 @@
                  ▼
           ┌──────────────┐
           │    MySQL     │
-          │  18 ตาราง    │
+          │  17 ตาราง    │
           └──────────────┘
 ```
 
@@ -107,7 +107,7 @@
 **Admin Web** (`admin-web/`) — Flutter Web
 
 **Database**
-- MySQL/MariaDB — `food_and_fit_db` — 18 ตารางธุรกิจ (โปรไฟล์สมาชิก, ข้อมูลร่างกาย, แผนออกกำลังกาย, ผลเวท/คาร์ดิโอ, โภชนาการรายวัน ฯลฯ) + ตารางระบบสำหรับ audit log / revoked token
+- MySQL/MariaDB — `food_and_fit_db` — 17 ตารางธุรกิจ (โปรไฟล์สมาชิก, ข้อมูลร่างกาย, แผนออกกำลังกาย, ผลเวท/คาร์ดิโอ, โภชนาการรายวัน ฯลฯ) + ตารางระบบสำหรับ audit log / revoked token
 
 ---
 
@@ -168,7 +168,7 @@ flutter run -d chrome
 
 | ส่วน | รายละเอียด |
 |---|---|
-| Backend | ออกแบบฐานข้อมูล 18 ตาราง, REST API ด้วย Go + Gin, ระบบ JWT authentication, rate limiting, audit log |
+| Backend | ออกแบบฐานข้อมูล 17 ตาราง, REST API ด้วย Go + Gin, ระบบ JWT authentication, rate limiting, audit log |
 | Mobile app | Flutter ฝั่งผู้ใช้ทั้งหมด — onboarding, บันทึกอาหาร/เวท/คาร์ดิโอ, รายงาน |
 | Admin web | Flutter Web ฝั่งผู้ดูแลระบบทั้งหมด — dashboard, จัดการ master data, bulk action |
 
