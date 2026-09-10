@@ -29,8 +29,7 @@ CREATE TABLE `audit_logs` (
   KEY `idx_audit_logs_actor_id` (`actor_id`),
   KEY `idx_audit_logs_action` (`action`),
   KEY `idx_audit_logs_created_at` (`created_at`),
-  KEY `idx_audit_table_record` (`table_name`,`record_id`),
-  KEY `idx_audit_logs_target_table` (`table_name`)
+  KEY `idx_audit_table_record` (`table_name`,`record_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `cardio`;
@@ -48,6 +47,7 @@ CREATE TABLE `cardio` (
   `cdo_loop_video` varchar(255) NOT NULL DEFAULT '' COMMENT 'Path วิดีโอ Loop คาร์ดิโอ',
   `cdc_id` int(10) unsigned NOT NULL DEFAULT 1 COMMENT 'รหัสประเภทคาร์ดิโอ [FK -> cardio_category]',
   PRIMARY KEY (`cdo_id`),
+  UNIQUE KEY `uq_cdo_name` (`cdo_name`),
   KEY `idx_cdo_category` (`cdc_id`),
   CONSTRAINT `fk_cardio_category` FOREIGN KEY (`cdc_id`) REFERENCES `cardio_category` (`cdc_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -60,7 +60,8 @@ CREATE TABLE `cardio_category` (
   `cdc_image` varchar(255) NOT NULL DEFAULT '' COMMENT 'Path รูปประเภทคาร์ดิโอ',
   `cdc_name` varchar(100) NOT NULL COMMENT 'ชื่อประเภทคาร์ดิโอ',
   `cdc_description` text NOT NULL COMMENT 'คำอธิบายประเภทคาร์ดิโอ',
-  PRIMARY KEY (`cdc_id`)
+  PRIMARY KEY (`cdc_id`),
+  UNIQUE KEY `uq_cdc_name` (`cdc_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `cardio_result`;
@@ -175,7 +176,8 @@ CREATE TABLE `member_profile` (
   `mb_profile_pic` varchar(255) NOT NULL DEFAULT '' COMMENT 'Path รูปโปรไฟล์',
   `mb_created_at` timestamp NOT NULL DEFAULT current_timestamp() COMMENT 'วันที่สมัครสมาชิก',
   `mb_updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp() COMMENT 'วันที่แก้ไขข้อมูลล่าสุด',
-  PRIMARY KEY (`mb_id`)
+  PRIMARY KEY (`mb_id`),
+  UNIQUE KEY `uq_mb_email` (`mb_email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `muscle_group`;
@@ -186,7 +188,8 @@ CREATE TABLE `muscle_group` (
   `mug_image` varchar(255) NOT NULL DEFAULT '' COMMENT 'Path รูปภาพกลุ่มกล้ามเนื้อ',
   `mug_name` varchar(100) NOT NULL COMMENT 'ชื่อกลุ่มกล้ามเนื้อ',
   `mug_zone` tinyint(4) NOT NULL COMMENT 'ส่วนของกล้ามเนื้อ (1=ร่างกายส่วนบน, 2=ร่างกายส่วนล่าง, 3=แกนกลางลำตัว)',
-  PRIMARY KEY (`mug_id`)
+  PRIMARY KEY (`mug_id`),
+  UNIQUE KEY `uq_mug_name` (`mug_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `nutrition`;
@@ -204,6 +207,7 @@ CREATE TABLE `nutrition` (
   `ntt_unit` varchar(20) NOT NULL COMMENT 'หน่วยนับ (กรัม,ออนซ์)',
   `nttc_id` int(11) NOT NULL COMMENT 'รหัสประเภทโภชนาการ [FK -> nutrition_category]',
   PRIMARY KEY (`ntt_id`),
+  UNIQUE KEY `uq_ntt_food_name` (`ntt_food_name`),
   KEY `idx_ntt_nttc_id` (`nttc_id`),
   CONSTRAINT `nutrition_ibfk_1` FOREIGN KEY (`nttc_id`) REFERENCES `nutrition_category` (`nttc_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -215,7 +219,8 @@ CREATE TABLE `nutrition_category` (
   `nttc_id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'รหัสประเภทโภชนาการ [PK]',
   `nttc_image` varchar(255) NOT NULL DEFAULT '' COMMENT 'Path รูปภาพประเภทโภชนาการ',
   `nttc_name` varchar(100) NOT NULL COMMENT 'ชื่อประเภทโภชนาการ',
-  PRIMARY KEY (`nttc_id`)
+  PRIMARY KEY (`nttc_id`),
+  UNIQUE KEY `uq_nttc_name` (`nttc_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `plan_template_detail`;
@@ -267,21 +272,6 @@ CREATE TABLE `system_data` (
   UNIQUE KEY `uq_sys_email` (`sys_email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-DROP TABLE IF EXISTS `v_weight_exercise_muscle`;
-/*!50001 DROP VIEW IF EXISTS `v_weight_exercise_muscle`*/;
-SET @saved_cs_client     = @@character_set_client;
-SET character_set_client = utf8;
-/*!50001 CREATE VIEW `v_weight_exercise_muscle` AS SELECT
- 1 AS `wet_id`,
-  1 AS `wet_name`,
-  1 AS `wet_difficulty`,
-  1 AS `wet_equipment`,
-  1 AS `wet_exercise_type`,
-  1 AS `mug_id`,
-  1 AS `mug_name`,
-  1 AS `mug_zone`,
-  1 AS `exm_type` */;
-SET character_set_client = @saved_cs_client;
 DROP TABLE IF EXISTS `weight_exercises`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -297,7 +287,8 @@ CREATE TABLE `weight_exercises` (
   `wet_technique` text NOT NULL COMMENT 'เทคนิคในการฝึก',
   `wet_video` varchar(255) NOT NULL DEFAULT '' COMMENT 'Path วิดีโอแนะนำวิธีฝึก',
   `wet_loop_video` varchar(255) NOT NULL DEFAULT '' COMMENT 'Path วิดีโอ Loop เวทเทรนนิ่ง',
-  PRIMARY KEY (`wet_id`)
+  PRIMARY KEY (`wet_id`),
+  UNIQUE KEY `uq_wet_name` (`wet_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `weight_training_result`;
@@ -335,7 +326,8 @@ CREATE TABLE `workout_plan_template` (
   `wpt_description` text NOT NULL COMMENT 'คำอธิบายแผน',
   `wpt_days_per_week` tinyint(3) unsigned NOT NULL COMMENT 'จำนวนวันฝึกต่อสัปดาห์',
   `wpt_difficulty` tinyint(4) NOT NULL COMMENT 'ระดับความยาก (1=ระดับเริ่มต้น, 2=ระดับกลาง, 3=ระดับสูง)',
-  PRIMARY KEY (`wpt_id`)
+  PRIMARY KEY (`wpt_id`),
+  UNIQUE KEY `uq_wpt_name` (`wpt_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `workout_schedules`;
@@ -350,7 +342,7 @@ CREATE TABLE `workout_schedules` (
   `wsch_order` tinyint(4) NOT NULL COMMENT 'ลำดับท่าในวันนั้น',
   `wsch_sets` tinyint(4) NOT NULL DEFAULT 3 COMMENT 'จำนวนเซต',
   `wsch_reps` varchar(10) NOT NULL DEFAULT '10' COMMENT 'จำนวนครั้ง',
-  `wsch_rest_seconds` smallint(6) NOT NULL DEFAULT 90 COMMENT 'เวลาพัก (วินาที)',
+  `wsch_rest_seconds` smallint(5) unsigned NOT NULL DEFAULT 90 COMMENT 'เวลาพัก (วินาที)',
   `wsch_plan_created_at` datetime DEFAULT current_timestamp() COMMENT 'วันที่สร้างแผน',
   `wsch_plan_updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp() COMMENT 'วันที่แก้ไขแผนล่าสุด',
   `mb_id` int(11) NOT NULL COMMENT 'รหัสสมาชิก [FK -> member_profile]',
@@ -365,18 +357,5 @@ CREATE TABLE `workout_schedules` (
   CONSTRAINT `fk_wsch_wpt` FOREIGN KEY (`wpt_id`) REFERENCES `workout_plan_template` (`wpt_id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-/*!50001 DROP VIEW IF EXISTS `v_weight_exercise_muscle`*/;
-/*!50001 SET @saved_cs_client          = @@character_set_client */;
-/*!50001 SET @saved_cs_results         = @@character_set_results */;
-/*!50001 SET @saved_col_connection     = @@collation_connection */;
-/*!50001 SET character_set_client      = utf8mb4 */;
-/*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
-/*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`root`@`127.0.0.1` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_weight_exercise_muscle` AS select `e`.`wet_id` AS `wet_id`,`e`.`wet_name` AS `wet_name`,`e`.`wet_difficulty` AS `wet_difficulty`,`e`.`wet_equipment` AS `wet_equipment`,`e`.`wet_exercise_type` AS `wet_exercise_type`,`mg`.`mug_id` AS `mug_id`,`mg`.`mug_name` AS `mug_name`,`mg`.`mug_zone` AS `mug_zone`,`d`.`exm_type` AS `exm_type` from ((`weight_exercises` `e` join `exercise_muscle_details` `d` on(`d`.`wet_id` = `e`.`wet_id`)) join `muscle_group` `mg` on(`mg`.`mug_id` = `d`.`mug_id`)) */;
-/*!50001 SET character_set_client      = @saved_cs_client */;
-/*!50001 SET character_set_results     = @saved_cs_results */;
-/*!50001 SET collation_connection      = @saved_col_connection */;
 
 SET FOREIGN_KEY_CHECKS=1;

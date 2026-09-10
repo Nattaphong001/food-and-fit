@@ -100,6 +100,13 @@ func Register(c *gin.Context) {
 	}
 
 	if err := config.DB.Create(&member).Error; err != nil {
+		// กันช่องโหว่ race condition: 2 request สมัครอีเมลเดียวกันพร้อมกัน
+		// ผ่านเช็ค SELECT ด้านบนได้ทั้งคู่ (ไม่ atomic) — ตัวที่ INSERT ทีหลังชน
+		// UNIQUE KEY uq_mb_email (เพิ่ม 2026-09-11) แล้วได้ MySQL error 1062 แทน
+		if helpers.IsDuplicateKeyError(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "อีเมลนี้มีในระบบแล้ว"})
+			return
+		}
 		log.Printf("Register: create member failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่"})
 		return
