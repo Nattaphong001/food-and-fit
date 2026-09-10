@@ -15,7 +15,6 @@ class AuthService extends GetxService {
 
   // Keys สำหรับเก็บข้อมูล
   static const String _tokenKey = 'auth_token';
-  static const String _roleKey = 'user_role';
   static const String _userDataKey = 'user_data';
   static const String _profileCompleteKey = 'is_profile_complete';
   static const String _installMarkerKey = 'app_install_marker';
@@ -23,7 +22,6 @@ class AuthService extends GetxService {
   // Observable variables สำหรับ UI
   final isLoggedIn = false.obs;
   final isLoading = false.obs;
-  final userRole = ''.obs; // 'admin' หรือ 'user'
   final isProfileComplete = false.obs; // ✅ เช็คว่ากรอกข้อมูลร่างกายหรือยัง
 
   @override
@@ -46,12 +44,10 @@ class AuthService extends GetxService {
 
   void checkLoginStatus() {
     final token = _storage.read(_tokenKey);
-    final role = _storage.read(_roleKey);
     final profileStatus = _storage.read(_profileCompleteKey) ?? false;
 
     if (token != null) {
       isLoggedIn.value = true;
-      userRole.value = role ?? '';
       isProfileComplete.value = profileStatus;
       // Validate token against server in background — clears session if expired
       _validateToken();
@@ -75,7 +71,7 @@ class AuthService extends GetxService {
   Future<void> _eraseUserData() async {
     // ลบทีละ key แทน erase() เพื่อความปลอดภัย
     for (final key in [
-      _tokenKey, _roleKey, _userDataKey, _profileCompleteKey,
+      _tokenKey, _userDataKey, _profileCompleteKey,
       // workout plan keys
       'active_plan_id', 'active_plan_days', 'active_plan_name',
       'active_plan_type', 'active_plan_weekday_based',
@@ -95,7 +91,6 @@ class AuthService extends GetxService {
     await _eraseUserData();
     isLoggedIn.value = false;
     isProfileComplete.value = false;
-    userRole.value = '';
   }
 
   // ==========================================
@@ -127,30 +122,24 @@ class AuthService extends GetxService {
           print('[Login] 4. eraseUserData done');
           // บันทึก token ก่อน เพื่อให้เรียก API ถัดไปได้
           await _storage.write(_tokenKey, token);
-          await _storage.write(_roleKey, role);
           await _storage.write(_userDataKey, userData);
 
           bool isComplete = false;
-          if (role == 'admin') {
-            isComplete = true;
-          } else {
-            // เช็คจาก /member/profile ว่ากรอกข้อมูลร่างกายแล้วหรือยัง
-            try {
-              final profileRes = await _api.get('/member/profile');
-              if (profileRes.statusCode == 200) {
-                final stats = profileRes.data['body_stats'] as Map<String, dynamic>?;
-                final height = double.tryParse(stats?['height']?.toString() ?? '0') ?? 0;
-                final weight = double.tryParse(stats?['weight']?.toString() ?? '0') ?? 0;
-                isComplete = height > 0 && weight > 0;
-              }
-            } catch (_) {
-              isComplete = false;
+          // เช็คจาก /member/profile ว่ากรอกข้อมูลร่างกายแล้วหรือยัง
+          try {
+            final profileRes = await _api.get('/member/profile');
+            if (profileRes.statusCode == 200) {
+              final stats = profileRes.data['body_stats'] as Map<String, dynamic>?;
+              final height = double.tryParse(stats?['height']?.toString() ?? '0') ?? 0;
+              final weight = double.tryParse(stats?['weight']?.toString() ?? '0') ?? 0;
+              isComplete = height > 0 && weight > 0;
             }
+          } catch (_) {
+            isComplete = false;
           }
 
           await _storage.write(_profileCompleteKey, isComplete);
           isLoggedIn.value = true;
-          userRole.value = role;
           isProfileComplete.value = isComplete;
 
           return {
@@ -238,12 +227,10 @@ class AuthService extends GetxService {
         final token = data['token'];
         if (token != null) {
           await _storage.write(_tokenKey, token);
-          await _storage.write(_roleKey, 'user');
           if (data['user'] != null) {
             await _storage.write(_userDataKey, data['user']);
           }
           isLoggedIn.value = true;
-          userRole.value = 'user';
           isProfileComplete.value = false;
         }
         return {
@@ -356,8 +343,7 @@ class AuthService extends GetxService {
   // ==========================================
   Future<void> logout() async {
     try {
-      final path = userRole.value == 'admin' ? '/admin/logout' : '/logout';
-      await _api.post(path, {});
+      await _api.post('/logout', {});
     } catch (_) {
       // Network error — ยังต้อง logout ฝั่งเครื่องได้เสมอ
     }
@@ -367,8 +353,5 @@ class AuthService extends GetxService {
 
   // Helper Methods
   String? getToken() => _storage.read(_tokenKey);
-  String? getRole() => _storage.read(_roleKey);
   Map<String, dynamic>? getUserData() => _storage.read(_userDataKey);
-  bool get isAdmin => userRole.value == 'admin';
-  bool get isUser => userRole.value == 'member';
 }

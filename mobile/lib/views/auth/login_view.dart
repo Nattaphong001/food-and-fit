@@ -88,11 +88,6 @@ class _LoginViewState extends State<LoginView> {
         _emailController.clear();
         _passwordController.clear();
 
-        // ตรวจสอบ Role และสถานะ Profile แล้วเด้งไปหน้าที่ถูกต้อง
-        // final role = result['role'];
-        // if (role == 'admin') {
-        //   Get.offAllNamed('/admin/dashboard'); // ปิด UI แอดมิน (ปิดทางเข้าถึง)
-        // } else
         if (Get.find<AuthService>().isProfileComplete.value) {
           Get.offAllNamed('/home');
         } else {

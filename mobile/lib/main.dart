@@ -25,7 +25,6 @@ import 'views/auth/forgot_password_view.dart';
 import 'views/member/onboarding/personalize_profile_view.dart';
 import 'views/member/onboarding/onboarding_result_view.dart';
 import 'shell/main_shell.dart';
-// import 'views/admin/admin_dashboard_view.dart'; // ปิด UI แอดมิน (ปิดทางเข้าถึง)
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,7 +63,6 @@ class GenZFitApp extends StatelessWidget {
   String _resolveInitialRoute() {
     final auth = AuthService.to;
     if (!auth.isLoggedIn.value) return '/welcome';
-    // if (auth.userRole.value == 'admin') return '/admin/dashboard'; // ปิด UI แอดมิน (ปิดทางเข้าถึง)
     return auth.isProfileComplete.value ? '/home' : '/onboarding';
   }
 
@@ -143,7 +141,6 @@ class GenZFitApp extends StatelessWidget {
         GetPage(name: '/onboarding', page: () => const PersonalizeProfileView()),
         GetPage(name: '/onboarding-result', page: () => const OnboardingResultView()),
         GetPage(name: '/home', page: () => const MainShell()),
-        // GetPage(name: '/admin/dashboard', page: () => const AdminDashboardView()), // ปิด UI แอดมิน
       ],
     );
   }
