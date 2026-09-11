@@ -20,13 +20,13 @@
 |---|---|---|
 | <img src="docs/screenshots/onboarding-bmr-tdee.jpg" width="240"> | <img src="docs/screenshots/dashboard-daily-energy.jpg" width="240"> | <img src="docs/screenshots/workout-plan-schedule.jpg" width="240"> |
 
-| ฝึกเวทเทรนนิ่ง (Smart Auto Calorie) | สรุปผลหลังฝึก | บันทึกอาหารรายวัน |
+| เลือกท่าฝึกเวทเทรนนิ่ง | ฝึกเวทเทรนนิ่ง (Smart Auto Calorie) | สรุปผลหลังฝึก |
 |---|---|---|
-| <img src="docs/screenshots/weight-training-session.jpg" width="240"> | <img src="docs/screenshots/weight-training-summary.jpg" width="240"> | <img src="docs/screenshots/food-log-daily.jpg" width="240"> |
+| <img src="docs/screenshots/exercise-picker.jpg" width="240"> | <img src="docs/screenshots/weight-training-session.jpg" width="240"> | <img src="docs/screenshots/weight-training-summary.jpg" width="240"> |
 
-| ค้นหาเมนูอาหาร | เลือกท่าฝึกเวทเทรนนิ่ง |
+| ค้นหาเมนูอาหาร | บันทึกอาหารรายวัน |
 |---|---|
-| <img src="docs/screenshots/food-search.jpg" width="240"> | <img src="docs/screenshots/exercise-picker.jpg" width="240"> |
+| <img src="docs/screenshots/food-search.jpg" width="240"> | <img src="docs/screenshots/food-log-daily.jpg" width="240"> |
 
 **ฝั่งแอดมิน (admin-web)**
 
