@@ -265,6 +265,8 @@ func GetProfile(c *gin.Context) {
 // เฉพาะตอนอายุเต็มปีเปลี่ยนจริง หรือ gender เปลี่ยนจริงเท่านั้น (เทียบกับค่าเดิมใน DB) กันไม่ให้เกิด
 // แถวประวัติซ้ำซ้อนตอนหน้าแก้ไขข้อมูลร่างกาย (มือถือ) เรียก endpoint นี้ตามด้วย UpdateBodyStats ติดกัน
 // — ถ้าไม่เปลี่ยนอะไรที่กระทบสูตรเลย จะไม่ insert ประวัติซ้ำ (เดิม insert ทุกครั้งไม่มีเงื่อนไข)
+// 2026-09-12: การ insert member_bmr_history เปลี่ยนเป็น upsert รายวันแล้ว (เดิม tx.Create() ดิบ
+// ไม่เช็คแถวเดิมของวันนี้ก่อน — เป็น path เดียวใน 3 path ที่เขียนตารางนี้ที่ยังไม่ upsert ตาม D10)
 func EditProfile(c *gin.Context) {
 	var req EditProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -316,6 +318,27 @@ func EditProfile(c *gin.Context) {
 		bmi, bmr, tdee, targetCal := services.CalculateGoals(
 			bodyStat.MbsWeight, bodyStat.MbsHeight, ageFromBirthDate(parsedDate), req.Gender, bodyStat.MbsActivityLevel, bodyStat.MbsTarget,
 		)
+
+		// upsert รายวันเหมือน UpdateBodyStats/UpdateProfile (ดู D10) — เดิม Create() ดิบไม่เช็คแถวเดิม
+		// ของวันนี้ก่อน ทำให้เพศ/วันเกิดที่แก้ 2 ครั้งในวันเดียวกันได้ประวัติซ้ำ 2 แถว (2026-09-12)
+		now := time.Now()
+		todayStr := now.Format("2006-01-02")
+		todayDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+		var existingHistory models.MemberBmrHistory
+		tx.Where("mb_id = ? AND mbh_record_date = ?", userID, todayStr).
+			Order("mbh_id desc").Limit(1).Find(&existingHistory)
+
+		if existingHistory.MbhID != 0 {
+			return tx.Model(&models.MemberBmrHistory{}).Where("mbh_id = ?", existingHistory.MbhID).Updates(map[string]interface{}{
+				"mbs_id":          bodyStat.MbsID,
+				"mbh_bmi":         bmi,
+				"mbh_bmr":         bmr,
+				"mbh_tdee":        tdee,
+				"mbh_tdee_target": targetCal,
+			}).Error
+		}
+
 		newHistory := models.MemberBmrHistory{
 			MbID:          userID.(int),
 			MbsID:         &bodyStat.MbsID,
@@ -323,7 +346,7 @@ func EditProfile(c *gin.Context) {
 			MbhBmr:        bmr,
 			MbhTdee:       tdee,
 			MbhTdeeTarget: targetCal,
-			MbhRecordDate: time.Now(),
+			MbhRecordDate: todayDate,
 		}
 		return tx.Create(&newHistory).Error
 	})
