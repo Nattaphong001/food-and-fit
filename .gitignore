@@ -29,6 +29,9 @@ backend/uploads/**
 !backend/uploads/**/
 !backend/uploads/**/.gitkeep
 
+# ===== DB dump / เครดิตแอดมิน (PDPA - มีอีเมล/password hash สมาชิกจริง + รหัสผ่านแอดมินดิบ) =====
+Database/
+
 # ===== Secrets =====
 .env
 .env.local
