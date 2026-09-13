@@ -1,4 +1,4 @@
-// DailyNotificationEngine — เช็คความคืบหน้าจริงของวันนี้ (แคลอรี่ / ออกกำลังกาย) แล้วยิง
+// DailyNotificationEngine — เช็คความคืบหน้าจริงของวันนี้ (พลังงาน / ออกกำลังกาย) แล้วยิง
 // local push ทันทีถ้ายังไม่ถึงเป้า ทำงานเฉพาะตอนแอปเปิดอยู่ (foreground) เท่านั้น เพราะต้องอ่าน
 // ข้อมูลที่เป็นปัจจุบัน ณ ขณะนั้นจาก AnalyticsService — ไม่ใช้ background schedule
 //
@@ -45,7 +45,7 @@ class DailyNotificationEngine {
     await _checkWorkout(hour, fired, daily.exerciseBurn);
   }
 
-  // แบ่งช่วงเวลาตามเวลาปัจจุบันที่เปิดแอป เทียบสัดส่วนแคลอรี่ที่ "ควรกินไปแล้ว" ของช่วงนั้น
+  // แบ่งช่วงเวลาตามเวลาปัจจุบันที่เปิดแอป เทียบสัดส่วนพลังงานที่ "ควรกินไปแล้ว" ของช่วงนั้น
   Future<void> _checkMeal(int hour, Set<String> fired, double eaten, double target) async {
     late final String window;
     late final double expectedRatio;
@@ -55,16 +55,16 @@ class DailyNotificationEngine {
 
     if (hour >= 19) {
       window = 'evening'; expectedRatio = 0.9; id = _idMealEvening;
-      title = '🌙 ใกล้หมดวันแล้ว แคลอรี่วันนี้ยังไม่ครบเป้า';
+      title = '🌙 ใกล้หมดวันแล้ว พลังงานวันนี้ยังไม่ครบเป้า';
       body  = 'เช็คมื้ออาหารวันนี้อีกครั้งก่อนนอน';
     } else if (hour >= 13) {
       window = 'noon'; expectedRatio = 0.6; id = _idMealNoon;
-      title = '🥗 แคลอรี่วันนี้ยังไม่ถึงเป้า';
+      title = '🥗 พลังงานวันนี้ยังไม่ถึงเป้า';
       body  = 'อย่าลืมบันทึกมื้อเที่ยงด้วยนะ';
     } else if (hour >= 10) {
       window = 'morning'; expectedRatio = 0.25; id = _idMealMorning;
       title = '🍽️ ยังไม่ได้กินอาหารเช้าเลยนะ';
-      body  = 'บันทึกมื้อเช้าเพื่อให้ได้แคลอรี่ตามเป้าหมายวันนี้';
+      body  = 'บันทึกมื้อเช้าเพื่อให้ได้พลังงานตามเป้าหมายวันนี้';
     } else {
       return; // ยังเช้ามืดเกินไป ไม่ต้องเตือน
     }

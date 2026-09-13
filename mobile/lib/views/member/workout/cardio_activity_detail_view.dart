@@ -814,7 +814,7 @@ class _CardioHistorySheetState extends State<_CardioHistorySheet> {
           _statCard(label: 'เวลาสะสม', value: _totalDuration > 0 ? _totalDuration.toStringAsFixed(0) : '—',
               unit: 'นาที', icon: Icons.timer_outlined, iconColor: Colors.deepPurple.shade300),
           const SizedBox(width: 10),
-          _statCard(label: 'แคลอรี่สะสม', value: _totalCalories > 0 ? _totalCalories.toStringAsFixed(0) : '—',
+          _statCard(label: 'พลังงานสะสม', value: _totalCalories > 0 ? _totalCalories.toStringAsFixed(0) : '—',
               unit: 'kcal', icon: Icons.local_fire_department_rounded, iconColor: Colors.orange.shade400),
         ]),
         if (widget.hasDistance) ...[
@@ -882,7 +882,7 @@ class _CardioHistorySheetState extends State<_CardioHistorySheet> {
     );
   }
 
-  // ── กราฟแนวโน้ม: สลับแท็บ แคลอรี่ / ระยะเวลา / ระยะทาง(ถ้ามี) ───────────────
+  // ── กราฟแนวโน้ม: สลับแท็บ พลังงาน / ระยะเวลา / ระยะทาง(ถ้ามี) ───────────────
   Widget _buildChart(List<String> allDatesDesc) {
     final chartDates = allDatesDesc.reversed.toList(); // oldest → newest
     const green = Color(0xFF00C978);
@@ -999,7 +999,7 @@ class _CardioHistorySheetState extends State<_CardioHistorySheet> {
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(22)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        seg('แคลอรี่', _CardioChartMetric.calories),
+        seg('พลังงาน', _CardioChartMetric.calories),
         seg('เวลา', _CardioChartMetric.duration),
         if (widget.hasDistance) seg('ระยะทาง', _CardioChartMetric.distance),
       ]),

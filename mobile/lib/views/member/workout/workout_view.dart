@@ -1044,7 +1044,7 @@ class _WorkoutViewState extends State<WorkoutView> with RouteAware {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const Text(
-                'แคลอรี่ที่เผาผลาญ',
+                'พลังงานที่เผาผลาญ',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 20,
@@ -1937,7 +1937,7 @@ class _WorkoutViewState extends State<WorkoutView> with RouteAware {
             const SizedBox(height: 12),
             _cardioDetailRow(
               Icons.local_fire_department_rounded,
-              'แคลอรี่',
+              'พลังงาน',
               '${r.caloriesBurned.round()} kcal',
               Colors.orange,
             ),

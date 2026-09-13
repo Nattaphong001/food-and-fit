@@ -977,7 +977,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
         const SizedBox(height: 10),
         Row(children: [
           _statCard(
-            label: 'แคลอรี่สะสม',
+            label: 'พลังงานสะสม',
             value: _totalCalories > 0 ? _totalCalories.toStringAsFixed(0) : '—',
             unit: 'kcal',
             icon: Icons.local_fire_department_rounded,

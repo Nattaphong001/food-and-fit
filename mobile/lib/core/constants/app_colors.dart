@@ -75,10 +75,10 @@ class AppColors {
   /// เข้มกว่าฟ้าทั่วไปโดยตั้งใจ — ต้องคู่กับตัวหนังสือขาว ได้ contrast ~5.2:1 (WCAG AA)
   static const Color alertInfo = Color(0xFF2563EB);
 
-  /// สีเขียวอ่อน — badge แคลอรี่
+  /// สีเขียวอ่อน — badge พลังงาน
   static const Color calorieBadgeBg = Color(0xFFE0F5E9);
 
-  /// ข้อความใน badge แคลอรี่
+  /// ข้อความใน badge พลังงาน
   static const Color calorieBadgeText = Color(0xFF2BCC81);
 
   /// Progress bar พื้นหลัง (คาร์ดิโอ goal card)
