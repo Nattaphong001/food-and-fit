@@ -32,7 +32,7 @@ class ApiClient {
   //    ไม่ใส่ REAL_IP มา = ใช้ค่า default ด้านล่าง
   // ============================================================
   static const _realDeviceIp =
-      String.fromEnvironment('REAL_IP', defaultValue: '192.168.1.50');
+      String.fromEnvironment('REAL_IP', defaultValue: '192.168.1.122');
 
   // ตัวเลือก: 'emulator' (default) | 'real'
   // กำหนดผ่าน --dart-define=DEVICE=real ตอน run (ดู .vscode/launch.json)
