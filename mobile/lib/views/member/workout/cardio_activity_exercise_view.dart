@@ -1,5 +1,5 @@
 // หน้า: Cardio Activity Exercise (บันทึกคาร์ดิโอ)
-// ทำหน้าที่: หน้าออกกำลังกายคาร์ดิโอจริง จับเวลา บันทึกระยะทาง และคำนวณแคลอรี่เผาผลาญ
+// ทำหน้าที่: หน้าออกกำลังกายคาร์ดิโอจริง จับเวลา บันทึกระยะทาง และคำนวณพลังงานเผาผลาญ
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -98,7 +98,7 @@ class _CardioActivityExerciseViewState extends State<CardioActivityExerciseView>
   // ── Data Controllers ──────────────────────────────────────────────────────────
   final _distanceController = TextEditingController();
 
-  // น้ำหนักจริงของสมาชิก ใช้คำนวณแคลอรี่สดระหว่างเล่น ให้ตรงกับที่ backend
+  // น้ำหนักจริงของสมาชิก ใช้คำนวณพลังงานสดระหว่างเล่น ให้ตรงกับที่ backend
   // ใช้คำนวณตอนบันทึกจริง (SaveCardioResult ใช้ mbs_weight ล่าสุดของสมาชิก ไม่ใช่ค่าคงที่)
   double _memberWeightKg = 65.0;
 

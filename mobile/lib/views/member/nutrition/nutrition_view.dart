@@ -1,5 +1,5 @@
 // หน้า: Nutrition (บันทึกอาหาร)
-// ทำหน้าที่: หน้าบันทึกและดูรายการอาหารประจำวัน แสดงแคลอรี่และสารอาหาร เพิ่มหรือลบรายการอาหารได้
+// ทำหน้าที่: หน้าบันทึกและดูรายการอาหารประจำวัน แสดงพลังงานและสารอาหาร เพิ่มหรือลบรายการอาหารได้
 
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
@@ -346,7 +346,7 @@ class NutritionViewState extends State<NutritionView> with RouteAware {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('แคลอรี่$_dateLabel',
+              Text('พลังงาน$_dateLabel',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -648,7 +648,7 @@ class NutritionViewState extends State<NutritionView> with RouteAware {
             const SizedBox(height: 16),
             const Divider(height: 1),
             const SizedBox(height: 16),
-            _foodDetailRow(Icons.local_fire_department_rounded, 'แคลอรี่', '${item.totalCalories.round()} kcal', Colors.orange),
+            _foodDetailRow(Icons.local_fire_department_rounded, 'พลังงาน', '${item.totalCalories.round()} kcal', Colors.orange),
             const SizedBox(height: 12),
             _foodDetailRow(Icons.egg_alt_rounded, 'โปรตีน', '${item.totalProtein.round()} กรัม', const Color(0xFF5B8CFF)),
             const SizedBox(height: 12),
