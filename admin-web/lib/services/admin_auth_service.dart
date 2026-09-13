@@ -125,6 +125,11 @@ class AdminAuthService extends GetxService {
     await _clearSession();
   }
 
+  // ใช้เมื่อ token ที่ถืออยู่ invalid อยู่แล้ว (เช่น ApiClient เจอ 401) — เคลียร์เฉพาะฝั่งเครื่อง
+  // ห้ามเรียก logout() (ที่ยิง POST /admin/logout ด้วย token เดิมที่ invalid) เพราะ endpoint นั้น
+  // ต้องมี Bearer token valid เท่านั้น จะได้ 401 กลับมาอีก แล้ววนเรียก interceptor ซ้ำไม่จบ
+  Future<void> clearSessionLocally() => _clearSession();
+
   Future<void> _clearSession() async {
     await _storage.remove(_tokenKey);
     await _storage.remove(_userDataKey);

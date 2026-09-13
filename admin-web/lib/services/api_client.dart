@@ -20,6 +20,7 @@ class ApiClient {
 
   late Dio dio;
   final storage = GetStorage();
+  static bool _handling401 = false;
 
   ApiClient() {
     dio = Dio(BaseOptions(
@@ -55,14 +56,20 @@ class ApiClient {
       //               LoginView เดิมกลางคันตอนกด login พลาด ทำให้ฟอร์มโดนรีเซ็ต (เคยแก้ไม่ได้/
       //               ข้อความ error ที่ควรโชว์หาย เพราะ _submit() เช็ค mounted แล้วเจอ false)
       // [INPUT] response ของทุก request ที่ผ่าน ApiClient
-      // [OUTPUT] response.statusCode == 401 (path อื่นที่ไม่ใช่ /login) → logout() + redirect ไป
-      //          LoginView ทั้งเว็บ (ไม่ใช่แค่หน้าที่ยิง request) response อื่นผ่านต่อไปยังโค้ดเดิมตามปกติ
+      // [OUTPUT] response.statusCode == 401 (path อื่นที่ไม่ใช่ /login, /admin/logout) → เคลียร์
+      //          session ฝั่งเครื่อง (ไม่ยิง POST /admin/logout ซ้ำ — endpoint นั้นต้องมี token valid
+      //          เอง ถ้าเรียกจะได้ 401 กลับมาวนเข้า interceptor นี้อีกไม่จบ ทำให้หน้า login กระพริบ
+      //          รัวๆ ไม่หยุด บั๊กนี้เจอจริง 2026-09-13) + redirect ไป LoginView ทั้งเว็บ (ไม่ใช่แค่
+      //          หน้าที่ยิง request) กันซ้ำด้วย _handling401 เพราะหลายหน้าอาจยิง request พร้อมกันแล้ว
+      //          401 กลับมาพร้อมกันหลายอัน — response อื่นผ่านต่อไปยังโค้ดเดิมตามปกติ
       // [RELATED] AUTH
       // --------------------------------------------
       onResponse: (response, handler) {
-        final isLoginRequest = response.requestOptions.path == '/login';
-        if (response.statusCode == 401 && !isLoginRequest) {
-          AdminAuthService.to.logout();
+        final path = response.requestOptions.path;
+        final skipAutoLogout = path == '/login' || path == '/admin/logout';
+        if (response.statusCode == 401 && !skipAutoLogout && !_handling401) {
+          _handling401 = true;
+          AdminAuthService.to.clearSessionLocally().whenComplete(() => _handling401 = false);
           Get.offAll(() => const LoginView());
         }
         return handler.next(response);
