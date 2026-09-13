@@ -48,8 +48,8 @@ func TestCalculateWeightTrainingCalories_UseCase(t *testing.T) {
 	}
 }
 
-// พักนานกว่าปกติ (อู้/ลืมกดจบ) งานเท่าเดิมทุกอย่าง ต้องได้แคลอรี่เท่ากัน — แก้บั๊กที่พบใน
-// สเปกตั้งต้น (multiplier ขั้นบันไดสู้เวลาไม่จำกัดไม่ไหว ได้แคลอรี่ต่างกัน 2 เท่าทั้งที่งานเท่ากัน)
+// พักนานกว่าปกติ (อู้/ลืมกดจบ) งานเท่าเดิมทุกอย่าง ต้องได้พลังงานเท่ากัน — แก้บั๊กที่พบใน
+// สเปกตั้งต้น (multiplier ขั้นบันไดสู้เวลาไม่จำกัดไม่ไหว ได้พลังงานต่างกัน 2 เท่าทั้งที่งานเท่ากัน)
 func TestCalculateWeightTrainingCalories_DurationCapPreventsInflation(t *testing.T) {
 	sets := make([]SetLog, 11)
 	for i := range sets {
@@ -60,7 +60,7 @@ func TestCalculateWeightTrainingCalories_DurationCapPreventsInflation(t *testing
 	slow := CalculateWeightTrainingCalories(75, 90*60, 0, sets)
 
 	if !almostEqual(fast.TotalCalories, slow.TotalCalories, 0.01) {
-		t.Errorf("45 นาที (%.2f kcal) กับ 90 นาที (%.2f kcal) งานเท่ากันต้องได้แคลอรี่เท่ากัน (ทั้งคู่ถูกเพดานที่ 11×4=44 นาที)",
+		t.Errorf("45 นาที (%.2f kcal) กับ 90 นาที (%.2f kcal) งานเท่ากันต้องได้พลังงานเท่ากัน (ทั้งคู่ถูกเพดานที่ 11×4=44 นาที)",
 			fast.TotalCalories, slow.TotalCalories)
 	}
 }
