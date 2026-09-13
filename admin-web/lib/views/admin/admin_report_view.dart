@@ -345,7 +345,7 @@ class _AdminReportViewState extends State<AdminReportView> {
                 pw.TableRow(
                   decoration: pw.BoxDecoration(color: pdfGrey50),
                   children: [
-                    _pdfStatCell('แคลอรี่รับรวมทั้งระบบ', '${numFmt.format(d.totalCalIn.toInt())} kcal', bold, regular, PdfColors.teal),
+                    _pdfStatCell('พลังงานที่ได้รับรวมทั้งระบบ', '${numFmt.format(d.totalCalIn.toInt())} kcal', bold, regular, PdfColors.teal),
                     _pdfStatCell('เผาผลาญรวม (พื้นฐาน + ออกกำลังกาย)', '${numFmt.format(d.totalCalOut.toInt())} kcal', bold, regular, PdfColors.orange),
                   ],
                 ),
@@ -668,7 +668,7 @@ class _AdminReportViewState extends State<AdminReportView> {
     final cards = [
       _statCard(icon: Icons.people_alt_outlined, iconColor: AppColors.textMuted, label: 'ผู้ใช้งาน', value: fmt.format(d.totalMembers), unit: 'คน', subtitle: d.newMembersTotal > 0 ? '+${fmt.format(d.newMembersTotal)} ใหม่ในช่วงนี้' : null),
       _statCard(icon: Icons.fitness_center, iconColor: AppColors.textMuted, label: 'ครั้งที่ออกกำลังกาย', value: fmt.format(d.totalWorkouts), unit: 'ครั้ง'),
-      _statCard(icon: Icons.restaurant_menu, iconColor: AppColors.textMuted, label: 'แคลอรี่รับรวมทั้งระบบ', value: fmt.format(d.totalCalIn.toInt()), unit: 'kcal'),
+      _statCard(icon: Icons.restaurant_menu, iconColor: AppColors.textMuted, label: 'พลังงานที่ได้รับรวมทั้งระบบ', value: fmt.format(d.totalCalIn.toInt()), unit: 'kcal'),
       // ตัวเลขนี้ = Baseline Expenditure (BMR×1.2 ตามบทที่ 2 หัวข้อ 2.1.4.6) + คาร์ดิโอ + เวท
       // ต่างนิยามกับกราฟรายสัปดาห์ด้านล่างที่เป็น Exercise Burn ล้วนๆ (คาร์ดิโอ+เวท ไม่รวม
       // baseline) — ป้ายเดิม "(ทุกกิจกรรม)" ทำให้เข้าใจผิดว่าเทียบกับกราฟได้ตรงๆ จึงแยกคำให้
