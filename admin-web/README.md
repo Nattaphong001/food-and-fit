@@ -1,16 +1,19 @@
-# myapp_admin
+# Food & Fit — Admin Web
 
-A new Flutter project.
+แอปฝั่งแอดมิน (Flutter Web) ของโปรเจกต์ Food & Fit — ภาพรวมระบบ, screenshot, สถาปัตยกรรม ดูที่
+[README หลัก](../README.md)
 
-## Getting Started
+## รัน
 
-This project is a starting point for a Flutter application.
+```
+flutter pub get
+flutter run -d chrome --web-port=8090
+```
 
-A few resources to get you started if this is your first Flutter project:
+ต้องมี backend รันอยู่ที่ `http://localhost:8081/api` ก่อน และ port `8090` ต้องตรงกับ
+`ALLOWED_ORIGINS` ใน `backend/.env`
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## กติกาพัฒนา
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+ดู [CLAUDE.md](CLAUDE.md) (workspace นี้) และ [../CLAUDE.md](../CLAUDE.md) (สูตรคำนวณ/DB
+convention ที่ใช้ร่วมกันทุก workspace)
