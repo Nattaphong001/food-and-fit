@@ -504,7 +504,7 @@ func GetDailyNutrition(c *gin.Context) {
 		return
 	}
 
-	// สรุปแคลอรี่รวม
+	// สรุปพลังงานรวม
 	var totalCal, totalProtein, totalCarb, totalFat float64
 	for _, l := range logs {
 		totalCal += l.DnttTotalCalories

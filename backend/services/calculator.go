@@ -82,7 +82,7 @@ func CalculateGoals(weight, height float64, age, gender int, activityLevel float
 const (
 	// เพดานเวลาเฉลี่ยต่อเซต (นาที) กันนับเวลาพักเกิน/ลืมกดจบเวิร์กเอาท์ซ้ำกับ Baseline
 	// Expenditure (BMR×1.2) ที่นับพลังงานพักนิ่งไปแล้ว — ไม่มีเพดานนี้ พักนานเท่าไหร่ก็ยิ่งได้
-	// แคลอรี่เพิ่มไม่จำกัด ทั้งที่งานที่ทำจริงเท่าเดิม
+	// พลังงานเพิ่มไม่จำกัด ทั้งที่งานที่ทำจริงเท่าเดิม
 	WeightTrainingCapMinutesPerSet = 4.0
 
 	// ขอบเขต Final MET กันหลุดขอบจากอินพุตสุดโต่ง (ไม่ใช่ค่าที่ควรชนบ่อยในการใช้งานปกติ — ค่าต่ำสุด
@@ -115,7 +115,7 @@ type WeightTrainingCalorieResult struct {
 	IntensityLevel   int8    // 1=เบา(kLoad 0.90) 2=กลาง(1.00) 3=หนัก(1.10) — ระบบอนุมานเอง ไม่ใช่ผู้ใช้เลือก
 }
 
-// CalculateWeightTrainingCalories คำนวณแคลอรี่เวทเทรนนิ่งทั้งเซสชันในครั้งเดียว (ตรงข้ามกับของเดิม
+// CalculateWeightTrainingCalories คำนวณพลังงานเวทเทรนนิ่งทั้งเซสชันในครั้งเดียว (ตรงข้ามกับของเดิม
 // ที่คำนวณทีละเซตแยกกัน) — oneRepMax คือ 1RM ที่ดีที่สุดของสมาชิกคนนี้ในท่านี้ (ดึงจาก
 // GetBest1RM ก่อนเรียกฟังก์ชันนี้ — ฟังก์ชันนี้ไม่แตะ DB) ส่ง 0 ถ้าไม่มีประวัติ
 func CalculateWeightTrainingCalories(bodyWeightKg float64, totalDurationSeconds int, oneRepMax float64, sets []SetLog) WeightTrainingCalorieResult {

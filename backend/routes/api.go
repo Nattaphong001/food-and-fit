@@ -237,7 +237,7 @@ func SetupRouter() *gin.Engine {
 			protected.DELETE("/nutrition/:id", controllers.DeleteDailyNutrition)
 
 			// --- Analytics/รายงาน ---
-			// GET /analytics/daily    → สรุปแคลอรี่เข้า-ออกรายวัน
+			// GET /analytics/daily    → สรุปพลังงานเข้า-ออกรายวัน
 			// GET /analytics/weekly   → สรุปรายสัปดาห์
 			// GET /analytics/monthly  → สรุปรายเดือน
 			// GET /analytics/progress → รายงานความก้าวหน้าภาพรวม

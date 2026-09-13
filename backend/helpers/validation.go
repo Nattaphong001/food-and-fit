@@ -136,7 +136,7 @@ func ValidateCardioResult(durationMinutes int, distanceKm float64, hasDistance b
 // calories: 0-9000 kcal, protein/carbs/fat: 0-1000 g, serving_weight: 0.1-5000
 func ValidateNutritionMacros(calories, protein, carbs, fat float64, servingWeight int) (bool, string) {
 	if calories < 0 || calories > 9000 {
-		return false, "แคลอรี่ต้องอยู่ระหว่าง 0-9000 kcal"
+		return false, "พลังงานต้องอยู่ระหว่าง 0-9000 kcal"
 	}
 	if protein < 0 || protein > 1000 {
 		return false, "โปรตีนต้องอยู่ระหว่าง 0-1000 กรัม"
@@ -153,7 +153,7 @@ func ValidateNutritionMacros(calories, protein, carbs, fat float64, servingWeigh
 	return true, ""
 }
 
-// NutritionMacroMismatchWarning - เตือน (ไม่บล็อก) ถ้าแคลอรี่ที่กรอกต่างจากที่คำนวณจาก
+// NutritionMacroMismatchWarning - เตือน (ไม่บล็อก) ถ้าพลังงานที่กรอกต่างจากที่คำนวณจาก
 // P×4+C×4+F×9 เกิน 10% — คืน string ว่างถ้าไม่มีอะไรผิดปกติ
 func NutritionMacroMismatchWarning(calories, protein, carbs, fat float64) string {
 	if calories <= 0 {
@@ -165,7 +165,7 @@ func NutritionMacroMismatchWarning(calories, protein, carbs, fat float64) string
 	}
 	diffPct := math.Abs(calories-computed) / calories * 100
 	if diffPct > 10 {
-		return fmt.Sprintf("แคลอรี่ที่กรอก (%.0f kcal) ต่างจากค่าที่คำนวณจากสารอาหาร (%.0f kcal) เกิน 10%%", calories, computed)
+		return fmt.Sprintf("พลังงานที่กรอก (%.0f kcal) ต่างจากค่าที่คำนวณจากสารอาหาร (%.0f kcal) เกิน 10%%", calories, computed)
 	}
 	return ""
 }

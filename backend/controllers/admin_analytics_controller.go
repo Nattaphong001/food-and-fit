@@ -41,7 +41,7 @@ func GetAdminOverview(c *gin.Context) {
 		) active
 	`, start, end, start, end, start, end).Scan(&totalMembers)
 
-	// ── 2. แคลอรีรวมที่กิน ──────────────────────────────────────────────
+	// ── 2. พลังงานรวมที่กิน ──────────────────────────────────────────────
 	// daily_nutrition.dntt_total_calories
 	var totalCalIn float64
 	config.DB.Raw(`
@@ -50,7 +50,7 @@ func GetAdminOverview(c *gin.Context) {
 		WHERE dntt_date BETWEEN ? AND ?
 	`, start, end).Scan(&totalCalIn)
 
-	// ── 3. แคลอรีเผาผลาญรวม ─────────────────────────────────────────────
+	// ── 3. พลังงานเผาผลาญรวม ─────────────────────────────────────────────
 	// cardio_result.cdors_calories
 	var totalCalOut float64
 	config.DB.Raw(`

@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GetDailyAnalytics - สรุปแคลอรี่และโภชนาการรายวัน
+// GetDailyAnalytics - สรุปพลังงานและโภชนาการรายวัน
 func GetDailyAnalytics(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	date := c.Query("date")
@@ -34,7 +34,7 @@ func GetDailyAnalytics(c *gin.Context) {
 		bmrHistory.MbhTdeeTarget = 2000
 	}
 
-	// 2. รวมแคลอรี่และสารอาหารที่กินเข้าไป (Calories In)
+	// 2. รวมพลังงานและสารอาหารที่กินเข้าไป (Calories In)
 	var macros struct {
 		TotalCal     float64 `gorm:"column:total_cal"`
 		TotalProtein float64 `gorm:"column:total_protein"`
@@ -46,14 +46,14 @@ func GetDailyAnalytics(c *gin.Context) {
 		Where("mb_id = ? AND dntt_date = ?", userID, date).
 		Scan(&macros)
 
-	// 3. รวมแคลอรี่จากคาร์ดิโอ
+	// 3. รวมพลังงานจากคาร์ดิโอ
 	var cardioOut struct{ Total float64 `gorm:"column:total"` }
 	config.DB.Model(&models.CardioResult{}).
 		Select("COALESCE(SUM(cdors_calories), 0) as total").
 		Where("mb_id = ? AND cdors_date = ?", userID, date).
 		Scan(&cardioOut)
 
-	// 4. รวมแคลอรี่จาก Weight Training
+	// 4. รวมพลังงานจาก Weight Training
 	var weightOut struct{ Total float64 `gorm:"column:total"` }
 	config.DB.Model(&models.WeightTrainingResult{}).
 		Select("COALESCE(SUM(wtrs_calories), 0) as total").
@@ -250,7 +250,7 @@ func GetMonthlyAnalytics(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": results})
 }
 
-// GetProgressReport - รายงานความคืบหน้า (น้ำหนัก, แคลอรี่เฉลี่ย, จำนวนครั้งที่ซ้อม)
+// GetProgressReport - รายงานความคืบหน้า (น้ำหนัก, พลังงานเฉลี่ย, จำนวนครั้งที่ซ้อม)
 func GetProgressReport(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	days := c.DefaultQuery("days", "30")
@@ -290,7 +290,7 @@ func GetProgressReport(c *gin.Context) {
 		weightChange = bodyHistory[len(bodyHistory)-1].Weight - bodyHistory[0].Weight
 	}
 
-	// 2. แคลอรี่ที่กินเข้าไปเฉลี่ยต่อวัน
+	// 2. พลังงานที่กินเข้าไปเฉลี่ยต่อวัน
 	var avgCal struct{ Avg float64 }
 	config.DB.Raw(`
 		SELECT COALESCE(AVG(daily_total), 0) as avg FROM (
@@ -497,12 +497,12 @@ func GetAdminAnalyticsOverview(c *gin.Context) {
 	var totalMembers int64
 	config.DB.Raw("SELECT COUNT(*) FROM member_profile").Scan(&totalMembers)
 
-	// 2. แคลอรี่เข้า (รวมทุกคน ในช่วง start–end)
+	// 2. พลังงานเข้า (รวมทุกคน ในช่วง start–end)
 	var calIn struct{ Total float64 }
 	config.DB.Raw(`SELECT COALESCE(SUM(dntt_total_calories), 0) as total
 		FROM daily_nutrition WHERE dntt_date BETWEEN ? AND ?`, start, end).Scan(&calIn)
 
-	// 3. แคลอรี่ออก (Baseline BMR×1.2 ต่อวันที่มีกิจกรรม + คาร์ดิโอ + เวท) — ให้ตรงนิยาม
+	// 3. พลังงานออก (Baseline BMR×1.2 ต่อวันที่มีกิจกรรม + คาร์ดิโอ + เวท) — ให้ตรงนิยาม
 	//    Total Daily Energy Output เดียวกับ GetDailyAnalytics (ข้อ 6 ด้านบน) ไม่ใช่แค่ผลรวม
 	//    exercise burn เฉยๆ เหมือนโค้ดเดิม (เคยขาด baseline ทำให้ตัวเลขแอดมินต่ำกว่าจริง)
 	var cardioCalOut struct{ Total float64 }
@@ -561,7 +561,7 @@ func GetAdminAnalyticsOverview(c *gin.Context) {
 		WHERE cdors_date BETWEEN ? AND ?) t`, start, end).Scan(&cardioSessions)
 
 	totalWorkouts := weightSessions.Count + cardioSessions.Count
-	// ฐานของ weight_percent/cardio_percent คือ "จำนวนครั้งที่บันทึก" (session count) ไม่ใช่แคลอรี่
+	// ฐานของ weight_percent/cardio_percent คือ "จำนวนครั้งที่บันทึก" (session count) ไม่ใช่พลังงาน
 	// หรือเวลา — เจตนา เพราะ weight_training_result ไม่มีฟิลด์เวลา (ดูข้อ 5 ด้านล่าง totalDuration
 	// นับเฉพาะคาร์ดิโอ) จึงไม่มีฐานเวลาที่ใช้เทียบทั้งสองประเภทกิจกรรมได้ session count เป็นค่าเดียว
 	// ที่มีครบทั้งคู่โดยไม่ต้องพึ่งฟิลด์ที่ขาด
