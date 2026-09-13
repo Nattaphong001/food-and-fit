@@ -261,7 +261,7 @@ class _DashboardViewState extends State<DashboardView>
       _insightColor = const Color(0xFF5B8CFF);
       _insightIcon  = Icons.fitness_center_rounded;
     } else if (d.totalCaloriesIn > _targetCalories * (1 + _kTargetTolerance)) {
-      _insightMsg   = 'แคลอรี่เกินเป้า +${(d.totalCaloriesIn - _targetCalories).round()}kcal — ลองเดิน 30 นาทีเพิ่ม';
+      _insightMsg   = 'พลังงานเกินเป้า +${(d.totalCaloriesIn - _targetCalories).round()}kcal — ลองเดิน 30 นาทีเพิ่ม';
       _insightColor = Colors.orange;
       _insightIcon  = Icons.directions_walk_rounded;
     } else if (_workoutDaysThisWeek == 0 && (_weekly?.weekData.isNotEmpty ?? false)) {
@@ -764,16 +764,20 @@ class _DashboardViewState extends State<DashboardView>
     child: ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 104),
       children: [
-        if (_insightMsg != null && _selectedPeriod == 0) ...[
-          _buildInsightCard(), const SizedBox(height: 12),
-        ],
         ...switch (_selectedPeriod) {
+          // ข้อเสนอแนะประจำวัน (_buildInsightCard) ย้ายจากหัวแท็บลงมาอยู่ท้ายการ์ด
+          // "พลังงานวันนี้" แล้ว — เป็นบทสรุปของตัวเลขในการ์ดนั้นโดยตรง ไม่ใช่ป้ายลอยแยก
           0 => _viewMode == _ViewMode.graph
               ? [
-                  _buildCalorieRing(), const SizedBox(height: 12),
-                  _buildEnergyFlowCard(),
+                  _buildEnergyFlowCard(), const SizedBox(height: 12),
+                  _buildDailyEnergyCard(),
                 ]
-              : [_buildEnergyDailyTable()],
+              : [
+                  _buildEnergyDailyTable(),
+                  if (_insightMsg != null) ...[
+                    const SizedBox(height: 12), _buildInsightCard(),
+                  ],
+                ],
           1 => _viewMode == _ViewMode.graph
               ? [
                   _buildWeeklyGoalCompliance(), const SizedBox(height: 12),
@@ -813,7 +817,11 @@ class _DashboardViewState extends State<DashboardView>
     ]),
   );
 
-  Widget _buildCalorieRing() {
+  /// การ์ดสรุปผลพลังงานของวัน (หน้ารายงาน) — จงใจไม่ใช้โดนัทซ้ำกับหน้าอาหาร ที่นั่นเป็นหน้า
+  /// "บันทึก" จึงโชว์โดนัท + เป้าหมาย/รับแล้ว/คงเหลือ ไว้ดูความคืบหน้าระหว่างวัน ส่วนหน้านี้เป็น
+  /// หน้า "รายงาน" ต้องอ่านได้เป็นผลสรุป: ตัวเลขกิน/เป้า → ประโยคสรุป 1 บรรทัด → แถบเทียบ
+  /// ช่วงตามเป้า ±10% → ตัวเลขประกอบ 3 ค่า → ข้อเสนอแนะปิดท้าย
+  Widget _buildDailyEnergyCard() {
     if (!_hasTarget) {
       return _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('พลังงานวันนี้', style: TextStyle(
@@ -827,84 +835,150 @@ class _DashboardViewState extends State<DashboardView>
     final isOver   = _caloriesIn > _targetCalories;
     final excess   = isOver ? _caloriesIn - _targetCalories : 0.0;
     final remain   = isOver ? 0.0 : _targetCalories - _caloriesIn;
+    final logged   = _caloriesIn > 0;
     final (statusLabel, statusColor) = _energyStatus(_caloriesIn, _targetCalories);
+    final bandLow  = _targetCalories * (1 - _kTargetTolerance);
+    final bandHigh = _targetCalories * (1 + _kTargetTolerance);
 
-    return _card(child: Column(children: [
+    final summary = !logged
+        ? 'ยังไม่ได้บันทึกอาหารวันนี้ — ยังสรุปผลไม่ได้'
+        : isOver
+            ? 'กินเกินเป้าหมายไปแล้ว ${excess.round()} kcal'
+            : 'กินได้อีก ${remain.round()} kcal จึงจะครบเป้าหมาย';
+
+    return _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         const Text('พลังงานวันนี้', style: TextStyle(
             fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
         _badge(statusLabel, statusColor),
       ]),
-      const SizedBox(height: 18),
+      const SizedBox(height: 14),
+      Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text('${_caloriesIn.round()}', style: TextStyle(
+              fontSize: 32, fontWeight: FontWeight.w800,
+              color: logged ? statusColor : AppColors.textMuted)),
+          Text(' / ${_targetCalories.round()} kcal', style: const TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+        ]),
+      const SizedBox(height: 4),
+      Text(summary, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+          color: logged ? statusColor : AppColors.textMuted)),
+      const SizedBox(height: 14),
+      _targetBar(progress, logged ? statusColor : AppColors.textMuted),
+      const SizedBox(height: 2),
+      Text('ช่วงตามเป้า ${bandLow.round()}–${bandHigh.round()} kcal (±10% ของเป้าหมาย)',
+          style: const TextStyle(fontSize: 9, color: AppColors.textMuted)),
+      const SizedBox(height: 14),
+      const Divider(height: 1, color: AppColors.divider),
+      const SizedBox(height: 12),
       Row(children: [
-        SizedBox(width: 140, height: 140, child: CustomPaint(
-          painter: _DonutPainter(progress: progress,
-              trackColor: AppColors.primaryGreen.withValues(alpha: 0.1),
-              fillColor: AppColors.primaryGreen, overColor: Colors.redAccent, isOver: isOver),
-          child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('${_caloriesIn.round()}', style: const TextStyle(
-                fontSize: 26, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-            const Text('kcal', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
-            const SizedBox(height: 2),
-            Text('${(progress * 100).round()}%', style: TextStyle(fontSize: 11,
-                color: isOver ? Colors.redAccent : AppColors.primaryGreen,
-                fontWeight: FontWeight.w700)),
-          ])),
-        )),
-        const SizedBox(width: 18),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _calRow(Icons.flag_rounded,              'เป้าหมาย',   _targetCalories,  AppColors.textMuted),
-          _div(),
-          _calRow(Icons.restaurant_rounded,        'กินเข้า',    _caloriesIn,  const Color(0xFF5B8CFF)),
-          _div(),
-          _calRow(Icons.local_fire_department_rounded, 'เผาผลาญ', _caloriesOut, const Color(0xFFF85B07)),
-          _div(),
-          _calRow(isOver ? Icons.remove_circle_outline_rounded : Icons.add_circle_outline_rounded,
-              isOver ? 'เกิน' : 'เหลือ', isOver ? excess : remain,
-              isOver ? Colors.redAccent : AppColors.primaryGreen),
-        ])),
+        Expanded(child: _sumStat(Icons.restaurant_rounded, 'กินเข้า',
+            _caloriesIn, const Color(0xFF5B8CFF))),
+        Expanded(child: _sumStat(Icons.local_fire_department_rounded, 'เผาผลาญรวม',
+            _caloriesOut, const Color(0xFFF85B07))),
+        Expanded(child: _sumStat(
+            isOver ? Icons.remove_circle_outline_rounded : Icons.add_circle_outline_rounded,
+            isOver ? 'เกินเป้า' : 'เหลือได้อีก', isOver ? excess : remain,
+            isOver ? Colors.redAccent : AppColors.primaryGreen)),
       ]),
+      if (_insightMsg != null) ...[
+        const SizedBox(height: 14),
+        _buildInsightCard(),
+      ],
     ]));
   }
 
-  Widget _calRow(IconData icon, String label, double val, Color c) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 3),
-    child: Row(children: [
-      Icon(icon, color: c, size: 13),
-      const SizedBox(width: 6),
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(fontSize: 9, color: AppColors.textMuted)),
-        Text('${val.round()} kcal',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: c)),
-      ]),
-    ]),
-  );
+  /// แถบเทียบเป้าหมายของวัน — เต็มแถบ = เป้าหมาย (100%) ขีดทึบคือจุดเริ่มช่วง "ตามเป้า"
+  /// ที่ 90% ของเป้าหมาย (เกณฑ์ ±10% ตาม _kTargetTolerance) ใช้แทนโดนัทเพื่อไม่ให้การ์ดนี้
+  /// หน้าตาซ้ำกับหน้าอาหาร
+  ///
+  /// ป้ายตัวเลขของขีดวางไว้ใต้ขีดโดยตรง (ไม่ใส่ในประโยคคำบรรยายด้านล่างการ์ด) — ผู้ใช้เห็นขีด
+  /// กับตัวเลขที่มันหมายถึงพร้อมกันในสายตาเดียว ไม่ต้องอ่านข้อความแยกแล้ววกกลับมาหาขีดเอง
+  Widget _targetBar(double progress, Color c) {
+    final bandLow = _targetCalories * (1 - _kTargetTolerance);
+    return LayoutBuilder(
+      builder: (_, box) {
+        final tickX = (box.maxWidth * (1 - _kTargetTolerance)).clamp(0.0, box.maxWidth);
+        return SizedBox(
+          height: 28,
+          child: Stack(clipBehavior: Clip.none, children: [
+            SizedBox(height: 10, child: Stack(children: [
+              Positioned.fill(child: Container(decoration: BoxDecoration(
+                  color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)))),
+              Positioned.fill(child: FractionallySizedBox(
+                widthFactor: progress, alignment: Alignment.centerLeft,
+                child: Container(decoration: BoxDecoration(
+                    color: c, borderRadius: BorderRadius.circular(8))),
+              )),
+              Positioned(
+                left: tickX - 1, top: 0, bottom: 0,
+                child: Container(width: 2, color: AppColors.textDark.withValues(alpha: 0.3)),
+              ),
+            ])),
+            Positioned(
+              top: 14, left: (tickX - 24).clamp(0.0, box.maxWidth - 48), width: 48,
+              child: Text('${bandLow.round()}', textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 8, color: AppColors.textMuted)),
+            ),
+          ]),
+        );
+      },
+    );
+  }
 
-  Widget _div() => const Padding(
-    padding: EdgeInsets.symmetric(vertical: 2),
-    child: Divider(height: 1, color: AppColors.divider),
-  );
+  Widget _sumStat(IconData icon, String label, double val, Color c) => Column(children: [
+    Icon(icon, color: c, size: 15),
+    const SizedBox(height: 4),
+    Text('${val.round()}',
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: c)),
+    Text(label, style: const TextStyle(fontSize: 9, color: AppColors.textMuted),
+        textAlign: TextAlign.center),
+  ]);
 
-  Widget _buildEnergyFlowCard() => _card(child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('พลังงานเข้า–ออก', style: TextStyle(
-          fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-      const SizedBox(height: 16),
-      Row(children: [
-        Expanded(child: _flowItem('🍽', 'กินเข้า',   _caloriesIn,   const Color(0xFF5B8CFF))),
-        _farrow(),
-        Expanded(child: _flowItem('🛏', 'พลังงานพื้นฐาน', _baseline, AppColors.textMuted)),
-        _farrow(),
-        Expanded(child: _flowItem('🏋️', 'ออกกำลัง', _exerciseBurn, const Color(0xFFF85B07))),
-        _farrow(),
-        Expanded(child: _flowItem(_balance >= 0 ? '📈' : '📉', 'Balance',
-            _balance.abs(), _balanceColor, prefix: _balance >= 0 ? '+' : '-')),
-      ]),
-      const SizedBox(height: 6),
-      const Text('พลังงานพื้นฐาน = BMR × 1.2 (Baseline Expenditure)',
-          style: TextStyle(fontSize: 9, color: AppColors.textMuted)),
-    ],
-  ));
+  // การ์ดหลักของ "สมดุลพลังงาน" — ตัวเลข Balance ต้องเด่นสุดในการ์ด (hero number)
+  // ส่วนกินเข้า/พื้นฐาน/ออกกำลัง เป็นแค่ส่วนประกอบของสูตรด้านล่าง
+  Widget _buildEnergyFlowCard() {
+    if (!_hasTarget) {
+      return _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('สมดุลพลังงาน', style: TextStyle(
+            fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+        const SizedBox(height: 16),
+        _emptyState('ยังไม่ได้ตั้งเป้าหมายพลังงาน — กรุณากรอกข้อมูลร่างกายและเป้าหมายสุขภาพก่อน',
+            icon: Icons.flag_outlined),
+      ]));
+    }
+    final (statusLabel, statusColor) = _energyStatus(_caloriesIn, _targetCalories);
+    return _card(child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('สมดุลพลังงาน', style: TextStyle(
+              fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+          _badge(statusLabel, statusColor),
+        ]),
+        const SizedBox(height: 2),
+        const Text('กินเข้า − (พลังงานพื้นฐาน + ออกกำลัง)',
+            style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+        const SizedBox(height: 14),
+        Center(child: Column(children: [
+          Text('${_balance >= 0 ? '+' : ''}${_balance.round()}',
+              style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800, color: _balanceColor)),
+          const Text('kcal', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+        ])),
+        const SizedBox(height: 18),
+        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Expanded(child: _flowItem('🍽', 'กินเข้า',   _caloriesIn,   const Color(0xFF5B8CFF))),
+          _opSign('−'),
+          Expanded(child: _flowItem('🛏', 'พลังงานพื้นฐาน', _baseline, AppColors.textMuted)),
+          _opSign('+'),
+          Expanded(child: _flowItem('🏋️', 'ออกกำลัง', _exerciseBurn, const Color(0xFFF85B07))),
+        ]),
+        const SizedBox(height: 6),
+        const Text('พลังงานพื้นฐาน = BMR × 1.2 (Baseline Expenditure)',
+            style: TextStyle(fontSize: 9, color: AppColors.textMuted)),
+      ],
+    ));
+  }
 
   Widget _flowItem(String e, String l, double v, Color c, {String prefix = ''}) =>
     Column(children: [
@@ -917,9 +991,10 @@ class _DashboardViewState extends State<DashboardView>
           textAlign: TextAlign.center),
     ]);
 
-  Widget _farrow() => const Padding(
-    padding: EdgeInsets.only(bottom: 16),
-    child: Icon(Icons.chevron_right_rounded, color: AppColors.divider, size: 18),
+  Widget _opSign(String sign) => Padding(
+    padding: const EdgeInsets.only(bottom: 16),
+    child: Text(sign, style: const TextStyle(
+        fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textMuted)),
   );
 
   // โหมดตาราง มุมมองรายวัน — สรุปพลังงานเข้า/ออกของวันที่เลือกเป็นตารางเดียว
@@ -979,7 +1054,7 @@ class _DashboardViewState extends State<DashboardView>
             backgroundColor: color.withValues(alpha: 0.1),
             valueColor: AlwaysStoppedAnimation(color))),
       const SizedBox(height: 8),
-      const Text('วันที่แคลอรี่อยู่ในช่วง ±10% ของเป้าหมาย',
+      const Text('วันที่พลังงานอยู่ในช่วง ±10% ของเป้าหมาย',
           style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
     ]));
   }
@@ -1005,6 +1080,10 @@ class _DashboardViewState extends State<DashboardView>
   Widget _buildWeeklyBarChart() {
     final pts = _weekly?.weekData ?? [];
     const dn  = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+    // กราฟนี้คงแกน 7 วันของสัปดาห์ไว้ (แท่งต้องตรงกับวันจริง เทียบวันต่อวันได้) แต่ถ้าทั้ง
+    // สัปดาห์ไม่มีบันทึกเลย แท่ง 0 ทั้ง 7 แท่งไม่ได้สื่ออะไร — ขึ้นข้อความแทนดีกว่า
+    // (pts.isEmpty ใช้เช็คไม่ได้ เพราะ _densify เติมให้ครบ 7 วันเสมอ)
+    final recordedDays = pts.where((e) => e.calories > 0 || e.caloriesOut > 0).length;
     return _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         const Text('พลังงาน 7 วัน', style: TextStyle(
@@ -1015,15 +1094,21 @@ class _DashboardViewState extends State<DashboardView>
         ]),
       ]),
       const SizedBox(height: 16),
-      SizedBox(height: 160,
-        child: pts.isEmpty ? _emptyChart() : CustomPaint(
-          painter: _BarChartPainter(
-            dataIn: pts.map((e) => e.calories).toList(),
-            dataOut: pts.map((e) => e.caloriesOut).toList(),
-            targetLine: _fillTargetGaps(pts.map((e) => e.targetTdee).toList()),
-            colorIn: AppColors.primaryGreen, colorOut: const Color(0xFFF85B07),
-          ), size: Size.infinite)),
-      if (pts.isNotEmpty) ...[
+      if (recordedDays == 0)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: _emptyState('ยังไม่มีวันที่บันทึกข้อมูลในสัปดาห์นี้',
+              icon: Icons.edit_note_rounded),
+        )
+      else ...[
+        SizedBox(height: 160,
+          child: CustomPaint(
+            painter: _BarChartPainter(
+              dataIn: pts.map((e) => e.calories).toList(),
+              dataOut: pts.map((e) => e.caloriesOut).toList(),
+              targetLine: _fillTargetGaps(pts.map((e) => e.targetTdee).toList()),
+              colorIn: AppColors.primaryGreen, colorOut: const Color(0xFFF85B07),
+            ), size: Size.infinite)),
         const SizedBox(height: 6),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: pts.map((e) {
@@ -1032,14 +1117,18 @@ class _DashboardViewState extends State<DashboardView>
                 style: const TextStyle(fontSize: 10, color: AppColors.textMuted));
           }).toList()),
         const SizedBox(height: 4),
-        const Text('แท่งเตี้ยที่ 0 = ยังไม่ได้บันทึกข้อมูลวันนั้น',
-            style: TextStyle(fontSize: 9, color: AppColors.textMuted)),
+        Text('บันทึกแล้ว $recordedDays จาก ${pts.length} วัน — แท่งเตี้ยที่ 0 = วันที่ยังไม่ได้บันทึก',
+            style: const TextStyle(fontSize: 9, color: AppColors.textMuted)),
       ],
     ]));
   }
 
   Widget _buildMonthlyCalorieChart() {
-    final pts = _monthly?.monthData ?? [];
+    final all = _monthly?.monthData ?? [];
+    // ต่างจากกราฟสัปดาห์ที่คงแกน 7 วันไว้ — เดือนหนึ่งมี 28-31 วัน ถ้าลากเส้นผ่านวันที่ไม่ได้
+    // บันทึก (ค่า 0 จาก _densify) เส้นจะดิ่งลง 0 เกือบทั้งเดือนแล้วโด่งขึ้นเฉพาะวันที่บันทึก
+    // อ่านแล้วเหมือนวันนั้นกิน 0 kcal จริง จึงพล็อตเฉพาะวันที่บันทึกจริงเรียงตามวันที่แทน
+    final pts = all.where((e) => e.calories > 0 || e.caloriesOut > 0).toList();
     String lbl(String raw) {
       final d = raw.split('T').first;
       return d.length >= 5 ? d.substring(5) : d;
@@ -1054,15 +1143,24 @@ class _DashboardViewState extends State<DashboardView>
         ]),
       ]),
       const SizedBox(height: 18),
-      SizedBox(height: 160,
-        child: pts.length < 2 ? _emptyChart() : CustomPaint(
-          painter: _AreaChartPainter(
-            pointsIn: pts.map((e) => e.calories).toList(),
-            pointsOut: pts.map((e) => e.caloriesOut).toList(),
-            targetLine: _fillTargetGaps(pts.map((e) => e.targetTdee).toList()),
-            colorIn: AppColors.primaryGreen, colorOut: const Color(0xFFF85B07),
-          ), size: Size.infinite)),
-      if (pts.length >= 2) ...[
+      if (pts.length < 2)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: _emptyState(
+              pts.isEmpty
+                  ? 'ยังไม่มีวันที่บันทึกข้อมูลในเดือนนี้'
+                  : 'บันทึกแล้ว 1 วัน — ต้องมีอย่างน้อย 2 วันจึงจะแสดงแนวโน้มได้',
+              icon: Icons.show_chart_rounded),
+        )
+      else ...[
+        SizedBox(height: 160,
+          child: CustomPaint(
+            painter: _AreaChartPainter(
+              pointsIn: pts.map((e) => e.calories).toList(),
+              pointsOut: pts.map((e) => e.caloriesOut).toList(),
+              targetLine: _fillTargetGaps(pts.map((e) => e.targetTdee).toList()),
+              colorIn: AppColors.primaryGreen, colorOut: const Color(0xFFF85B07),
+            ), size: Size.infinite)),
         const SizedBox(height: 8),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Text(lbl(pts.first.date), style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
@@ -1072,8 +1170,9 @@ class _DashboardViewState extends State<DashboardView>
           Text(lbl(pts.last.date), style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
         ]),
         const SizedBox(height: 4),
-        const Text('จุดที่แตะ 0 = ยังไม่ได้บันทึกข้อมูลวันนั้น',
-            style: TextStyle(fontSize: 9, color: AppColors.textMuted)),
+        Text('แสดงเฉพาะ ${pts.length} วันที่มีการบันทึก จากทั้งหมด ${all.length} วันในเดือนนี้ '
+            '— จุดเรียงตามลำดับวันที่บันทึก ระยะห่างจึงไม่ใช่สเกลวันจริง',
+            style: const TextStyle(fontSize: 9, color: AppColors.textMuted)),
       ],
     ]));
   }
@@ -1122,18 +1221,24 @@ class _DashboardViewState extends State<DashboardView>
 
   Widget _buildBalanceTrendCard(List<(String, double, double)> pts) {
     if (pts.isEmpty) return const SizedBox.shrink();
-    final balances = pts.map((e) => e.$2 - e.$3).toList();
+    // วันที่ทั้งกิน/เผาเป็น 0 คือช่องที่ densify เติมให้ (ไม่ได้บันทึกจริง) ตัดออกจากทั้งเส้นกราฟ
+    // และค่าเฉลี่ย — ถ้าปล่อยไว้ เส้นจะดิ่ง 0 ทุกวันที่ไม่มีข้อมูล และค่าเฉลี่ยจะถูกหารด้วย
+    // จำนวนวันปฏิทินแทนจำนวนวันที่บันทึกจริง (ผิดกติกาในหมายเหตุเหนือ _densify) ส่วนจำนวนวัน
+    // ที่ไม่มีข้อมูลยังนับแยกไว้ในกล่อง "ไม่มีข้อมูล" เพื่อให้ผลรวม 4 กล่อง = จำนวนวันทั้งหมดพอดี
+    final logged = pts.where((p) => p.$2 > 0 || p.$3 > 0).toList();
+    final noData = pts.length - logged.length;
+    if (logged.isEmpty) {
+      return _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('แนวโน้มสมดุลพลังงาน', style: TextStyle(
+            fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+        const SizedBox(height: 16),
+        _emptyState('ยังไม่มีวันที่บันทึกข้อมูลในช่วงนี้', icon: Icons.edit_note_rounded),
+      ]));
+    }
+    final balances = logged.map((e) => e.$2 - e.$3).toList();
     final avg = balances.fold(0.0, (s, v) => s + v) / balances.length;
-    // วันที่ทั้งกิน/เผาเป็น 0 คือช่องที่ densify เติมให้ (ไม่ได้บันทึกจริง) ไม่นับสถานะ
-    // เกิน/ตาม/ต่ำกว่าเป้า มิฉะนั้นจะถูกนับเป็น "ต่ำกว่าเป้า" ผิดๆ ทุกวันที่ไม่มีข้อมูล (คำสั่งที่ 17)
-    // นับแยกเป็นกล่อง "ไม่มีข้อมูล" แทน เพื่อให้ผลรวม 4 กล่อง = จำนวนวันทั้งหมดพอดี ตรวจสอบ
-    // ย้อนกลับได้ (คำสั่งที่ 19 — ความเห็นเพิ่มเติม)
-    int over = 0, on = 0, under = 0, noData = 0;
-    for (final p in pts) {
-      if (p.$2 <= 0 && p.$3 <= 0) {
-        noData++;
-        continue;
-      }
+    int over = 0, on = 0, under = 0;
+    for (final p in logged) {
       final (label, _) = _energyStatus(p.$2, _targetCalories);
       if (label == 'เกินเป้า') {
         over++;
@@ -1165,31 +1270,51 @@ class _DashboardViewState extends State<DashboardView>
         const SizedBox(width: 6),
         Expanded(child: _avgBox('ไม่มีข้อมูล', '$noData วัน', '', AppColors.textMuted)),
       ]),
+      const SizedBox(height: 8),
+      _recordedNote(logged.length, pts.length),
     ]));
   }
 
-  Widget _buildEnergyTable(List<(String, double, double)> pts) => _card(
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('ตารางสมดุลพลังงาน', style: TextStyle(
-          fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-      const SizedBox(height: 12),
-      _simpleTable(
-        ['วันที่', 'กิน', 'เผา', 'เป้าหมาย', 'สมดุล', 'สถานะ'],
-        pts.map((p) {
-          final bal = p.$2 - p.$3;
-          final (label, _) = _energyStatus(p.$2, _targetCalories);
-          return [
-            _shortDate(p.$1),
-            '${p.$2.round()}',
-            '${p.$3.round()}',
-            '${_targetCalories.round()}',
-            '${bal >= 0 ? '+' : ''}${bal.round()}',
-            label,
-          ];
-        }).toList(),
-        flex: [2, 2, 2, 2, 2, 2],
-      ),
-    ]),
+  /// ตารางแสดงเฉพาะวันที่บันทึกจริงเท่านั้น — วันที่ _densify เติมให้ (กิน 0 + เผา 0) ไม่ใช่
+  /// ข้อมูลที่ผู้ใช้บันทึก เอามาขึ้นเป็นแถวจะได้ตารางเลข 0 ยาวทั้งเดือนทั้งที่บันทึกจริงไม่กี่วัน
+  /// ซึ่งอ่านแล้วเข้าใจผิดว่าวันนั้นกิน/เผา 0 kcal จริง (เหตุผลเดียวกับหมายเหตุเหนือ _densify)
+  Widget _buildEnergyTable(List<(String, double, double)> pts) {
+    final logged = pts.where((p) => p.$2 > 0 || p.$3 > 0).toList();
+    return _card(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('ตารางสมดุลพลังงาน', style: TextStyle(
+            fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+        const SizedBox(height: 12),
+        if (logged.isEmpty)
+          _emptyState('ยังไม่มีวันที่บันทึกข้อมูลในช่วงนี้', icon: Icons.edit_note_rounded)
+        else ...[
+          _simpleTable(
+            ['วันที่', 'กิน', 'เผา', 'เป้าหมาย', 'สมดุล', 'สถานะ'],
+            logged.map((p) {
+              final bal = p.$2 - p.$3;
+              final (label, _) = _energyStatus(p.$2, _targetCalories);
+              return [
+                _shortDate(p.$1),
+                '${p.$2.round()}',
+                '${p.$3.round()}',
+                '${_targetCalories.round()}',
+                '${bal >= 0 ? '+' : ''}${bal.round()}',
+                label,
+              ];
+            }).toList(),
+            flex: [2, 2, 2, 2, 2, 2],
+          ),
+          const SizedBox(height: 8),
+          _recordedNote(logged.length, pts.length),
+        ],
+      ]),
+    );
+  }
+
+  /// บอกผู้ใช้ว่าตาราง/กราฟกรองวันที่ไม่ได้บันทึกออกไปแล้ว เหลือกี่วันจากช่วงที่เลือก
+  Widget _recordedNote(int shown, int total) => Text(
+    'แสดงเฉพาะ $shown วันที่มีการบันทึก จากทั้งหมด $total วันในช่วงนี้',
+    style: const TextStyle(fontSize: 9, color: AppColors.textMuted),
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1437,13 +1562,16 @@ class _DashboardViewState extends State<DashboardView>
     // _densify) ดังนั้น pts.length เกือบตลอดเวลาจะเต็มช่วง (เช่น 7 วันของสัปดาห์) ไม่ว่าจะมี
     // ข้อมูลจริงกี่วันก็ตาม เช็ค "มีข้อมูลพอ" ต้องนับจากจำนวนวันที่บันทึกจริง (calories > 0)
     // ไม่ใช่ความยาว list ไม่งั้นสัปดาห์ที่ไม่มีบันทึกเลยจะเห็นเส้นแบนที่ 0 แทนข้อความเตือน
-    final recordedCount = pts.where((e) => e.$2 > 0).length;
-    if (recordedCount < 2) {
+    // เส้นกราฟก็พล็อตเฉพาะวันที่บันทึกจริงเช่นกัน ไม่ลากผ่านจุด 0 ที่ densify เติมให้
+    final logged = pts.where((e) => e.$2 > 0).toList();
+    if (logged.length < 2) {
       return _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(title, style: const TextStyle(
             fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
         const SizedBox(height: 16),
-        _emptyState('ยังไม่มีข้อมูลพอ'),
+        _emptyState(logged.isEmpty
+            ? 'ยังไม่มีวันที่บันทึกอาหารในช่วงนี้'
+            : 'บันทึกแล้ว 1 วัน — ต้องมีอย่างน้อย 2 วันจึงจะแสดงแนวโน้มได้'),
       ]));
     }
     return _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1452,13 +1580,15 @@ class _DashboardViewState extends State<DashboardView>
       const SizedBox(height: 16),
       SizedBox(height: 140, child: CustomPaint(
           painter: _LineChartPainter(
-              values: pts.map((e) => e.$2).toList(), color: const Color(0xFF5B8CFF)),
+              values: logged.map((e) => e.$2).toList(), color: const Color(0xFF5B8CFF)),
           size: Size.infinite)),
       const SizedBox(height: 8),
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(_shortDate(pts.first.$1), style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
-        Text(_shortDate(pts.last.$1), style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+        Text(_shortDate(logged.first.$1), style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+        Text(_shortDate(logged.last.$1), style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
       ]),
+      const SizedBox(height: 4),
+      _recordedNote(logged.length, pts.length),
     ]));
   }
 
@@ -1521,28 +1651,35 @@ class _DashboardViewState extends State<DashboardView>
     ]));
   }
 
-  Widget _buildNutritionTable(List<(String, double, double, double, double)> pts) => _card(
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('ตารางพลังงานที่ได้รับ', style: TextStyle(
-          fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-      const SizedBox(height: 12),
-      _simpleTable(
-        ['วันที่', 'kcal', 'P (g)', 'C (g)', 'F (g)'],
-        pts.map((p) {
-          // calories <= 0 ตีความว่าวันนั้นไม่ได้บันทึกอาหาร ไม่ใช่บันทึกแล้วได้ 0 กรัมจริง
-          final logged = p.$2 > 0;
-          return [
-            _shortDate(p.$1),
-            '${p.$2.round()}',
-            logged ? '${p.$3.round()}' : '-',
-            logged ? '${p.$4.round()}' : '-',
-            logged ? '${p.$5.round()}' : '-',
-          ];
-        }).toList(),
-        flex: [3, 2, 2, 2, 2],
-      ),
-    ]),
-  );
+  /// calories <= 0 ตีความว่าวันนั้นไม่ได้บันทึกอาหาร ไม่ใช่บันทึกแล้วได้ 0 kcal จริง —
+  /// กรองทิ้งก่อนขึ้นตาราง ไม่งั้นเดือนที่บันทึก 2 วันจะได้ 30 แถวที่เป็น 0 อยู่ 28 แถว
+  Widget _buildNutritionTable(List<(String, double, double, double, double)> pts) {
+    final logged = pts.where((p) => p.$2 > 0).toList();
+    return _card(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('ตารางพลังงานที่ได้รับ', style: TextStyle(
+            fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+        const SizedBox(height: 12),
+        if (logged.isEmpty)
+          _emptyState('ยังไม่มีวันที่บันทึกอาหารในช่วงนี้', icon: Icons.restaurant_menu_rounded)
+        else ...[
+          _simpleTable(
+            ['วันที่', 'kcal', 'P (g)', 'C (g)', 'F (g)'],
+            logged.map((p) => [
+              _shortDate(p.$1),
+              '${p.$2.round()}',
+              '${p.$3.round()}',
+              '${p.$4.round()}',
+              '${p.$5.round()}',
+            ]).toList(),
+            flex: [3, 2, 2, 2, 2],
+          ),
+          const SizedBox(height: 8),
+          _recordedNote(logged.length, pts.length),
+        ],
+      ]),
+    );
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // TAB 3 — EXERCISE
@@ -1921,14 +2058,22 @@ class _DashboardViewState extends State<DashboardView>
         _dot(AppColors.cardioIcon, 'คาร์ดิโอ'),
       ]),
       const SizedBox(height: 14),
-      SizedBox(height: 140,
-        child: pts.isEmpty ? _emptyChart() : CustomPaint(
-          painter: _SplitBarPainter(
-            weightData: pts.map((e) => e.weightOut).toList(),
-            cardioData: pts.map((e) => e.cardioOut).toList(),
-            weightColor: AppColors.primaryGreen, cardioColor: AppColors.cardioIcon,
-          ), size: Size.infinite)),
-      if (pts.isNotEmpty) ...[
+      // คงแกน 7 วันไว้เพื่อเทียบวันต่อวัน แต่สัปดาห์ที่ไม่มีวันออกกำลังกายเลยขึ้นข้อความแทน
+      // แท่ง 0 เจ็ดแท่ง (pts.isEmpty เช็คไม่ได้ — _densify เติมครบ 7 วันเสมอ)
+      if (_workoutDaysThisWeek == 0)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: _emptyState('ยังไม่มีวันที่บันทึกการออกกำลังกายในสัปดาห์นี้',
+              icon: Icons.fitness_center_rounded),
+        )
+      else ...[
+        SizedBox(height: 140,
+          child: CustomPaint(
+            painter: _SplitBarPainter(
+              weightData: pts.map((e) => e.weightOut).toList(),
+              cardioData: pts.map((e) => e.cardioOut).toList(),
+              weightColor: AppColors.primaryGreen, cardioColor: AppColors.cardioIcon,
+            ), size: Size.infinite)),
         const SizedBox(height: 4),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: pts.map((e) {
@@ -1969,7 +2114,9 @@ class _DashboardViewState extends State<DashboardView>
   }
 
   Widget _buildMonthlyWorkoutAreaChart() {
-    final pts = _monthly?.monthData ?? [];
+    final all = _monthly?.monthData ?? [];
+    // พล็อตเฉพาะวันที่ออกกำลังกายจริง เหตุผลเดียวกับ _buildMonthlyCalorieChart
+    final pts = all.where((e) => e.weightOut > 0 || e.cardioOut > 0).toList();
     String lbl(String raw) {
       final d = raw.split('T').first;
       return d.length >= 5 ? d.substring(5) : d;
@@ -1984,14 +2131,23 @@ class _DashboardViewState extends State<DashboardView>
         ]),
       ]),
       const SizedBox(height: 18),
-      SizedBox(height: 150,
-        child: pts.length < 2 ? _emptyChart() : CustomPaint(
-          painter: _AreaChartPainter(
-            pointsIn: pts.map((e) => e.weightOut).toList(),
-            pointsOut: pts.map((e) => e.cardioOut).toList(),
-            colorIn: AppColors.primaryGreen, colorOut: AppColors.cardioIcon,
-          ), size: Size.infinite)),
-      if (pts.length >= 2) ...[
+      if (pts.length < 2)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: _emptyState(
+              pts.isEmpty
+                  ? 'ยังไม่มีวันที่บันทึกการออกกำลังกายในเดือนนี้'
+                  : 'บันทึกแล้ว 1 วัน — ต้องมีอย่างน้อย 2 วันจึงจะแสดงแนวโน้มได้',
+              icon: Icons.fitness_center_rounded),
+        )
+      else ...[
+        SizedBox(height: 150,
+          child: CustomPaint(
+            painter: _AreaChartPainter(
+              pointsIn: pts.map((e) => e.weightOut).toList(),
+              pointsOut: pts.map((e) => e.cardioOut).toList(),
+              colorIn: AppColors.primaryGreen, colorOut: AppColors.cardioIcon,
+            ), size: Size.infinite)),
         const SizedBox(height: 8),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Text(lbl(pts.first.date), style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
@@ -2001,8 +2157,9 @@ class _DashboardViewState extends State<DashboardView>
           Text(lbl(pts.last.date), style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
         ]),
         const SizedBox(height: 4),
-        const Text('จุดที่แตะ 0 = ยังไม่ได้บันทึกข้อมูลวันนั้น',
-            style: TextStyle(fontSize: 9, color: AppColors.textMuted)),
+        Text('แสดงเฉพาะ ${pts.length} วันที่ออกกำลังกาย จากทั้งหมด ${all.length} วันในเดือนนี้ '
+            '— จุดเรียงตามลำดับวันที่บันทึก ระยะห่างจึงไม่ใช่สเกลวันจริง',
+            style: const TextStyle(fontSize: 9, color: AppColors.textMuted)),
       ],
     ]));
   }
@@ -2088,18 +2245,30 @@ class _DashboardViewState extends State<DashboardView>
     ]));
   }
 
-  Widget _buildExerciseTable(List<(String, double, double)> pts) => _card(
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('ตารางการออกกำลังกาย', style: TextStyle(
-          fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-      const SizedBox(height: 12),
-      _simpleTable(
-        ['วันที่', 'เวทเทรน (kcal)', 'คาร์ดิโอ (kcal)'],
-        pts.map((p) => [_shortDate(p.$1), '${p.$2.round()}', '${p.$3.round()}']).toList(),
-        flex: [2, 2, 2],
-      ),
-    ]),
-  );
+  /// แสดงเฉพาะวันที่ออกกำลังกายจริง — วันพักและวันที่ _densify เติมให้มีค่า 0 ทั้งคู่เหมือนกัน
+  /// แยกจากกันไม่ได้อยู่แล้ว ขึ้นเป็นแถว 0 ยาวๆ จึงไม่ได้ให้ข้อมูลอะไรกับผู้ใช้
+  Widget _buildExerciseTable(List<(String, double, double)> pts) {
+    final logged = pts.where((p) => p.$2 > 0 || p.$3 > 0).toList();
+    return _card(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('ตารางการออกกำลังกาย', style: TextStyle(
+            fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+        const SizedBox(height: 12),
+        if (logged.isEmpty)
+          _emptyState('ยังไม่มีวันที่บันทึกการออกกำลังกายในช่วงนี้',
+              icon: Icons.fitness_center_rounded)
+        else ...[
+          _simpleTable(
+            ['วันที่', 'เวทเทรน (kcal)', 'คาร์ดิโอ (kcal)'],
+            logged.map((p) => [_shortDate(p.$1), '${p.$2.round()}', '${p.$3.round()}']).toList(),
+            flex: [2, 2, 2],
+          ),
+          const SizedBox(height: 8),
+          _recordedNote(logged.length, pts.length),
+        ],
+      ]),
+    );
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // TAB 4 — BMI HISTORY
@@ -2430,10 +2599,6 @@ class _DashboardViewState extends State<DashboardView>
     ]),
   );
 
-  Widget _emptyChart() => const Center(
-    child: Text('ยังไม่มีข้อมูล', style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-  );
-
   Widget _emptyState(String msg, {IconData icon = Icons.info_outline_rounded}) => Center(
     child: Column(children: [
       Icon(icon, size: 32, color: AppColors.textMuted.withValues(alpha: 0.4)),
@@ -2518,27 +2683,6 @@ class _ShimmerBoxState extends State<_ShimmerBox>
 // ═══════════════════════════════════════════════════════════════════════════════
 // PAINTERS
 // ═══════════════════════════════════════════════════════════════════════════════
-class _DonutPainter extends CustomPainter {
-  final double progress; final Color trackColor, fillColor, overColor; final bool isOver;
-  const _DonutPainter({required this.progress, required this.trackColor,
-      required this.fillColor, required this.overColor, required this.isOver});
-  @override
-  void paint(Canvas canvas, Size size) {
-    const sw = 14.0;
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = size.width / 2 - sw / 2;
-    canvas.drawCircle(c, r, Paint()..color = trackColor
-        ..style = PaintingStyle.stroke..strokeWidth = sw);
-    if (progress > 0) {
-      canvas.drawArc(Rect.fromCircle(center: c, radius: r),
-          -math.pi / 2, 2 * math.pi * progress.clamp(0.0, 1.0), false,
-          Paint()..color = isOver ? overColor : fillColor
-              ..style = PaintingStyle.stroke..strokeWidth = sw..strokeCap = StrokeCap.round);
-    }
-  }
-  @override bool shouldRepaint(_DonutPainter o) => o.progress != progress || o.isOver != isOver;
-}
-
 class _MiniDonutPainter extends CustomPainter {
   final List<double> values; final List<Color> colors;
   const _MiniDonutPainter({required this.values, required this.colors});
