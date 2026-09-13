@@ -672,7 +672,7 @@ class _ManageCardioActivitiesViewState extends State<ManageCardioActivitiesView>
                           const SizedBox(height: 10),
                           const Text('ค่าความหนักของกิจกรรม (METs) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
                           const SizedBox(height: 2),
-                          Text('ตัวเลขบ่งชี้ความหนักของกิจกรรม ยิ่งสูงยิ่งเผาผลาญพลังงานมาก ใช้คำนวณแคลอรี่ที่เผาผลาญ', style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600)),
+                          Text('ตัวเลขบ่งชี้ความหนักของกิจกรรม ยิ่งสูงยิ่งเผาผลาญพลังงานมาก ใช้คำนวณพลังงานที่เผาผลาญ', style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600)),
                           const SizedBox(height: 6),
                           TextField(
                             controller: metCtrl,

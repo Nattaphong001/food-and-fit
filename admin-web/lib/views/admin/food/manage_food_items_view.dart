@@ -1,7 +1,7 @@
 // ignore_for_file: use_build_context_synchronously
 
 // [PAGE] ADMIN_FOOD_ITEMS : จัดการรายการอาหาร (เว็บ)
-// [PAGE_PURPOSE] Admin เพิ่ม/แก้ไข/ลบข้อมูลอาหาร รวมถึงแคลอรี่ สารอาหาร และรูปภาพอาหาร
+// [PAGE_PURPOSE] Admin เพิ่ม/แก้ไข/ลบข้อมูลอาหาร รวมถึงพลังงาน สารอาหาร และรูปภาพอาหาร
 // [PAGE_ROUTE] /admin > โภชนาการ > ฐานข้อมูลโภชนาการ
 // [USES_FEATURES] FOOD_LOG
 //
@@ -124,7 +124,7 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
 
   static const _sortKeys = ['name', 'category', 'kcal', 'protein', 'carbs', 'fat'];
 
-  // ตัวกรองช่วงแคลอรี่ (บรีฟ P2 ข้อ 8) — 800+ ปลายเปิด กันรายการพลังงานสูงหลุดขอบสไลเดอร์
+  // ตัวกรองช่วงพลังงาน (บรีฟ P2 ข้อ 8) — 800+ ปลายเปิด กันรายการพลังงานสูงหลุดขอบสไลเดอร์
   static const _kcalFilterMax = 800.0;
   bool _showKcalFilter = false;
   bool _kcalFilterActive = false;
@@ -584,7 +584,7 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
   // --------------------------------------------
   // [FEATURE] FOOD_LOG
   // [FUNCTION] _clearFilters
-  // [DESCRIPTION] รีเซ็ตช่องค้นหาและตัวกรองเสริมทั้งหมด (หมวดหมู่ + ช่วงแคลอรี่) กลับค่าเริ่มต้น —
+  // [DESCRIPTION] รีเซ็ตช่องค้นหาและตัวกรองเสริมทั้งหมด (หมวดหมู่ + ช่วงพลังงาน) กลับค่าเริ่มต้น —
   //               ใช้ร่วมกันทั้งปุ่ม "ล้างตัวกรอง" บน AdminFilterBar และปุ่มในหน้า noResult
   // [INPUT] -
   // [OUTPUT] -
@@ -655,7 +655,7 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
     // ตรงนี้เหลือแค่ unique constraint ฝั่ง backend เป็นด่านสุดท้าย (ดู error handling ท้ายฟังก์ชัน)
 
     if (calories.trim().isEmpty || protein.trim().isEmpty || carbs.trim().isEmpty || fat.trim().isEmpty) {
-      _showSnackBar('กรุณากรอกค่าแคลอรี่และสารอาหารให้ครบ', type: AppAlertType.warning);
+      _showSnackBar('กรุณากรอกค่าพลังงานและสารอาหารให้ครบ', type: AppAlertType.warning);
       return;
     }
 
@@ -665,11 +665,11 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
     final parsedFat = double.tryParse(fat) ?? 0;
     final parsedServingWeight = double.tryParse(servingWeight) ?? 100;
     if (parsedCalories < 0 || parsedProtein < 0 || parsedCarbs < 0 || parsedFat < 0 || parsedServingWeight <= 0) {
-      _showSnackBar('ค่าแคลอรี่/สารอาหาร/น้ำหนักต้องไม่ติดลบ', type: AppAlertType.warning);
+      _showSnackBar('ค่าพลังงาน/สารอาหาร/น้ำหนักต้องไม่ติดลบ', type: AppAlertType.warning);
       return;
     }
     if (parsedCalories == 0 && parsedProtein == 0 && parsedCarbs == 0 && parsedFat == 0) {
-      _showSnackBar('ค่าแคลอรี่และสารอาหารต้องไม่เป็น 0 ทั้งหมด', type: AppAlertType.warning);
+      _showSnackBar('ค่าพลังงานและสารอาหารต้องไม่เป็น 0 ทั้งหมด', type: AppAlertType.warning);
       return;
     }
 
@@ -1142,7 +1142,7 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
     return '${_kcalRange.start.toStringAsFixed(0)}-$end kcal';
   }
 
-  // ปุ่มเปิด/ปิดแผงตัวกรองช่วงแคลอรี่ (บรีฟ P2 ข้อ 8) — ไฮไลต์เขียวเมื่อมีการกรองจริง (ไม่ใช่แค่เปิดแผงดู)
+  // ปุ่มเปิด/ปิดแผงตัวกรองช่วงพลังงาน (บรีฟ P2 ข้อ 8) — ไฮไลต์เขียวเมื่อมีการกรองจริง (ไม่ใช่แค่เปิดแผงดู)
   Widget _buildKcalFilterToggle() {
     return GestureDetector(
       onTap: () => setState(() => _showKcalFilter = !_showKcalFilter),
@@ -1159,7 +1159,7 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
           Icon(Icons.tune, size: 16, color: _kcalFilterActive ? AppColors.primaryGreen : AppColors.textMuted),
           const SizedBox(width: 6),
           Text(
-            _kcalFilterActive ? _kcalRangeLabel : 'ช่วงแคลอรี่ (kcal)',
+            _kcalFilterActive ? _kcalRangeLabel : 'ช่วงพลังงาน (kcal)',
             style: TextStyle(fontSize: 12.5, color: _kcalFilterActive ? AppColors.primaryGreen : AppColors.textMuted, fontWeight: FontWeight.w600),
           ),
         ]),
@@ -1174,7 +1174,7 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
         child: Row(children: [
-          const Text('ช่วงแคลอรี่ (kcal):', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+          const Text('ช่วงพลังงาน (kcal):', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
           const SizedBox(width: 4),
           Text(_kcalRange.start.toStringAsFixed(0), style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
           Expanded(
