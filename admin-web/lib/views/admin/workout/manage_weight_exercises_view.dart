@@ -887,22 +887,6 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                             ],
                           ),
                           const SizedBox(height: 14),
-                          lbl(
-                            'MET พื้นฐาน (Smart Auto Calorie)',
-                            TextField(
-                              controller: baseMetCtrl,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              decoration: fieldDeco(icon: Icons.local_fire_department_outlined, hint: 'เช่น 4.5'),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              'อ้างอิง: 3.0 = ท่าเดี่ยว (isolation) · 4.5 = ผสมช่วงบน · 5.5 = ผสมช่วงล่าง · 7.0 = ทั้งตัว/Olympic',
-                              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
                           const Text('กล้ามเนื้อโฟกัส', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
                           const SizedBox(height: 2),
                           Text('เลือกกล้ามเนื้อที่ท่านี้ใช้งาน กำหนดเป็นหลัก/รองได้', style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600)),
@@ -1060,6 +1044,27 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                                   Expanded(child: Text(loopVideoLabel ?? 'แตะเพื่อเลือกไฟล์วิดีโอ loop', overflow: TextOverflow.ellipsis)),
                                 ]),
                               ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          // ตำแหน่งฟิลด์นี้ตั้งใจไว้ท้ายสุดของฟิลด์ weight_exercises ทั้งหมด —
+                          // ให้ลำดับบนหน้าจอนี้ตรงกับลำดับ attribute ใน Datadic ตาราง 4.6 เป๊ะ
+                          // (2 image → 3 name → 4 difficulty → 5 equipment → 6 exercise_type →
+                          // 7 description → 8 technique → 9 video → 10 loop_video → 11 base_met)
+                          // กรรมการไล่เทียบ Datadic กับหน้าจอบนลงล่างได้ตรงกันทุกจุด
+                          lbl(
+                            'ค่าความหนักของกิจกรรมพื้นฐานของท่านี้ (METs)',
+                            TextField(
+                              controller: baseMetCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: fieldDeco(icon: Icons.local_fire_department_outlined, hint: 'เช่น 4.5'),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              'อ้างอิง: 3.0 = ท่าเดี่ยว (isolation) · 4.5 = ผสมช่วงบน (Upper Compound) · 5.5 = ผสมช่วงล่าง (Lower Compound) · 7.0 = ทั้งตัว (Full Body)',
+                              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
                             ),
                           ),
                           const SizedBox(height: 24),
@@ -1225,6 +1230,8 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
   // ค่อย fallback ไปเปิด scroll แนวนอนของ AdminDataTable เอง
   static const double _thumbW = 60;
   static const double _diffW = 130;
+  static const double _typeW = 120;
+  static const double _metW = 90;
   static const double _actionW = 90;
   static const double _nameMin = 220, _equipMin = 130, _muscleMin = 260;
 
@@ -1233,7 +1240,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     return LayoutBuilder(
       builder: (context, constraints) {
         const double reserve = 8; // กันขอบเส้นตาราง ไม่ให้ปัดเข้าโหมด scroll แนวนอนโดยไม่จำเป็น
-        final double flexAvailable = constraints.maxWidth - _thumbW - _diffW - _actionW - reserve;
+        final double flexAvailable = constraints.maxWidth - _thumbW - _diffW - _typeW - _metW - _actionW - reserve;
         final double minFlexTotal = _nameMin + _equipMin + _muscleMin;
         final double flexTotal = flexAvailable < minFlexTotal ? minFlexTotal : flexAvailable;
         final double nameW = (flexTotal * 0.30) < _nameMin ? _nameMin : flexTotal * 0.30;
@@ -1241,11 +1248,16 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
         final double muscleWRaw = flexTotal - nameW - equipW;
         final double muscleW = muscleWRaw < _muscleMin ? _muscleMin : muscleWRaw;
 
+        // ลำดับคอลัมน์ diff(4)/equipment(5)/type(6)/met(11) ตรงกับลำดับ attribute ใน Datadic
+        // ตาราง 4.6 (weight_exercises) — 'muscles' ไม่ใช่คอลัมน์ของตารางนี้ (มาจาก
+        // exercise_muscle_details แยกต่างหาก) จึงวางไว้ท้ายสุดเสมอ ไม่นับรวมลำดับ
         final columns = [
           AdminDataColumn(key: 'thumb', label: '', width: _thumbW),
           AdminDataColumn(key: 'name', label: 'ชื่อท่าฝึก', width: nameW),
           AdminDataColumn(key: 'diff', label: 'ระดับความยาก', width: _diffW),
           AdminDataColumn(key: 'equipment', label: 'อุปกรณ์', width: equipW),
+          AdminDataColumn(key: 'type', label: 'ประเภทท่าฝึก', width: _typeW),
+          AdminDataColumn(key: 'met', label: 'MET', width: _metW),
           AdminDataColumn(key: 'muscles', label: 'กล้ามเนื้อโฟกัส', width: muscleW),
         ];
 
@@ -1261,6 +1273,8 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
             final int wetId = item['wet_id'] ?? item['WetID'] ?? 0;
             final String name = item['wet_name'] ?? item['WetName'] ?? '';
             final int equipment = (item['wet_equipment'] ?? item['WetEquipment']) ?? 5;
+            final int exType = (item['wet_exercise_type'] ?? item['WetExerciseType']) ?? 1;
+            final double baseMet = ((item['wet_base_met'] ?? item['WetBaseMet']) as num?)?.toDouble() ?? 4.5;
             final List<Map<String, dynamic>> focusList = focusMap[wetId] ?? [];
 
             return Row(children: [
@@ -1280,6 +1294,8 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
               AdminDataCell(width: nameW, child: Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textDark), maxLines: 2, overflow: TextOverflow.ellipsis)),
               AdminDataCell(width: _diffW, child: _diffBadge(diff)),
               AdminDataCell(width: equipW, child: Text(_equipmentText(equipment), style: const TextStyle(fontSize: 12.5))),
+              AdminDataCell(width: _typeW, child: _iconBadge(exType == 1 ? Icons.groups_outlined : Icons.person_outline, exType == 1 ? 'หลายกลุ่ม' : 'เฉพาะส่วน')),
+              AdminDataCell(width: _metW, child: _iconBadge(Icons.local_fire_department_outlined, baseMet.toStringAsFixed(1))),
               AdminDataCell(
                 width: muscleW,
             child: SizedBox(
@@ -1538,6 +1554,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     final String desc = item['wet_description'] ?? item['WetDescription'] ?? '';
     final int equipment = (item['wet_equipment'] ?? item['WetEquipment']) ?? 5;
     final int exType = (item['wet_exercise_type'] ?? item['WetExerciseType']) ?? 1;
+    final double baseMet = ((item['wet_base_met'] ?? item['WetBaseMet']) as num?)?.toDouble() ?? 4.5;
     final List<Map<String, dynamic>> focusList = focusMap[wetId] ?? [];
 
     // การ์ดแนวตั้งขนาดใหญ่ (บรีฟรอบ 3 ข้อ 3.2) — รูปใหญ่เต็มความกว้างด้านบน แทนธัมบ์เนล 56x56 เดิม
@@ -1641,6 +1658,10 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                   _diffBadge(diff),
                   _iconBadge(Icons.fitness_center, _equipmentText(equipment)),
                   _iconBadge(exType == 1 ? Icons.groups_outlined : Icons.person_outline, exType == 1 ? 'หลายกลุ่ม' : 'เฉพาะส่วน'),
+                  // MET พื้นฐาน (wet_base_met, attribute 11 ท้ายสุดของ Datadic ตาราง 4.6) — เดิม
+                  // มองเห็นได้แค่ตอนเปิดฟอร์มแก้ไขทีละท่า เพิ่ม badge นี้ให้ไล่ตรวจครบ ~49 ท่าได้
+                  // จากมุมมองการ์ดโดยไม่ต้องเปิดทีละอัน
+                  _iconBadge(Icons.local_fire_department_outlined, 'MET ${baseMet.toStringAsFixed(1)}'),
                 ]),
               ],
             ),
