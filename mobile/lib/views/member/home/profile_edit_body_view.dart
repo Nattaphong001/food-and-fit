@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/widgets/app_back_button.dart';
+import '../../../core/widgets/app_confirm_dialog.dart';
 import '../../../core/widgets/app_date_picker_sheet.dart';
 import '../../../core/widgets/top_flash.dart';
 import '../../../models/body_stats_model.dart';
@@ -223,35 +224,16 @@ class _ProfileEditBodyViewState extends State<ProfileEditBodyView> {
   // [OUTPUT] Future<bool> — true = ยืนยันค่านี้ (ไปต่อ), false = กลับไปแก้ไข (อยู่หน้านี้ต่อ)
   // [RELATED] BMR_TDEE
   // --------------------------------------------
-  Future<bool> _showPlausibilityWarningDialog(List<String> warnings) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('ตรวจสอบค่าที่กรอกอีกครั้ง'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: warnings
-              .map((w) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text('• $w'),
-                  ))
-              .toList(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('กลับไปแก้ไข'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('ยืนยันค่านี้'),
-          ),
-        ],
-      ),
+  Future<bool> _showPlausibilityWarningDialog(List<String> warnings) {
+    return showAppConfirmDialog(
+      context,
+      icon: Icons.warning_amber_rounded,
+      title: 'ตรวจสอบค่าที่กรอกอีกครั้ง',
+      content: warnings.join('\n\n'),
+      confirmLabel: 'ยืนยันค่านี้',
+      cancelLabel: 'กลับไปแก้ไข',
+      color: AppColors.alertWarning,
     );
-    return confirmed ?? false;
   }
 
   // ── build ───────────────────────────────────────────────────────────────────

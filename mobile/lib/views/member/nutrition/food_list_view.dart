@@ -193,6 +193,12 @@ class _FoodListViewState extends State<FoodListView> {
           final selectedFoods = _foods.where((f) => _selectedQty.containsKey(f.foodId)).toList();
           final totalCal = selectedFoods.fold<double>(
               0, (sum, f) => sum + f.calories * (_selectedQty[f.foodId] ?? 0));
+          final totalProtein = selectedFoods.fold<double>(
+              0, (sum, f) => sum + f.protein * (_selectedQty[f.foodId] ?? 0));
+          final totalCarbs = selectedFoods.fold<double>(
+              0, (sum, f) => sum + f.carbs * (_selectedQty[f.foodId] ?? 0));
+          final totalFat = selectedFoods.fold<double>(
+              0, (sum, f) => sum + f.fat * (_selectedQty[f.foodId] ?? 0));
 
           return Padding(
             padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
@@ -213,13 +219,27 @@ class _FoodListViewState extends State<FoodListView> {
                   const SizedBox(height: 16),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('ตะกร้าอาหาร',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.black87)),
-                        const Spacer(),
-                        Text('${selectedFoods.length} รายการ  ·  ${totalCal.round()} kcal',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+                        Row(
+                          children: [
+                            const Text('ตะกร้าอาหาร',
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.black87)),
+                            const Spacer(),
+                            Text('${selectedFoods.length} รายการ  ·  ${totalCal.round()} kcal',
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6, runSpacing: 4,
+                          children: [
+                            _tag('P ${totalProtein.round()}g', const Color(0xFFEEF3FF), const Color(0xFF5B8CFF)),
+                            _tag('C ${totalCarbs.round()}g', const Color(0xFFFFF8ED), const Color(0xFFFFAB2E)),
+                            _tag('F ${totalFat.round()}g', const Color(0xFFFFEEEE), const Color(0xFFFF6B6B)),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -245,6 +265,15 @@ class _FoodListViewState extends State<FoodListView> {
                                   const SizedBox(height: 2),
                                   Text('${_qtyLabel(food, qty)}  ·  ${(food.calories * qty).round()} kcal',
                                       style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                                  const SizedBox(height: 4),
+                                  Wrap(
+                                    spacing: 5, runSpacing: 4,
+                                    children: [
+                                      _tag('P ${(food.protein * qty).round()}g', const Color(0xFFEEF3FF), const Color(0xFF5B8CFF)),
+                                      _tag('C ${(food.carbs * qty).round()}g', const Color(0xFFFFF8ED), const Color(0xFFFFAB2E)),
+                                      _tag('F ${(food.fat * qty).round()}g', const Color(0xFFFFEEEE), const Color(0xFFFF6B6B)),
+                                    ],
+                                  ),
                                 ],
                               ),
                             ),

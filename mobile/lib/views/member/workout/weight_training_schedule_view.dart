@@ -2,6 +2,7 @@
 // ทำหน้าที่: แสดงรายการท่าฝึกเวทตามวันที่เลือก กรองตามกลุ่มกล้ามเนื้อ เพิ่ม/ลบท่าฝึกในแผน custom ได้
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/widgets/app_fab.dart';
 import '../../../core/widgets/app_page_header.dart';
@@ -533,11 +534,17 @@ class _WeightTrainingScheduleViewState extends State<WeightTrainingScheduleView>
               controller: setsController,
               autofocus: true,
               keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: const InputDecoration(labelText: 'จำนวนเซ็ต'),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: repsController,
+              keyboardType: TextInputType.number,
+              // อนุญาตเลข + "-" เท่านั้น (รองรับช่วงเช่น "8-10") ตรงกับ RepsPattern ฝั่ง backend
+              // (helpers.RepsPattern, ValidateScheduleSetsReps) — เดิมไม่มี formatter เลย พิมพ์
+              // ตัวอักษร/ค่าติดลบผ่านได้หมด
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9-]'))],
               decoration: const InputDecoration(
                 labelText: 'จำนวนครั้ง (เช่น 8-10)',
               ),
@@ -553,10 +560,20 @@ class _WeightTrainingScheduleViewState extends State<WeightTrainingScheduleView>
             onPressed: () {
               final sets = int.tryParse(setsController.text.trim());
               final reps = repsController.text.trim();
-              if (sets == null || sets < 1) {
+              if (sets == null || sets < 1 || sets > 20) {
                 showAppAlert(
                   ctx,
-                  'จำนวนเซ็ตต้องมากกว่า 0',
+                  'จำนวนเซ็ตต้องอยู่ระหว่าง 1-20',
+                  type: AppAlertType.error,
+                );
+                return;
+              }
+              // ตรงกับ helpers.RepsPattern ฝั่ง backend เป๊ะ ("12" หรือ "8-12") — เดิมไม่เช็คเลย
+              // ปล่อยค่าอะไรก็ได้ผ่านไปถึง PATCH /member/workout-schedules/:id
+              if (reps.isNotEmpty && !RegExp(r'^\d{1,3}(-\d{1,3})?$').hasMatch(reps)) {
+                showAppAlert(
+                  ctx,
+                  'รูปแบบจำนวนครั้งไม่ถูกต้อง (เช่น "12" หรือ "8-12")',
                   type: AppAlertType.error,
                 );
                 return;

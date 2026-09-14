@@ -790,7 +790,9 @@ class _CardioHistorySheetState extends State<_CardioHistorySheet> {
     ),
   );
 
-  // Pace = cdors_duration(นาที) / cdors_distance(กม.) — คำนวณหน้าจอเท่านั้น ไม่บันทึก DB
+  // Pace = r.duration(นาที) / r.distance(กม.) — คำนวณหน้าจอเท่านั้น ไม่บันทึก DB
+  // r.duration แปลงจาก cdors_duration (วินาทีดิบจาก API, เปลี่ยนจากนาที 2026-09-14) เป็นนาที
+  // ให้แล้วที่ CardioResult.fromJson (workout_model.dart) — ตรงนี้ใช้นาทีตรงๆ ได้เลย
   String _formatPace(double minutesPerKm) {
     final m = minutesPerKm.floor();
     final s = ((minutesPerKm - m) * 60).round();
