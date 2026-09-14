@@ -370,10 +370,7 @@ class _WeightTrainingExerciseViewState
       cancelLabel: 'ยกเลิก',
       color: AppColors.primaryGreen,
     );
-    if (confirm) {
-      setState(() => _showSummary = false);
-      await _saveWorkoutToApi();
-    }
+    if (confirm) await _saveWorkoutToApi();
   }
 
   // ปิดสรุปแล้วกลับไปฝึกต่อ — ต้อง restart _globalTimer/_activeSetTimer ที่ถูก cancel
@@ -620,8 +617,12 @@ class _WeightTrainingExerciseViewState
   // พร้อมกันถึงจะหาค่าได้ (ถ่วงน้ำหนักด้วยจำนวนเซต + ความหนาแน่นจากเวลารวม/จำนวนเซต) ผลพลอยได้:
   // กันเน็ตหลุดกลางทาง loop แล้วได้ข้อมูลครึ่งๆ เหมือนของเดิม — ตอนนี้สำเร็จหรือไม่สำเร็จทั้งหมด
   Future<void> _saveWorkoutToApi() async {
+    // เหมือน cardio_activity_exercise_view.dart (_submitWorkoutData เช็ค < 1 นาที) — เตือนแทน
+    // ปิดหน้าเงียบๆ ค้างอยู่หน้าสรุปให้กด "ฝึกต่อ" ไปเพิ่มเซตได้ ไม่ใช่ pop ออกไปทั้งที่ยังไม่บันทึก
     if (_completedSets.isEmpty) {
-      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        showAppAlert(context, 'ยังไม่มีเซตที่บันทึก กรุณาฝึกอย่างน้อย 1 เซท', type: AppAlertType.warning);
+      }
       return;
     }
 

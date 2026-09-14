@@ -218,7 +218,12 @@ class CardioResult {
   factory CardioResult.fromJson(Map<String, dynamic> json) => CardioResult(
         resultId: json['cdors_id'] ?? json['result_id'] ?? json['id'] ?? 0,
         cardioTypeId: json['cdo_id'] ?? json['cardio_type_id'] ?? 0,
-        duration: (json['cdors_duration'] ?? json['duration'] ?? 0).toDouble(),
+        // cdors_duration จาก API เป็นวินาที (เปลี่ยนจากนาที 2026-09-14) แปลงเป็นนาทีตรงนี้จุดเดียว
+        // ให้ field `duration` ของโมเดลนี้ยังคงความหมาย "นาที" เหมือนเดิม — จุดแสดงผลอื่นทั้งหมด
+        // (workout_view.dart, dashboard_view.dart, cardio_activity_detail_view.dart) ไม่ต้องแก้
+        duration: json['cdors_duration'] != null
+            ? (json['cdors_duration'] as num).toDouble() / 60.0
+            : (json['duration'] as num? ?? 0).toDouble(),
         distance: (json['cdors_distance'] ?? json['distance'] ?? 0).toDouble(),
         caloriesBurned:
             (json['cdors_calories'] ?? json['calories_burned'] ?? 0).toDouble(),
@@ -232,7 +237,8 @@ class CardioResult {
 
   Map<String, dynamic> toJson() => {
         'cdo_id': cardioTypeId,
-        'cdors_duration': duration.toInt(),
+        // duration (นาที) แปลงกลับเป็นวินาทีตอนส่ง API (cdors_duration เป็นวินาที 2026-09-14)
+        'cdors_duration': (duration * 60).round(),
         'cdors_distance': distance,
         'date': date,
       };

@@ -291,14 +291,6 @@ class _CardioActivityExerciseViewState extends State<CardioActivityExerciseView>
   // Calculated Values
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // ปัดใกล้สุดแทนปัดเศษทิ้ง (เดิม ~/ 60 ตัดเศษวินาทีทิ้งเสมอ — ฝึก 29:59 เคยถูกนับแค่ 29 นาที)
-  // ยังคงกันไว้ที่ 0 ไม่ให้กดบันทึกได้ (มี guard _globalSeconds < 60 กันไว้ที่ _submitWorkoutData แล้ว)
-  int _getCalculatedMinutes() {
-    if (_globalSeconds <= 0) return 0;
-    final int rounded = ((_globalSeconds + 30) ~/ 60);
-    return rounded < 1 ? 1 : rounded;
-  }
-
   // ต้องตรงสูตรกับ backend (SaveCardioResult, workout_controller.go) เป๊ะ — (METs−1)×kg×ชม.
   // เดิมไม่ได้หัก 1 MET (สูตร gross) ตัวเลขที่วิ่งบนจอระหว่างฝึกจึงสูงกว่าค่าที่บันทึกจริงเสมอ
   // (เช่น 30 นาที เดินชันบนสายพาน MET 7.0: จอเก่าโชว์ 238 แต่ DB เก็บ 204) เป็น preview
@@ -320,13 +312,13 @@ class _CardioActivityExerciseViewState extends State<CardioActivityExerciseView>
       showAppAlert(context, 'เวลาฝึกน้อยเกินไป กรุณาฝึกอย่างน้อย 1 นาที', type: AppAlertType.warning);
       return;
     }
-    final int durationMinutes = _getCalculatedMinutes();
-
+    // ส่งวินาทีจริงตรงๆ (เปลี่ยนจากปัดเป็นนาทีเต็ม 2026-09-14 — เดิม 60-89 วิ ถูกปัดเป็น "1 นาที"
+    // เท่ากันหมด คลาดเคลื่อนได้ถึง ±48% ในเซสชันสั้น) backend หารเป็นชั่วโมงเองตอนคำนวณ
     final sessionDate = (_sessionStartTime ?? DateTime.now()).toIso8601String().split('T').first;
     final Map<String, dynamic> payload = {
       'date': sessionDate,
       'cdo_id': widget.cardioTypeId,
-      'cdors_duration': durationMinutes,
+      'cdors_duration': _globalSeconds,
     };
 
     if (widget.hasDistance) {
