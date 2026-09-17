@@ -461,6 +461,7 @@ class _DashboardViewState extends State<DashboardView>
     }
   }
 
+
   // ═══════════════════════════════════════════════════════════════════════════
   // BUILD
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1814,7 +1815,7 @@ class _DashboardViewState extends State<DashboardView>
     final color = rate >= 0.8 ? AppColors.primaryGreen : (rate >= 0.5 ? Colors.orange : Colors.redAccent);
     return _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        const Text('Adherence Rate', style: TextStyle(
+        const Text('อัตราการฝึกตามแผน', style: TextStyle(
             fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
         _badge('${(rate * 100).round()}%', color),
       ]),
