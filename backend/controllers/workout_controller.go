@@ -840,15 +840,21 @@ func UpdateWorkoutSchedule(c *gin.Context) {
 		return
 	}
 
+	// PATCH เป็น partial update (sets/reps แก้ทีละอันหรือพร้อมกันก็ได้) เช็คแยกฟิลด์ตามที่ส่งมาจริง
+	// ไม่ใช้ ValidateScheduleSetsReps ร่วม (ต้องมีทั้งสองค่า) แบบ CreateWorkoutSchedule ด้านล่าง
 	updates := map[string]interface{}{}
 	if req.Sets != nil {
-		if *req.Sets < 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "จำนวนเซ็ตต้องมากกว่า 0"})
+		if *req.Sets < 1 || *req.Sets > 20 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "จำนวนเซ็ตต้องอยู่ระหว่าง 1-20"})
 			return
 		}
 		updates["wsch_sets"] = *req.Sets
 	}
 	if req.Reps != nil && *req.Reps != "" {
+		if !helpers.RepsPattern.MatchString(*req.Reps) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "รูปแบบจำนวนครั้งไม่ถูกต้อง (เช่น \"12\" หรือ \"8-12\")"})
+			return
+		}
 		updates["wsch_reps"] = *req.Reps
 	}
 
@@ -899,6 +905,10 @@ func CreateWorkoutSchedule(c *gin.Context) {
 	reps := "10"
 	if req.Reps != "" {
 		reps = req.Reps
+	}
+	if ok, msg := helpers.ValidateScheduleSetsReps(sets, reps); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
 	}
 
 	// ครอบทั้งหมดในทรานแซกชันเดียว + ล็อกแถวหัวแผน (FOR UPDATE) กันเพิ่มหลายท่าพร้อมกัน (เช่น
@@ -1033,6 +1043,10 @@ type WeightSessionSetInput struct {
 	WtrsReps      int     `json:"wtrs_reps" binding:"required,gt=0"`
 	WtrsWeight    float64 `json:"wtrs_weight"`
 	ActiveSeconds int     `json:"active_seconds"`
+	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป — optional, nil เมื่อมือถือยังไม่ส่งมา (เพิ่มคอลัมน์
+	// 2026-09-18 ใช้กับ Dynamic Base MET ของ Step 1, services.CalculateWeightTrainingCalories) —
+	// nil ให้ fallback เป็นความหนาแน่นเฉลี่ยทั้งเซสชันแทนเวลาพักจริง
+	WtrsRestSeconds *int `json:"wtrs_rest_seconds"`
 }
 
 // WeightSessionRequest - บันทึกผลเวทเทรนนิ่งทั้งเซสชันในคำขอเดียว (แทนที่ของเดิมที่ยิงทีละเซต
@@ -1048,6 +1062,8 @@ type WeightSessionRequest struct {
 }
 
 // CardioResultRequest - บันทึกผล Cardio (ไม่ต้องมี schedule)
+// CdorsDuration หน่วยวินาที (เปลี่ยนจากนาที 2026-09-14 — ดู ValidateCardioResult) ตรงกับ
+// pattern เดียวกับ WeightSessionRequest.TotalDurationSeconds ด้านบน
 type CardioResultRequest struct {
 	Date          string  `json:"date" binding:"required"`
 	CdoID         uint    `json:"cdo_id" binding:"required"`
@@ -1117,9 +1133,9 @@ func SaveWorkoutResult(c *gin.Context) {
 	setLogs := make([]services.SetLog, 0, len(req.Sets))
 	for _, s := range req.Sets {
 		setLogs = append(setLogs, services.SetLog{
-			BaseMET:  exercise.WetBaseMet,
-			WeightKg: s.WtrsWeight,
-			Reps:     s.WtrsReps,
+			WeightKg:    s.WtrsWeight,
+			Reps:        s.WtrsReps,
+			RestSeconds: s.WtrsRestSeconds,
 		})
 	}
 	calc := services.CalculateWeightTrainingCalories(bodyWeight, req.TotalDurationSeconds, oneRepMax, setLogs)
@@ -1151,6 +1167,7 @@ func SaveWorkoutResult(c *gin.Context) {
 			WtrsWeight:         s.WtrsWeight,
 			WtrsActiveSeconds:  &activeSeconds,
 			WtrsDuration:       &duration,
+			WtrsRestSeconds:    s.WtrsRestSeconds,
 			WtrsIntensityLevel: calc.IntensityLevel,
 			// SessionKcal หารเท่ากันทุกเซต — analytics_controller.go SUM(wtrs_calories) ยังถูกต้อง
 			// เป๊ะโดยไม่ต้องแก้ (ผลรวมของเซตทั้งหมด = SessionKcal พอดี)
@@ -1252,7 +1269,8 @@ func SaveCardioResult(c *gin.Context) {
 	}
 
 	// ตรวจช่วงค่าหลังรู้แล้วว่ากิจกรรมนี้ต้องกรอกระยะทางไหม (cardio.CdoHasDistance) — เพดานตรงกับ
-	// คอลัมน์จริง cdors_duration (SMALLINT UNSIGNED) / cdors_distance (DECIMAL(5,2)) กัน DB error
+	// คอลัมน์จริง cdors_duration (SMALLINT UNSIGNED, หน่วยวินาที เปลี่ยนจากนาที 2026-09-14) /
+	// cdors_distance (DECIMAL(5,2)) กัน DB error
 	if ok, msg := helpers.ValidateCardioResult(req.CdorsDuration, req.CdorsDistance, cardio.CdoHasDistance == 1); !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
@@ -1277,7 +1295,7 @@ func SaveCardioResult(c *gin.Context) {
 	// Deprecated (2026-08-22): สูตรเดิม `cardio.CdoMets * bodyWeight * เวลา` (ไม่หัก 1 MET) นับพลังงาน
 	// พื้นฐานซ้ำกับ Baseline ใน TDEO เหมือนที่เจอฝั่งเวทเทรนนิ่ง — แถวข้อมูลเก่าก่อนวันนี้คำนวณด้วยสูตร
 	// gross แบบเดิม ไม่ตรงกับที่นี่ ถ้าต้องเทียบย้อนหลังให้เช็ควันที่ก่อนแก้
-	burnedCalories := netMets * bodyWeight * (float64(req.CdorsDuration) / 60.0)
+	burnedCalories := netMets * bodyWeight * (float64(req.CdorsDuration) / 3600.0)
 
 	// cdors_distance เก็บ NULL เมื่อกิจกรรมนั้นไม่ได้วัดระยะทาง (cdo_has_distance = 0) — "ไม่มี
 	// ระยะทาง" กับ "ระยะทาง 0 กม." คนละความหมาย DEFAULT 0.00 เดิมถูกถอดออกจาก DB แล้ว
@@ -1310,7 +1328,7 @@ func SaveCardioResult(c *gin.Context) {
 		"calculation": gin.H{
 			"mets":         cardio.CdoMets,
 			"weight_kg":    bodyWeight,
-			"duration_min": req.CdorsDuration,
+			"duration_sec": req.CdorsDuration,
 		},
 	})
 }

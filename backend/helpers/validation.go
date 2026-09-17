@@ -110,15 +110,19 @@ func ValidateHeight(height float64) (bool, string) {
 }
 
 // ValidateCardioResult - ตรวจช่วงค่าตอนบันทึกผลคาร์ดิโอ (SaveCardioResult)
-// duration: 1-600 นาที (10 ชม. กันกดพลาด/ทดสอบยิงค่าประหลาด, cardio_result.cdors_duration
-// เป็น SMALLINT UNSIGNED เก็บได้ถึง 65535 แต่ไม่มีเซสชันจริงไหนยาวขนาดนั้น)
+// duration: 60-36000 วินาที (1 นาที - 10 ชม.) — เปลี่ยนหน่วยจาก "นาที" เป็น "วินาที" เมื่อ 2026-09-14
+// (เดิมเก็บนาทีเต็มเท่านั้น ปัดเศษ 60-89 วิ เป็น "1 นาที" เท่ากันหมด คลาดเคลื่อนได้ถึง ±48% ในเซสชันสั้น)
+// ขั้นต่ำ 60 วินาทียังคงไว้เหมือนเดิม — ไม่ใช่แค่กันกดพลาด แต่ MET (Compendium of Physical
+// Activities) เป็นค่าที่วัดจาก steady-state VO2 กิจกรรม <1 นาที ไม่ใช่ steady-state จึงไม่มีความหมาย
+// ทางสรีรวิทยาที่จะเอา MET มาคูณตรงๆ เพดาน 36000 วินาที (=600 นาทีเดิม) กันกดพลาด/ทดสอบยิงค่าประหลาด
+// cardio_result.cdors_duration เป็น SMALLINT UNSIGNED เก็บได้ถึง 65535 แต่ไม่มีเซสชันจริงไหนยาวขนาดนั้น
 // distance: 0-999.99 กม. ตรงเพดานจริงของคอลัมน์ cdors_distance DECIMAL(5,2) กัน DB error
 // [USED] workout_controller.go (SaveCardioResult)
-func ValidateCardioResult(durationMinutes int, distanceKm float64, hasDistance bool) (bool, string) {
-	if durationMinutes < 1 {
+func ValidateCardioResult(durationSeconds int, distanceKm float64, hasDistance bool) (bool, string) {
+	if durationSeconds < 60 {
 		return false, "ระยะเวลาต้องไม่น้อยกว่า 1 นาที"
 	}
-	if durationMinutes > 600 {
+	if durationSeconds > 36000 {
 		return false, "ระยะเวลาไม่ถูกต้อง (สูงสุด 600 นาที)"
 	}
 	if hasDistance {
@@ -204,7 +208,9 @@ func ValidateMuscleGroupZone(zone int) (bool, string) {
 	return true, ""
 }
 
-var ptdRepsPattern = regexp.MustCompile(`^\d{1,3}(-\d{1,3})?$`)
+// RepsPattern - รูปแบบ "จำนวนครั้ง" ที่ยอมรับทั้ง plan_template_detail (ptd_reps, ฝั่งแอดมิน) และ
+// workout_schedules (wsch_reps, ฝั่งสมาชิกแก้แผนส่วนตัวเอง) — เลขเดี่ยว "12" หรือช่วง "8-12" เท่านั้น
+var RepsPattern = regexp.MustCompile(`^\d{1,3}(-\d{1,3})?$`)
 
 // planTemplateDetail คือ interface กลางเพื่อไม่ให้ helpers ต้อง import models (กัน import cycle)
 type planTemplateDetail interface {
@@ -236,7 +242,21 @@ func ValidatePlanTemplateDetail(d planTemplateDetail, wptDaysPerWeek int) (bool,
 	if rest < 0 || rest > 600 {
 		return false, "เวลาพักต้องอยู่ระหว่าง 0-600 วินาที"
 	}
-	if reps := d.GetPtdReps(); reps != "" && !ptdRepsPattern.MatchString(reps) {
+	if reps := d.GetPtdReps(); reps != "" && !RepsPattern.MatchString(reps) {
+		return false, "รูปแบบจำนวนครั้งไม่ถูกต้อง (เช่น \"12\" หรือ \"8-12\")"
+	}
+	return true, ""
+}
+
+// ValidateScheduleSetsReps - ตรวจ wsch_sets/wsch_reps ตอนสมาชิกแก้ไข/เพิ่มท่าในแผนส่วนตัวเอง
+// (CreateWorkoutSchedule, UpdateWorkoutSchedule) ใช้ช่วงเซต 1-20 และ pattern reps เดียวกับ
+// ValidatePlanTemplateDetail ข้างบน (ptd_sets/ptd_reps ของแผนระบบ) ให้ทั้งสองทางบันทึกข้อมูล
+// สอดคล้องกัน — ไม่ต้องเป็น pointer เพราะจุดที่เรียกรู้ค่าที่จะเช็คแน่นอนอยู่แล้ว (ไม่ใช่ optional patch field)
+func ValidateScheduleSetsReps(sets int, reps string) (bool, string) {
+	if sets < 1 || sets > 20 {
+		return false, "จำนวนเซ็ตต้องอยู่ระหว่าง 1-20"
+	}
+	if reps != "" && !RepsPattern.MatchString(reps) {
 		return false, "รูปแบบจำนวนครั้งไม่ถูกต้อง (เช่น \"12\" หรือ \"8-12\")"
 	}
 	return true, ""
