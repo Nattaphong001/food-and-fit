@@ -297,6 +297,10 @@ class _WeightTrainingExerciseViewState
           'reps': r,
           'weight': w,
           'active_seconds': _activeSetSeconds.clamp(5, 600),
+          // เวลาพักหลังเซตนี้ (วินาที) — คือ _restSeconds ที่นับมาตั้งแต่กดปุ่มพักหลังจบเซตนี้
+          // จนถึงตอนนี้ที่กด "จบการพัก" ส่งขึ้น API เป็น wtrs_rest_seconds ให้ Dynamic Base MET
+          // (Step 1, ดู backend calculator.go) ใช้แทน proxy ความหนาแน่นเฉลี่ยทั้งเซสชัน
+          'rest_seconds': _restSeconds,
         });
       });
     }
@@ -649,6 +653,9 @@ class _WeightTrainingExerciseViewState
           // เวลาออกแรงจริงต่อเซต จับไว้แล้วตอน _finishRest (ดู _activeSetSeconds) ส่งขึ้นไปด้วย
           // ครั้งแรก — ก่อนหน้านี้จับไว้เฉยๆ ไม่เคยส่งขึ้น API เลย
           'active_seconds': s['active_seconds'] ?? 0,
+          // เวลาพักหลังเซตนี้ (วินาที) — ใช้กับ Dynamic Base MET (Step 1, ดู backend
+          // services.CalculateWeightTrainingCalories) เพิ่งเริ่มส่งขึ้น API ตอนนี้ (2026-09-18)
+          'wtrs_rest_seconds': s['rest_seconds'] ?? 0,
         };
       }).toList(),
     };
