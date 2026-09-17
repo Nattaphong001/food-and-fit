@@ -183,7 +183,12 @@ type WeightTrainingResult struct {
 	// CalculateWeightTrainingCalories ไม่ได้อ่านค่านี้ ใช้ WtrsDuration (เวลารวมทั้งเซสชัน) เป็นฐานเวลา
 	WtrsActiveSeconds *int `gorm:"type:smallint unsigned;column:wtrs_active_seconds" json:"wtrs_active_seconds"`
 	// เวลารวมทั้งเซสชัน (วินาที) ซ้ำกันทุกแถวของเซสชันเดียวกัน — ห้าม SUM ข้ามแถว
-	WtrsDuration       *int           `gorm:"type:smallint unsigned;column:wtrs_duration" json:"wtrs_duration"`
+	WtrsDuration *int `gorm:"type:smallint unsigned;column:wtrs_duration" json:"wtrs_duration"`
+	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป (เพิ่มเข้ามา 2026-09-18, migrations/2026-09-18_
+	// add_weight_training_rest_seconds.sql) — NULL = ไม่ทราบ (แถวเก่า/มือถือยังไม่ส่งมา) ใช้กับ
+	// Dynamic Base MET ของ Step 1, services.CalculateWeightTrainingCalories (fallback เป็นความ
+	// หนาแน่นเฉลี่ยทั้งเซสชันเมื่อ NULL)
+	WtrsRestSeconds    *int           `gorm:"type:smallint unsigned;column:wtrs_rest_seconds" json:"wtrs_rest_seconds"`
 	WtrsIntensityLevel int8           `gorm:"type:tinyint;column:wtrs_intensity_level" json:"wtrs_intensity_level"` // 1=เบา, 2=กลาง, 3=หนัก — ตั้งแต่ 2026-09-08 ระบบอนุมานเองจาก %1RM ไม่ใช่ผู้ใช้เลือก
 	WtrsCalories       float64        `gorm:"type:decimal(6,2);column:wtrs_calories" json:"wtrs_calories"`
 	MbID               uint           `gorm:"type:int(11);column:mb_id;not null" json:"mb_id"`
@@ -208,6 +213,8 @@ func (WeightTrainingResult) TableName() string {
 type CardioResult struct {
 	CdorsID       uint    `gorm:"primaryKey;column:cdors_id;autoIncrement" json:"cdors_id"`
 	CdorsDate     string  `gorm:"type:date;column:cdors_date;not null" json:"cdors_date"`
+	// CdorsDuration หน่วยวินาที (เปลี่ยนจากนาที 2026-09-14 — เดิมเก็บนาทีเต็มทำให้เซสชันสั้น
+	// ปัดเศษคลาดเคลื่อนได้ถึง ±48%) ข้อมูลเก่าก่อนวันนี้ต้อง backfill ×60 คู่กับ migration
 	CdorsDuration int     `gorm:"type:smallint unsigned;column:cdors_duration" json:"cdors_duration"`
 	// CdorsDistance เป็น *float64 และไม่มี DEFAULT แล้ว (2026-09-06) — NULL = กิจกรรมนี้ไม่วัด
 	// ระยะทาง (cdo_has_distance = 0) ซึ่งคนละความหมายกับ 0.00 (วิ่งได้ 0 กม.) ที่ DEFAULT เดิมให้มา
