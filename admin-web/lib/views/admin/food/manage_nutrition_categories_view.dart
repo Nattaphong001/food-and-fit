@@ -11,14 +11,12 @@
 // nttc_image (migration 2026-08-29_add_nttc_image_to_nutrition_category.sql) — ไม่มีคำอธิบาย
 // เพราะ nutrition_category ไม่มีคอลัมน์ description (ตัดสินใจแล้วว่าเอาแค่รูป)
 
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:get_storage/get_storage.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/admin_data_bus.dart';
@@ -88,10 +86,7 @@ class _ManageNutritionCategoriesViewState extends State<ManageNutritionCategorie
   // ไม่ว่างเมื่อคลิกการ์ดดูโภชนาการในหมวดหมู่ — สลับแสดงเนื้อหาแทนที่ในสล็อตเดิมของ sidebar shell
   int? _drillCategoryId;
 
-  String get baseUrl => ApiClient.serverUrl;
-  String get apiUrl => '${ApiClient.serverUrl}/api/nutrition/categories';
-  String get _token => GetStorage().read('auth_token') ?? '';
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $_token'};
+  static const _path = '/nutrition/categories';
   final ApiClient _api = ApiClient();
 
   @override
@@ -119,9 +114,9 @@ class _ManageNutritionCategoriesViewState extends State<ManageNutritionCategorie
   // นับจำนวนอาหารต่อหมวดหมู่ (badge "N รายการ" บรีฟ P2 ข้อ 11) — ดึงครั้งเดียวมานับรวมในเครื่อง
   Future<void> _fetchFoodCounts() async {
     try {
-      final res = await http.get(Uri.parse('$baseUrl/api/nutrition/foods'), headers: _authHeaders);
+      final res = await _api.get('/nutrition/foods');
       if (res.statusCode != 200) return;
-      final data = json.decode(utf8.decode(res.bodyBytes));
+      final data = res.data;
       final foods = (data['data'] as List?) ?? [];
       final counts = <int, int>{};
       for (final f in foods) {
@@ -189,37 +184,19 @@ class _ManageNutritionCategoriesViewState extends State<ManageNutritionCategorie
 
     _showLoadingDialog();
     try {
-      http.Response response;
-      final headers = {
-        "Content-Type": "application/json; charset=utf-8",
-        "Authorization": "Bearer $_token",
-      };
-
-      if (oldItem == null) {
-        response = await http.post(
-          Uri.parse(apiUrl),
-          headers: headers,
-          body: jsonEncode({"nttc_name": name.trim()}),
-        );
-      } else {
-        final int id = oldItem['nttc_id'];
-        response = await http.put(
-          Uri.parse('$apiUrl/$id'),
-          headers: headers,
-          body: jsonEncode({"nttc_id": id, "nttc_name": name.trim()}),
-        );
-      }
+      final response = oldItem == null
+          ? await _api.post(_path, {"nttc_name": name.trim()})
+          : await _api.put('$_path/${oldItem['nttc_id']}', {"nttc_id": oldItem['nttc_id'], "nttc_name": name.trim()});
 
       if (!mounted) return;
       if (response.statusCode == 200 || response.statusCode == 201) {
         // อัปโหลดรูป (ถ้าเลือกไว้) เป็นขั้นถัดไปแยกต่างหาก — endpoint สร้าง/แก้ไขหลักยังเป็น
         // JSON เหมือนเดิม (แอปมือถือยังเรียกอยู่) รูปเลยแยกไป endpoint multipart คนละตัว
-        final int catId = oldItem?['nttc_id'] ?? json.decode(response.body)['data']['nttc_id'];
+        final int catId = oldItem?['nttc_id'] ?? response.data['data']['nttc_id'];
         if (imageBytes != null || imageFile != null) {
           await _uploadCategoryImage(catId, imageFile, imageBytes, imageFileName);
         }
         Navigator.pop(context);
-        ApiClient.clearCache();
         await _fetchCategories();
         AdminDataBus.bumpNutritionCategories();
         Navigator.pop(context);
@@ -236,27 +213,22 @@ class _ManageNutritionCategoriesViewState extends State<ManageNutritionCategorie
   }
 
   Future<void> _uploadCategoryImage(int catId, File? imageFile, Uint8List? imageBytes, String? imageFileName) async {
-    final request = http.MultipartRequest('PUT', Uri.parse('$apiUrl/$catId/image'));
-    request.headers.addAll(_authHeaders);
-    if (kIsWeb) {
-      if (imageBytes != null && imageFileName != null) {
-        request.files.add(http.MultipartFile.fromBytes('nttc_image', imageBytes, filename: imageFileName));
-      }
-    } else {
-      if (imageFile != null) {
-        request.files.add(await http.MultipartFile.fromPath('nttc_image', imageFile.path));
-      }
-    }
-    await http.Response.fromStream(await request.send());
+    final formData = dio.FormData.fromMap({
+      if (kIsWeb && imageBytes != null && imageFileName != null)
+        'nttc_image': dio.MultipartFile.fromBytes(imageBytes, filename: imageFileName)
+      else if (!kIsWeb && imageFile != null)
+        'nttc_image': await dio.MultipartFile.fromFile(imageFile.path),
+    });
+    await _api.put('$_path/$catId/image', formData);
   }
 
   Future<void> _handleDelete(int id, String name) async {
     _showLoadingDialog();
     int foodCount = 0;
     try {
-      final res = await http.get(Uri.parse('$baseUrl/api/nutrition/foods'), headers: _authHeaders);
+      final res = await _api.get('/nutrition/foods');
       if (res.statusCode == 200) {
-        final data = json.decode(utf8.decode(res.bodyBytes));
+        final data = res.data;
         final foods = (data['data'] as List?) ?? [];
         foodCount = foods.where((f) {
           final catId = f['nttc_id'] ?? f['category']?['nttc_id'];
@@ -288,11 +260,10 @@ class _ManageNutritionCategoriesViewState extends State<ManageNutritionCategorie
     if (confirm) {
       _showLoadingDialog();
       try {
-        final response = await http.delete(Uri.parse('$apiUrl/$id'), headers: _authHeaders);
+        final response = await _api.delete('$_path/$id');
         if (!mounted) return;
         Navigator.pop(context);
         if (response.statusCode == 200) {
-          ApiClient.clearCache();
           _fetchCategories();
           AdminDataBus.bumpNutritionCategories();
           showAdminTopToast(context, 'ลบ "$name" เรียบร้อย');

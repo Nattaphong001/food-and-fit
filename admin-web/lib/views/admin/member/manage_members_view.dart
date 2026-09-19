@@ -50,6 +50,13 @@ class _ManageMembersViewState extends State<ManageMembersView> {
   bool _isLoading = true;
   bool _hasError = false;
   bool _isNetworkError = false;
+  // true หลัง fetch ครั้งแรกจบ (สำเร็จหรือ error ก็ได้) ไม่รีเซ็ตกลับ false อีก — ใช้แยก "โหลดครั้งแรก
+  // ของหน้า" (ยังไม่มีอะไรให้โชว์ ต้องมี skeleton เต็มพื้นที่) ออกจาก "ค้นหา/เปลี่ยนหน้าซ้ำ" (มีตาราง
+  // เดิมโชว์อยู่แล้ว) เดิมใช้ _isLoading เงื่อนไขเดียวสลับ Expanded ทั้งก้อนระหว่าง skeleton ↔ ตารางจริง
+  // ทุกครั้งที่พิมพ์ค้นหา (debounce ยิง _fetchMembers ใหม่ตั้ง _isLoading=true ทุกครั้ง) การ destroy/
+  // สร้างตารางทั้งก้อนซ้ำๆ ระหว่างพิมพ์ทำให้ browser (Flutter web ใช้ DOM input ซ้อนตำแหน่งช่องค้นหา)
+  // หลุด focus จากช่องค้นหากลางคัน — คงตารางเดิมไว้โชว์ต่อระหว่างรอผลค้นหาใหม่แทน ไม่ swap ทั้งก้อน
+  bool _hasLoadedOnce = false;
   String _search = '';
   int _pageSize = kAdminPageSizeOptions[1];
   int _currentPage = 1;
@@ -110,9 +117,10 @@ class _ManageMembersViewState extends State<ManageMembersView> {
           _members = (data['data'] ?? []) as List;
           _total = (data['total'] as num?)?.toInt() ?? 0;
           _isLoading = false;
+          _hasLoadedOnce = true;
         });
       } else {
-        setState(() { _hasError = true; _isLoading = false; });
+        setState(() { _hasError = true; _isLoading = false; _hasLoadedOnce = true; });
       }
     } on DioException catch (e) {
       if (e.type == DioExceptionType.cancel) return; // ถูก request ใหม่กว่าแทนที่ ไม่ต้องทำอะไร
@@ -121,9 +129,10 @@ class _ManageMembersViewState extends State<ManageMembersView> {
         _hasError = true;
         _isNetworkError = isNetworkDioError(e);
         _isLoading = false;
+        _hasLoadedOnce = true;
       });
     } catch (_) {
-      if (mounted) setState(() { _hasError = true; _isLoading = false; });
+      if (mounted) setState(() { _hasError = true; _isLoading = false; _hasLoadedOnce = true; });
     }
   }
 
@@ -158,31 +167,60 @@ class _ManageMembersViewState extends State<ManageMembersView> {
   // ทันที ตัดการ์ดนี้ออกก่อน (ตัดสินใจร่วมกับผู้ใช้ 2026-08-30) เหลือแค่ "ทั้งหมด" ที่ใช้ _total
   // จาก response ตรงๆ ได้ถูกต้องเสมอไม่ว่าจะอยู่หน้าไหน — จะเพิ่มสถิตินี้กลับต้องมี field ใหม่จาก
   // backend endpoint (นอกขอบเขต task นี้)
+  // ต้องอยู่ตำแหน่งเดิมใน Column เสมอ (ไม่ใช้ if/else ตัด widget ออกจาก children list) — ถ้าตัดออก
+  // ตรงๆ ตอน _isLoading สลับ true/false ทุกครั้งที่พิมพ์ช่องค้นหา (debounce ยิง _fetchMembers ใหม่)
+  // ตำแหน่งของ AdminFilterBar ใน Column ด้านล่างจะเลื่อน ทำให้ Flutter จับคู่ element ผิดแล้ว dispose+
+  // สร้าง AdminFilterBar ใหม่ทั้งก้อน (TextEditingController ในตัวมันโดนรีเซ็ต) ช่องค้นหาเลยเคลียร์
+  // ข้อความที่พิมพ์ค้างอยู่ทุกครั้งที่ยิง API ใหม่ — สลับแค่ "เนื้อหาข้างใน" การ์ด (ตัวเลขจริง ↔ skeleton
+  // shimmer) แบบเดียวกับการ์ด KPI หน้า dashboard ไม่ใช่ซ่อน/โชว์ทั้งก้อน (เคยลองซ่อนทั้งก้อนด้วย
+  // Visibility(maintainSize:true) มาก่อน — ได้ตำแหน่งนิ่งแล้ว แต่กลายเป็นกระพริบว่างเปล่าทั้งก้อนแทน
+  // ไม่เหมาะกับ loading state)
   Widget _buildSummaryCards() {
-    Widget card(String label, String value, IconData icon, Color color) => Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.divider)),
-            child: Row(children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-                child: Icon(icon, color: color, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.textDark)),
-                Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
-              ]),
-            ]),
-          ),
-        );
+    // shimmer ต้องห่อแค่ Container ข้างใน ห้ามห่อ Expanded ทั้งก้อน — Expanded ต้องเป็นลูกโดยตรงของ
+    // Row/Column/Flex เท่านั้น (ข้อบังคับของ Flutter) AdminShimmer ข้างในเรนเดอร์เป็น
+    // AnimatedBuilder→ShaderMask ซึ่งเป็น widget เดี่ยวคั่นกลาง ถ้าเอา Expanded ไปไว้ข้างในนั้น
+    // Row ด้านนอกจะเห็นแค่ AdminShimmer เป็นลูกตรง (ไม่ใช่ Expanded) แต่ RenderObject ของ Expanded
+    // (ParentDataWidget) ยังพยายามส่ง flex ข้ามชั้นไป Row ไม่ได้ → throw "Incorrect use of
+    // ParentDataWidget" ทุกเฟรมของ animation shimmer (repeat ทุก 1300ms ไม่หยุด) ทำให้หน้าค้าง
+    // (เจอจริง 2026-09-15 หน้ารายชื่อสมาชิก ตอน skeleton โชว์)
+    Widget cardShell({required Widget icon, required Widget value, required Widget label, bool shimmer = false}) {
+      final inner = Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.divider)),
+        child: Row(children: [
+          icon,
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [value, const SizedBox(height: 6), label])),
+        ]),
+      );
+      return Expanded(child: shimmer ? AdminShimmer(child: inner) : inner);
+    }
+
+    // loading จริง (ยังไม่เคยมีข้อมูล) หรือ error → skeleton shimmer เฉพาะในการ์ด (ไม่ลากทั้งบล็อกหาย)
+    // ส่วนตอนพิมพ์ค้นหาแล้ว fetch ใหม่ (_isLoading=true แต่เคยมี _total ก่อนหน้าแล้ว) ให้โชว์ตัวเลขเดิม
+    // ค้างไว้ก่อนแทนสั่น/กระพริบทุกคีย์สโตรก พอผลค้นหาใหม่มาถึงค่อยอัปเดตทันที
+    final showSkeleton = (_isLoading && _total == 0) || _hasError;
+
+    final content = showSkeleton
+        ? cardShell(
+            shimmer: true,
+            icon: const AdminSkeletonBox(width: 40, height: 40, borderRadius: BorderRadius.all(Radius.circular(10))),
+            value: const AdminSkeletonBox(height: 22, width: 60),
+            label: const AdminSkeletonBox(height: 12, width: 90),
+          )
+        : cardShell(
+            icon: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: AppColors.primaryGreen.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+              child: const Icon(Icons.people_outline, color: AppColors.primaryGreen, size: 20),
+            ),
+            value: Text('$_total', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.textDark)),
+            label: const Text('สมาชิกทั้งหมด', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+          );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
-      child: Row(children: [
-        card('สมาชิกทั้งหมด', '$_total', Icons.people_outline, AppColors.primaryGreen),
-      ]),
+      child: Row(children: [content]),
     );
   }
 
@@ -290,7 +328,10 @@ class _ManageMembersViewState extends State<ManageMembersView> {
     }
     final rows = _members;
 
-    final AdminListState? stateOverride = _isLoading
+    // (_isLoading && !_hasLoadedOnce) เฉพาะ "โหลดครั้งแรก" เท่านั้นที่สลับ Expanded ทั้งก้อนเป็น
+    // skeleton — ค้นหา/เปลี่ยนหน้าซ้ำ (_hasLoadedOnce=true แล้ว) คงตารางเดิมโชว์ต่อไว้ก่อน ไม่ swap
+    // ทั้งก้อน (เหตุผลเต็ม ดูคอมเมนต์ที่ _hasLoadedOnce ด้านบน) ส่วนแถบบางๆ กำลังโหลดอยู่ที่ดูด้านล่าง
+    final AdminListState? stateOverride = (_isLoading && !_hasLoadedOnce)
         ? AdminListState.loading
         : _hasError
             ? AdminListState.error
@@ -302,7 +343,7 @@ class _ManageMembersViewState extends State<ManageMembersView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const AdminPageHeader(breadcrumb: ['ผู้ใช้งาน', 'รายชื่อสมาชิก']),
-        if (!_isLoading && !_hasError) _buildSummaryCards(),
+        _buildSummaryCards(),
         AdminFilterBar(
           searchHint: 'ค้นหาชื่อหรืออีเมล...',
           onSearchChanged: (v) {
@@ -312,6 +353,14 @@ class _ManageMembersViewState extends State<ManageMembersView> {
           resultCount: _total,
           showClearButton: _search.isNotEmpty,
           onClearFilters: _clearFilters,
+        ),
+        // แถบบางๆ บอกว่ากำลังค้นหา/โหลดหน้าใหม่อยู่ (เห็นได้เฉพาะตอน _hasLoadedOnce แล้วเท่านั้น —
+        // โหลดครั้งแรกใช้ skeleton เต็มพื้นที่ด้านล่างแทนอยู่แล้ว) อยู่ใน SizedBox สูงคงที่เสมอ
+        // สลับแค่เนื้อหาข้างในไม่ตัด widget ออกจาก children list — กันปัญหาตำแหน่งเลื่อนแบบเดียวกับ
+        // การ์ดสรุปด้านบน
+        SizedBox(
+          height: 2,
+          child: (_isLoading && _hasLoadedOnce) ? const LinearProgressIndicator(minHeight: 2) : null,
         ),
         Expanded(
           child: stateOverride != null

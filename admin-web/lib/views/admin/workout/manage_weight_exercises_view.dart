@@ -17,14 +17,11 @@
 // flutter_inappwebview -> YoutubeEmbedView (เหตุผลเดียวกับ manage_cardio_activities_view.dart)
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:get_storage/get_storage.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:web/web.dart' as web;
 import '../../../core/constants/app_colors.dart';
@@ -89,9 +86,6 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     return null;
   }
 
-  String get baseUrl => ApiClient.serverUrl;
-  String get _token => GetStorage().read('auth_token') ?? '';
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $_token'};
   final ApiClient _api = ApiClient();
 
   @override
@@ -206,9 +200,9 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
 
   Future<void> _fetchFocusMap() async {
     try {
-      final res = await http.get(Uri.parse("$baseUrl/api/exercise-muscles"), headers: _authHeaders);
+      final res = await _api.get('/exercise-muscles');
       if (res.statusCode == 200) {
-        final decoded = json.decode(res.body);
+        final decoded = res.data;
         List<dynamic> list = decoded is Map ? (decoded['data'] ?? decoded['items'] ?? decoded['result'] ?? []) as List : decoded is List ? decoded : [];
         final Map<int, List<Map<String, dynamic>>> map = {};
         for (final item in list) {
@@ -289,7 +283,6 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
   Future<void> _handleSaveExercise(
     Map<String, dynamic>? item,
     String name, String desc, String technique, int diff, int equipment, int exerciseType, String videoLink,
-    double baseMet,
     File? imageFile, Uint8List? imageBytes, String? imageFileName,
     File? loopVideoFile, Uint8List? loopVideoBytes, String? loopVideoFileName, {
     List<Map<String, dynamic>>? pendingFocus,
@@ -302,36 +295,27 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
 
     _showLoading();
     try {
-      final url = isEdit ? "$baseUrl/api/exercises/weights/${item['wet_id'] ?? item['WetID']}" : "$baseUrl/api/exercises/weights";
+      final path = isEdit ? "/exercises/weights/${item['wet_id'] ?? item['WetID']}" : "/exercises/weights";
 
-      var request = http.MultipartRequest(isEdit ? 'PUT' : 'POST', Uri.parse(url));
-      request.headers.addAll(_authHeaders);
-      request.fields['wet_name'] = name.trim();
-      request.fields['wet_description'] = desc;
-      request.fields['wet_technique'] = technique;
-      request.fields['wet_difficulty'] = diff.toString();
-      request.fields['wet_equipment'] = equipment.toString();
-      request.fields['wet_exercise_type'] = exerciseType.toString();
-      request.fields['wet_base_met'] = baseMet.toString();
-      request.fields['wet_video'] = videoLink;
+      final formData = FormData.fromMap({
+        'wet_name': name.trim(),
+        'wet_description': desc,
+        'wet_technique': technique,
+        'wet_difficulty': diff.toString(),
+        'wet_equipment': equipment.toString(),
+        'wet_exercise_type': exerciseType.toString(),
+        'wet_video': videoLink,
+        if (kIsWeb && imageBytes != null && imageFileName != null)
+          'wet_image': MultipartFile.fromBytes(imageBytes, filename: imageFileName)
+        else if (!kIsWeb && imageFile != null)
+          'wet_image': await MultipartFile.fromFile(imageFile.path),
+        if (kIsWeb && loopVideoBytes != null && loopVideoFileName != null)
+          'wet_loop_video': MultipartFile.fromBytes(loopVideoBytes, filename: loopVideoFileName)
+        else if (!kIsWeb && loopVideoFile != null)
+          'wet_loop_video': await MultipartFile.fromFile(loopVideoFile.path),
+      });
 
-      if (kIsWeb) {
-        if (imageBytes != null && imageFileName != null) {
-          request.files.add(http.MultipartFile.fromBytes('wet_image', imageBytes, filename: imageFileName));
-        }
-        if (loopVideoBytes != null && loopVideoFileName != null) {
-          request.files.add(http.MultipartFile.fromBytes('wet_loop_video', loopVideoBytes, filename: loopVideoFileName));
-        }
-      } else {
-        if (imageFile != null) {
-          request.files.add(await http.MultipartFile.fromPath('wet_image', imageFile.path));
-        }
-        if (loopVideoFile != null) {
-          request.files.add(await http.MultipartFile.fromPath('wet_loop_video', loopVideoFile.path));
-        }
-      }
-
-      final response = await http.Response.fromStream(await request.send());
+      final response = isEdit ? await _api.put(path, formData) : await _api.post(path, formData);
       Navigator.pop(context);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -340,21 +324,16 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
         int focusFailCount = 0;
         if (!isEdit && pendingFocus != null && pendingFocus.isNotEmpty) {
           try {
-            final body = json.decode(response.body);
+            final body = response.data;
             num? newId;
             if (body is Map && body['data'] is Map) {
               newId = (body['data'] as Map)['wet_id'] as num?;
             }
             if (newId != null) {
-              final headers = {"Content-Type": "application/json", "Authorization": "Bearer $_token"};
               for (final f in pendingFocus) {
                 final exmType = f['exm_type'] ?? (f['type'] == 'หลัก' ? 1 : 2);
                 try {
-                  final r = await http.post(
-                    Uri.parse("$baseUrl/api/exercise-muscles"),
-                    headers: headers,
-                    body: json.encode({"exm_type": exmType, "wet_id": newId.toInt(), "mug_id": f['mug_id']}),
-                  );
+                  final r = await _api.post('/exercise-muscles', {"exm_type": exmType, "wet_id": newId.toInt(), "mug_id": f['mug_id']});
                   if (r.statusCode != 200 && r.statusCode != 201) focusFailCount++;
                 } catch (_) {
                   focusFailCount++;
@@ -367,7 +346,6 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
             focusFailCount = pendingFocus.length;
           }
         }
-        ApiClient.clearCache();
         AdminDataBus.bumpWeightExercises();
         await _loadAll();
         Navigator.pop(context);
@@ -378,12 +356,10 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
         }
       } else {
         // backend แปล unique constraint error เป็นข้อความไทยไว้แล้ว (เช่น "มีท่าฝึกชื่อนี้อยู่แล้ว"
-        // ตอน 409) ดึง response.body มาใช้แทนโชว์แค่ status code เดิม
+        // ตอน 409) ดึง response.data มาใช้แทนโชว์แค่ status code เดิม
         String msg = 'เกิดข้อผิดพลาด (${response.statusCode})';
-        try {
-          final body = json.decode(response.body);
-          if (body is Map && body['error'] != null) msg = body['error'].toString();
-        } catch (_) {}
+        final body = response.data;
+        if (body is Map && body['error'] != null) msg = body['error'].toString();
         _showSnackBar(msg);
       }
     } catch (e) {
@@ -404,20 +380,15 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     if (confirm) {
       _showLoading();
       try {
-        final res = await http.delete(Uri.parse("$baseUrl/api/exercises/weights/$id"), headers: _authHeaders);
+        final res = await _api.delete('/exercises/weights/$id');
         Navigator.pop(context);
         if (res.statusCode == 200) {
-          ApiClient.clearCache();
           AdminDataBus.bumpWeightExercises();
           await _loadAll();
           showAdminTopToast(context, 'ลบ "$name" เรียบร้อย');
         } else {
-          try {
-            final body = json.decode(res.body);
-            _showSnackBar(body['error'] ?? 'ลบไม่สำเร็จ');
-          } catch (_) {
-            _showSnackBar('ลบไม่สำเร็จ (${res.statusCode})');
-          }
+          final body = res.data;
+          _showSnackBar(body is Map && body['error'] != null ? body['error'].toString() : 'ลบไม่สำเร็จ (${res.statusCode})');
         }
       } catch (e) {
         Navigator.pop(context);
@@ -449,10 +420,8 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
 
     _showLoading();
     try {
-      final body = json.encode({"exm_type": typeInt, "wet_id": wetId, "mug_id": mugId});
-      final headers = {"Content-Type": "application/json", "Authorization": "Bearer $_token"};
-      final url = editId == null ? "$baseUrl/api/exercise-muscles" : "$baseUrl/api/exercise-muscles/$editId";
-      final res = editId == null ? await http.post(Uri.parse(url), headers: headers, body: body) : await http.put(Uri.parse(url), headers: headers, body: body);
+      final body = {"exm_type": typeInt, "wet_id": wetId, "mug_id": mugId};
+      final res = editId == null ? await _api.post('/exercise-muscles', body) : await _api.put('/exercise-muscles/$editId', body);
 
       Navigator.pop(context);
       Navigator.pop(context);
@@ -483,7 +452,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     if (confirm) {
       _showLoading();
       try {
-        final res = await http.delete(Uri.parse("$baseUrl/api/exercise-muscles/$id"), headers: _authHeaders);
+        final res = await _api.delete('/exercise-muscles/$id');
         Navigator.pop(context);
         if (res.statusCode == 200) {
           AdminDataBus.bumpWeightExercises();
@@ -519,12 +488,6 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     int selectedDiff = lockedDiff ?? (item?['wet_difficulty'] ?? item?['WetDifficulty']) ?? 1;
     int selectedEquipment = (item?['wet_equipment'] ?? item?['WetEquipment']) ?? 5;
     int selectedExerciseType = (item?['wet_exercise_type'] ?? item?['WetExerciseType']) ?? 1;
-    // MET พื้นฐานของท่านี้ — ใช้ใน Smart Auto Calorie (backend services.CalculateWeightTrainingCalories)
-    // ไม่มีค่าเดิม (ท่าเพิ่มใหม่) → แนะนำตามประเภทท่าที่เลือกไว้แล้ว (ตรงกับ DEFAULT ที่ seed ไว้ตอน
-    // migration 2026-09-08: isolation=3.0, compound=4.5) ให้แอดมินแก้เป็น 5.5/7.0 เองถ้าเป็นท่าช่วงล่าง/ทั้งตัว
-    final baseMetCtrl = TextEditingController(
-      text: (item?['wet_base_met'] ?? item?['WetBaseMet'])?.toString() ?? (selectedExerciseType == 2 ? '3.0' : '4.5'),
-    );
 
     File? selectedImage;
     Uint8List? selectedImageBytes;
@@ -552,6 +515,10 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     CancelToken? nameCheckToken;
     bool isDuplicateName = false;
     bool dialogClosed = false;
+    // error inline ต่อฟิลด์ ตั้งตอนกดบันทึกแล้วข้อมูลไม่ถูกต้อง — เคลียร์เองตอนผู้ใช้แก้ไขฟิลด์นั้น
+    // (แยกจาก isDuplicateName ที่เช็คสดผ่าน API เพราะ 2 อย่างนี้คนละจังหวะกัน)
+    String? nameError;
+    String? videoError;
 
     InputDecoration fieldDeco({IconData? icon, String? hint}) => InputDecoration(
           hintText: hint,
@@ -686,6 +653,19 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
             return null;
           }
 
+          // ตรวจรูปแบบลิงก์ก่อนส่ง ให้ตรงกับ helpers.ValidateTutorialVideoURL ฝั่ง Go เป๊ะ (ดู
+          // backend/helpers/upload.go youtubeURLPattern) กันแอดมินกดบันทึกแล้วโดนปฏิเสธแบบ generic
+          // error ทั้งที่รู้ล่วงหน้าได้ตั้งแต่ฝั่งฟอร์ม
+          final videoUrlPattern = RegExp(r'^https://(www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)');
+          String? videoUrlValidationError(String url) {
+            final t = url.trim();
+            if (t.isEmpty) return null;
+            if (!videoUrlPattern.hasMatch(t)) {
+              return 'ลิงก์วิดีโอสอนต้องเป็น URL ของ YouTube ที่ขึ้นต้นด้วย https://';
+            }
+            return null;
+          }
+
           Future<void> refreshFocusFromServer() async {
             if (wetId == null) return;
             AdminDataBus.bumpWeightExercises();
@@ -719,9 +699,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
             }
 
             try {
-              final body = json.encode({"exm_type": typeInt, "wet_id": wetId, "mug_id": addMugId});
-              final headers = {"Content-Type": "application/json", "Authorization": "Bearer $_token"};
-              final res = await http.post(Uri.parse("$baseUrl/api/exercise-muscles"), headers: headers, body: body);
+              final res = await _api.post('/exercise-muscles', {"exm_type": typeInt, "wet_id": wetId, "mug_id": addMugId});
               if (dialogClosed) return;
               if (res.statusCode == 200 || res.statusCode == 201) {
                 await refreshFocusFromServer();
@@ -732,10 +710,8 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                 });
               } else {
                 String msg = 'บันทึกไม่สำเร็จ';
-                try {
-                  final b = json.decode(res.body);
-                  if (b is Map && b['error'] != null) msg = b['error'].toString();
-                } catch (_) {}
+                final b = res.data;
+                if (b is Map && b['error'] != null) msg = b['error'].toString();
                 _showSnackBar(msg);
               }
             } catch (e) {
@@ -764,7 +740,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
             if (!confirm || dialogClosed) return;
 
             try {
-              final res = await http.delete(Uri.parse("$baseUrl/api/exercise-muscles/$focusId"), headers: _authHeaders);
+              final res = await _api.delete('/exercise-muscles/$focusId');
               if (dialogClosed) return;
               if (res.statusCode == 200) {
                 await refreshFocusFromServer();
@@ -833,7 +809,21 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                             ]),
                           ),
                           const SizedBox(height: 16),
-                          lbl('ชื่อท่าฝึก *', TextField(controller: nameCtrl, onChanged: checkNameDuplicate, decoration: fieldDeco(icon: Icons.fitness_center, hint: 'เช่น Bench Press, Squat...'))),
+                          lbl(
+                            'ชื่อท่าฝึก *',
+                            TextField(
+                              controller: nameCtrl,
+                              onChanged: (v) {
+                                checkNameDuplicate(v);
+                                if (nameError != null) setModalState(() => nameError = null);
+                              },
+                              decoration: fieldDeco(icon: Icons.fitness_center, hint: 'เช่น Bench Press, Squat...'),
+                            ),
+                          ),
+                          if (nameError != null) ...[
+                            const SizedBox(height: 4),
+                            Text(nameError!, style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                          ],
                           if (isDuplicateName) ...[
                             const SizedBox(height: 4),
                             const Text('มีชื่อท่าฝึกนี้ในระบบแล้ว กรุณาใช้ชื่ออื่น', style: TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
@@ -1013,13 +1003,20 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               TextField(
                                 controller: videoCtrl,
-                                onChanged: (v) => setModalState(() => previewEmbedUrl = _toEmbedUrl(v)),
+                                onChanged: (v) => setModalState(() {
+                                  previewEmbedUrl = _toEmbedUrl(v);
+                                  if (videoError != null) videoError = null;
+                                }),
                                 decoration: InputDecoration(
                                   hintText: 'https://youtube.com/...',
                                   filled: true, fillColor: Colors.white,
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                                 ),
                               ),
+                              if (videoError != null) ...[
+                                const SizedBox(height: 6),
+                                Text(videoError!, style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                              ],
                               if (previewEmbedUrl != null) ...[
                                 const SizedBox(height: 12),
                                 SizedBox(height: 200, width: double.infinity, child: YoutubeEmbedView(embedUrl: previewEmbedUrl!, borderRadius: '12px')),
@@ -1046,27 +1043,6 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 14),
-                          // ตำแหน่งฟิลด์นี้ตั้งใจไว้ท้ายสุดของฟิลด์ weight_exercises ทั้งหมด —
-                          // ให้ลำดับบนหน้าจอนี้ตรงกับลำดับ attribute ใน Datadic ตาราง 4.6 เป๊ะ
-                          // (2 image → 3 name → 4 difficulty → 5 equipment → 6 exercise_type →
-                          // 7 description → 8 technique → 9 video → 10 loop_video → 11 base_met)
-                          // กรรมการไล่เทียบ Datadic กับหน้าจอบนลงล่างได้ตรงกันทุกจุด
-                          lbl(
-                            'ค่าความหนักของกิจกรรมพื้นฐานของท่านี้ (METs)',
-                            TextField(
-                              controller: baseMetCtrl,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              decoration: fieldDeco(icon: Icons.local_fire_department_outlined, hint: 'เช่น 4.5'),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              'อ้างอิง: 3.0 = ท่าเดี่ยว (isolation) · 4.5 = ผสมช่วงบน (Upper Compound) · 5.5 = ผสมช่วงล่าง (Lower Compound) · 7.0 = ทั้งตัว (Full Body)',
-                              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
-                            ),
-                          ),
                           const SizedBox(height: 24),
                           SizedBox(
                             width: double.infinity, height: 50,
@@ -1074,12 +1050,21 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                               onPressed: isDuplicateName
                                   ? null
                                   : () {
-                                      final baseMet = double.tryParse(baseMetCtrl.text.trim().replaceAll(',', '.'));
-                                      if (baseMet == null || baseMet < 1.0 || baseMet > 12.0) {
-                                        _showSnackBar('MET พื้นฐานต้องเป็นตัวเลขระหว่าง 1.0-12.0');
+                                      // ตรวจทุกฟิลด์ที่สัมพันธ์กันพร้อมกันตอนกดบันทึก แทนหยุดแค่ตัวแรกที่เจอ
+                                      // (เดิมเช็คแค่ MET ตัวเดียว ชื่อว่างกดแล้วเงียบ ไม่มี error ให้เห็นเลย
+                                      // เพราะ _handleSaveExercise แค่ return ทิ้งถ้าชื่อว่าง) ให้แอดมินเห็น
+                                      // ครบทุกจุดที่ต้องแก้ในรอบเดียว ไม่ต้องกดบันทึกซ้ำทีละจุด
+                                      final name = nameCtrl.text.trim();
+                                      final nErr = name.isEmpty ? 'กรุณากรอกชื่อท่าฝึก' : null;
+                                      final vErr = videoUrlValidationError(videoCtrl.text);
+                                      if (nErr != null || vErr != null) {
+                                        setModalState(() {
+                                          nameError = nErr;
+                                          videoError = vErr;
+                                        });
                                         return;
                                       }
-                                      _handleSaveExercise(item, nameCtrl.text, descCtrl.text, techniqueItemCtrls.map((c) => c.text.trim()).where((t) => t.isNotEmpty).join('\n'), selectedDiff, selectedEquipment, selectedExerciseType, videoCtrl.text, baseMet, selectedImage, selectedImageBytes, selectedImageName, selectedLoopVideo, selectedLoopVideoBytes, selectedLoopVideoName, pendingFocus: wetId == null ? focusList : null);
+                                      _handleSaveExercise(item, nameCtrl.text, descCtrl.text, techniqueItemCtrls.map((c) => c.text.trim()).where((t) => t.isNotEmpty).join('\n'), selectedDiff, selectedEquipment, selectedExerciseType, videoCtrl.text, selectedImage, selectedImageBytes, selectedImageName, selectedLoopVideo, selectedLoopVideoBytes, selectedLoopVideoName, pendingFocus: wetId == null ? focusList : null);
                                     },
                               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                               child: const Text('บันทึกข้อมูล', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
@@ -1231,7 +1216,6 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
   static const double _thumbW = 60;
   static const double _diffW = 130;
   static const double _typeW = 120;
-  static const double _metW = 90;
   static const double _actionW = 90;
   static const double _nameMin = 220, _equipMin = 130, _muscleMin = 260;
 
@@ -1240,7 +1224,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     return LayoutBuilder(
       builder: (context, constraints) {
         const double reserve = 8; // กันขอบเส้นตาราง ไม่ให้ปัดเข้าโหมด scroll แนวนอนโดยไม่จำเป็น
-        final double flexAvailable = constraints.maxWidth - _thumbW - _diffW - _typeW - _metW - _actionW - reserve;
+        final double flexAvailable = constraints.maxWidth - _thumbW - _diffW - _typeW - _actionW - reserve;
         final double minFlexTotal = _nameMin + _equipMin + _muscleMin;
         final double flexTotal = flexAvailable < minFlexTotal ? minFlexTotal : flexAvailable;
         final double nameW = (flexTotal * 0.30) < _nameMin ? _nameMin : flexTotal * 0.30;
@@ -1257,7 +1241,6 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
           AdminDataColumn(key: 'diff', label: 'ระดับความยาก', width: _diffW),
           AdminDataColumn(key: 'equipment', label: 'อุปกรณ์', width: equipW),
           AdminDataColumn(key: 'type', label: 'ประเภทท่าฝึก', width: _typeW),
-          AdminDataColumn(key: 'met', label: 'MET', width: _metW),
           AdminDataColumn(key: 'muscles', label: 'กล้ามเนื้อโฟกัส', width: muscleW),
         ];
 
@@ -1274,7 +1257,6 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
             final String name = item['wet_name'] ?? item['WetName'] ?? '';
             final int equipment = (item['wet_equipment'] ?? item['WetEquipment']) ?? 5;
             final int exType = (item['wet_exercise_type'] ?? item['WetExerciseType']) ?? 1;
-            final double baseMet = ((item['wet_base_met'] ?? item['WetBaseMet']) as num?)?.toDouble() ?? 4.5;
             final List<Map<String, dynamic>> focusList = focusMap[wetId] ?? [];
 
             return Row(children: [
@@ -1295,7 +1277,6 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
               AdminDataCell(width: _diffW, child: _diffBadge(diff)),
               AdminDataCell(width: equipW, child: Text(_equipmentText(equipment), style: const TextStyle(fontSize: 12.5))),
               AdminDataCell(width: _typeW, child: _iconBadge(exType == 1 ? Icons.groups_outlined : Icons.person_outline, exType == 1 ? 'หลายกลุ่ม' : 'เฉพาะส่วน')),
-              AdminDataCell(width: _metW, child: _iconBadge(Icons.local_fire_department_outlined, baseMet.toStringAsFixed(1))),
               AdminDataCell(
                 width: muscleW,
             child: SizedBox(
@@ -1554,7 +1535,6 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     final String desc = item['wet_description'] ?? item['WetDescription'] ?? '';
     final int equipment = (item['wet_equipment'] ?? item['WetEquipment']) ?? 5;
     final int exType = (item['wet_exercise_type'] ?? item['WetExerciseType']) ?? 1;
-    final double baseMet = ((item['wet_base_met'] ?? item['WetBaseMet']) as num?)?.toDouble() ?? 4.5;
     final List<Map<String, dynamic>> focusList = focusMap[wetId] ?? [];
 
     // การ์ดแนวตั้งขนาดใหญ่ (บรีฟรอบ 3 ข้อ 3.2) — รูปใหญ่เต็มความกว้างด้านบน แทนธัมบ์เนล 56x56 เดิม
@@ -1658,10 +1638,6 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                   _diffBadge(diff),
                   _iconBadge(Icons.fitness_center, _equipmentText(equipment)),
                   _iconBadge(exType == 1 ? Icons.groups_outlined : Icons.person_outline, exType == 1 ? 'หลายกลุ่ม' : 'เฉพาะส่วน'),
-                  // MET พื้นฐาน (wet_base_met, attribute 11 ท้ายสุดของ Datadic ตาราง 4.6) — เดิม
-                  // มองเห็นได้แค่ตอนเปิดฟอร์มแก้ไขทีละท่า เพิ่ม badge นี้ให้ไล่ตรวจครบ ~49 ท่าได้
-                  // จากมุมมองการ์ดโดยไม่ต้องเปิดทีละอัน
-                  _iconBadge(Icons.local_fire_department_outlined, 'MET ${baseMet.toStringAsFixed(1)}'),
                 ]),
               ],
             ),

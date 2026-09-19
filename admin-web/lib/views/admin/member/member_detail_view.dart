@@ -13,6 +13,7 @@ import '../../../core/widgets/app_back_button.dart';
 import '../../../core/widgets/admin_page_header.dart';
 import '../../../core/widgets/admin_network_image.dart';
 import '../../../services/api_client.dart';
+import '../../../core/utils/member_report_calculations.dart' as report_calc;
 
 class MemberDetailView extends StatefulWidget {
   final int memberId;
@@ -28,8 +29,6 @@ class MemberDetailView extends StatefulWidget {
 }
 
 class _MemberDetailViewState extends State<MemberDetailView> {
-
-  static const bool _debugMockChartData = true;
 
   final ApiClient _api = ApiClient();
 
@@ -55,7 +54,6 @@ class _MemberDetailViewState extends State<MemberDetailView> {
           _profile = Map<String, dynamic>.from(data['profile'] ?? {});
           _bodyStats = (data['body_stats'] ?? []) as List;
           _bmrHistory = (data['bmr_history'] ?? []) as List;
-          _applyMockHistoryIfEmpty();
           _isLoading = false;
         });
       } else {
@@ -203,7 +201,7 @@ class _MemberDetailViewState extends State<MemberDetailView> {
   String _targetLabel(int? v) {
     switch (v) {
       case 1: return 'ลดน้ำหนัก';
-      case 2: return 'เพิ่มกล้ามเนื้อ';
+      case 2: return 'เพิ่มน้ำหนัก';
       case 3: return 'รักษาน้ำหนัก';
       default: return '-';
     }
@@ -247,76 +245,6 @@ class _MemberDetailViewState extends State<MemberDetailView> {
       );
 
   // --------------------------------------------
-  // [FUNCTION] _applyMockHistoryIfEmpty
-  // [DESCRIPTION] ชั่วคราว (ดู _debugMockChartData ด้านบน) — ถ้าสมาชิกคนนี้ยังไม่มีประวัติ
-  //               member_bmr_history จริงใน DB เลย ให้ปั้นชุดข้อมูลจำลอง 8 จุด ห่างกัน 18 วัน
-  //               ย้อนหลังจากวันนี้ ใช้สูตร BMR/TDEE/Target เดียวกับ backend
-  //               (services/calculator.go) คำนวณจากส่วนสูง/เพศ/อายุ/
-  //               เป้าหมายจริงของสมาชิก (ถ้ามี body_stats จริงอยู่แล้วใช้ค่านั้นเป็นน้ำหนักฐาน
-  //               ไม่งั้น fallback 80kg/170cm/อายุ 28) ไม่เขียนกลับ DB แค่ใส่ใน state ฝั่ง UI
-  //               เพื่อให้กราฟมีเส้นให้แคปหน้าจอ
-  // --------------------------------------------
-  void _applyMockHistoryIfEmpty() {
-    // เงื่อนไข < 4 (ไม่ใช่ isEmpty เฉยๆ) เพราะสมาชิกจริงบางคนมีประวัติแล้ว 1-2 แถว
-    // ยังไม่พอให้กราฟดูเป็นเทรนด์ ต้อง mock ต่อให้ครบเหมือนกัน
-    if (!_debugMockChartData || _bmrHistory.length >= 4 || _profile == null) return;
-    final p = _profile!;
-    final gender = (p['mb_gender'] as num?)?.toInt() ?? 1;
-    final birthDate = DateTime.tryParse((p['mb_birth_date'] ?? '').toString());
-    final age = birthDate == null ? 28 : (DateTime.now().difference(birthDate).inDays / 365.25).floor();
-    final latestReal = _bodyStats.isNotEmpty ? _bodyStats.first as Map : null;
-    final heightCm = (latestReal?['mbs_height'] as num?)?.toDouble() ?? 170.0;
-    final targetType = (latestReal?['mbs_target'] as num?)?.toInt() ?? 1;
-    final baseWeight = (latestReal?['mbs_weight'] as num?)?.toDouble() ?? 80.0;
-
-    const pointCount = 8;
-    const stepDays = 18;
-    const kgPerStep = 1.0;
-    const activityFactor = 1.55;
-    final heightM = heightCm / 100.0;
-    // ลดน้ำหนัก(1): ยิ่งย้อนอดีตยิ่งหนักกว่า | เพิ่มน้ำหนัก(2): ยิ่งย้อนอดีตยิ่งเบากว่า | รักษา(3): แกว่งน้อย
-    final trendPerStep = targetType == 1 ? kgPerStep : targetType == 2 ? -kgPerStep : 0.0;
-    final today = DateTime.now();
-
-    final mockBmr = <Map<String, dynamic>>[];
-    final mockStats = <Map<String, dynamic>>[];
-    for (int j = 0; j < pointCount; j++) {
-      final wiggle = targetType == 3 ? (j.isEven ? 0.2 : -0.15) : 0.0;
-      final weight = baseWeight + trendPerStep * j + wiggle;
-      final bmi = weight / (heightM * heightM);
-      final bmr = gender == 2
-          ? (10 * weight) + (6.25 * heightCm) - (5 * age) - 161
-          : (10 * weight) + (6.25 * heightCm) - (5 * age) + 5;
-      final tdee = bmr * activityFactor;
-      double target;
-      if (targetType == 1) {
-        target = tdee - (tdee * 0.2);
-        if (target < bmr) target = bmr;
-      } else if (targetType == 2) {
-        target = tdee + (tdee * 0.15);
-      } else {
-        target = tdee;
-      }
-      final date = today.subtract(Duration(days: j * stepDays));
-      mockBmr.add({
-        'mbh_id': 9100 - j,
-        'mbh_record_date': DateFormat('yyyy-MM-dd').format(date),
-        'mbh_bmi': double.parse(bmi.toStringAsFixed(2)),
-        'mbh_bmr': double.parse(bmr.toStringAsFixed(2)),
-        'mbh_tdee': double.parse(tdee.toStringAsFixed(2)),
-        'mbh_tdee_target': double.parse(target.toStringAsFixed(2)),
-      });
-      mockStats.add({
-        'mbs_weight': double.parse(weight.toStringAsFixed(1)),
-        'mbs_height': heightCm,
-        'mbs_target': targetType,
-      });
-    }
-    _bmrHistory = mockBmr;
-    if (_bodyStats.isEmpty) _bodyStats = mockStats;
-  }
-
-  // --------------------------------------------
   // [FEATURE] REPORT
   // [FUNCTION] _bmrAscending (getter)
   // [DESCRIPTION] safety net ฝั่ง client เท่านั้น — ต้นตอ (backend เคย insert
@@ -331,19 +259,7 @@ class _MemberDetailViewState extends State<MemberDetailView> {
   // [TABLES] member_bmr_history
   // [RELATED] BMR_TDEE
   // --------------------------------------------
-  List<Map> get _bmrAscending {
-    final byDate = <String, Map>{};
-    for (final e in _bmrHistory) {
-      final row = e as Map;
-      final date = (row['mbh_record_date'] ?? '').toString();
-      final id = (row['mbh_id'] as num?)?.toInt() ?? 0;
-      final existingId = (byDate[date]?['mbh_id'] as num?)?.toInt() ?? -1;
-      if (id > existingId) byDate[date] = row;
-    }
-    final deduped = byDate.values.toList()
-      ..sort((a, b) => ((a['mbh_id'] as num?)?.toInt() ?? 0).compareTo((b['mbh_id'] as num?)?.toInt() ?? 0));
-    return deduped;
-  }
+  List<Map> get _bmrAscending => report_calc.bmrAscending(_bmrHistory);
 
   // --------------------------------------------
   // [FEATURE] REPORT
@@ -356,19 +272,7 @@ class _MemberDetailViewState extends State<MemberDetailView> {
   // [OUTPUT] List<Map> เฉพาะแถวที่ mbh_bmi ต่างจากแถวก่อนหน้าในลำดับเวลา
   // [RELATED] BMR_TDEE
   // --------------------------------------------
-  List<Map> get _bmiChangePoints {
-    final result = <Map>[];
-    double? lastBmi;
-    for (final row in _bmrAscending) {
-      final bmi = (row['mbh_bmi'] as num?)?.toDouble();
-      if (bmi == null) continue;
-      if (lastBmi == null || bmi != lastBmi) {
-        result.add(row);
-        lastBmi = bmi;
-      }
-    }
-    return result;
-  }
+  List<Map> get _bmiChangePoints => report_calc.bmiChangePoints(_bmrAscending);
 
   // --------------------------------------------
   // [FEATURE] REPORT
@@ -381,12 +285,7 @@ class _MemberDetailViewState extends State<MemberDetailView> {
   // [OUTPUT] double — ค่า interval ส่งให้ SideTitles
   // [RELATED] BMR_TDEE
   // --------------------------------------------
-  double _niceDayInterval(double minX, double maxX) {
-    const dayMs = 86400000.0;
-    final spanDays = ((maxX - minX) / dayMs).ceil();
-    if (spanDays <= 6) return dayMs;
-    return (spanDays / 6).ceil() * dayMs;
-  }
+  double _niceDayInterval(double minX, double maxX) => report_calc.niceDayInterval(minX, maxX);
 
   // --------------------------------------------
   // [FEATURE] REPORT
