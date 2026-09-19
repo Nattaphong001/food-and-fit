@@ -21,12 +21,12 @@ import "time"
 type Nutrition struct {
 	NttID            uint    `gorm:"primaryKey;column:ntt_id;autoIncrement" json:"ntt_id"`
 	NttFoodName      string  `gorm:"column:ntt_food_name;type:varchar(100);not null" json:"ntt_food_name"`
-	NttCalories      float64 `gorm:"column:ntt_calories;type:decimal(7,2)" json:"ntt_calories"`
+	NttCalories      float64 `gorm:"column:ntt_calories;type:decimal(6,2)" json:"ntt_calories"`
 	NttServingWeight int     `gorm:"column:ntt_serving_weight" json:"ntt_serving_weight"`
 	NttUnit          string  `gorm:"column:ntt_unit;type:varchar(50)" json:"ntt_unit"`
-	NttProtein       float64 `gorm:"column:ntt_protein;type:decimal(5,1)" json:"ntt_protein"`
-	NttCarbs         float64 `gorm:"column:ntt_carbs;type:decimal(5,1)" json:"ntt_carbs"`
-	NttFat           float64 `gorm:"column:ntt_fat;type:decimal(5,1)" json:"ntt_fat"`
+	NttProtein       float64 `gorm:"column:ntt_protein;type:decimal(6,2)" json:"ntt_protein"`
+	NttCarbs         float64 `gorm:"column:ntt_carbs;type:decimal(6,2)" json:"ntt_carbs"`
+	NttFat           float64 `gorm:"column:ntt_fat;type:decimal(6,2)" json:"ntt_fat"`
 	NttFoodImage     string  `gorm:"column:ntt_food_image;type:varchar(255)" json:"ntt_food_image"`
 	NttcID           uint    `gorm:"column:nttc_id" json:"nttc_id"`
 
@@ -62,10 +62,10 @@ type DailyNutrition struct {
 	DnttFoodName      string    `gorm:"column:dntt_food_name;type:varchar(100)" json:"dntt_food_name"`
 	DnttQuantity      float64   `gorm:"column:dntt_quantity;type:decimal(5,2)" json:"dntt_quantity"`
 	DnttUnit          string    `gorm:"column:dntt_unit;type:varchar(50)" json:"dntt_unit"`
-	DnttTotalCalories float64   `gorm:"column:dntt_total_calories;type:decimal(7,2)" json:"dntt_total_calories"`
-	DnttTotalProtein  float64   `gorm:"column:dntt_total_protein;type:decimal(5,2)" json:"dntt_total_protein"`
-	DnttTotalCarb     float64   `gorm:"column:dntt_total_carb;type:decimal(5,2)" json:"dntt_total_carb"`
-	DnttTotalFat      float64   `gorm:"column:dntt_total_fat;type:decimal(5,2)" json:"dntt_total_fat"`
+	DnttTotalCalories float64   `gorm:"column:dntt_total_calories;type:decimal(6,2)" json:"dntt_total_calories"`
+	DnttTotalProtein  float64   `gorm:"column:dntt_total_protein;type:decimal(6,2)" json:"dntt_total_protein"`
+	DnttTotalCarb     float64   `gorm:"column:dntt_total_carb;type:decimal(6,2)" json:"dntt_total_carb"`
+	DnttTotalFat      float64   `gorm:"column:dntt_total_fat;type:decimal(6,2)" json:"dntt_total_fat"`
 	DnttImage         string    `gorm:"column:dntt_image;type:varchar(255)" json:"dntt_image"`
 	CreatedAt         time.Time `gorm:"column:dntt_created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt         time.Time `gorm:"column:dntt_updated_at;autoUpdateTime" json:"updated_at"`

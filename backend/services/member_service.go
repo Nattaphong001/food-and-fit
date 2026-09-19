@@ -9,8 +9,17 @@ import (
 
 // AgeFromBirthDate คำนวณอายุเต็มปี ณ เวลาปัจจุบัน จากวันเกิดที่กำหนด
 func AgeFromBirthDate(birthDate time.Time) int {
-	age := time.Now().Year() - birthDate.Year()
-	if time.Now().YearDay() < birthDate.YearDay() {
+	return AgeOn(birthDate, time.Now())
+}
+
+// AgeOn คำนวณอายุเต็มปี ณ วันที่ on เทียบ "เดือน+วัน" ของวันเกิด ไม่ใช่ YearDay
+// (เดิมเทียบ YearDay คลาด 1 วันรอบวันเกิดเมื่อปีเกิดกับปีปัจจุบันต่างกันที่ปีอธิกสุรทิน เพราะ
+// หลัง 29 ก.พ. ลำดับวันในปีเลื่อนไป 1 เช่น เกิด 1 มี.ค. 2000 (วันที่ 61) เทียบกับ 1 มี.ค. 2025
+// (วันที่ 60) ได้ว่ายังไม่ถึงวันเกิด) — ผู้ที่เกิด 29 ก.พ. ปีที่ไม่ใช่ปีอธิกสุรทิน ถือว่าครบรอบวันที่ 1 มี.ค.
+func AgeOn(birthDate, on time.Time) int {
+	age := on.Year() - birthDate.Year()
+	if on.Month() < birthDate.Month() ||
+		(on.Month() == birthDate.Month() && on.Day() < birthDate.Day()) {
 		age--
 	}
 	return age

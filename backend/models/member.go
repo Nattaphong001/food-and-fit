@@ -34,10 +34,10 @@ type MemberBmrHistory struct {
 	MbID          int       `gorm:"column:mb_id;type:int(11)"`
 	MbsID         *int      `gorm:"column:mbs_id"`
 	MbhRecordDate time.Time `gorm:"column:mbh_record_date;type:date"`
-	MbhBmi        float64   `gorm:"column:mbh_bmi;type:decimal(4,2)"`
-	MbhBmr        float64   `gorm:"column:mbh_bmr;type:decimal(7,2)"`
-	MbhTdee       float64   `gorm:"column:mbh_tdee;type:decimal(7,2)"`
-	MbhTdeeTarget float64   `gorm:"column:mbh_tdee_target;type:decimal(7,2)"`
+	MbhBmi        float64   `gorm:"column:mbh_bmi;type:decimal(5,2)"`
+	MbhBmr        float64   `gorm:"column:mbh_bmr;type:decimal(6,2)"`
+	MbhTdee       float64   `gorm:"column:mbh_tdee;type:decimal(6,2)"`
+	MbhTdeeTarget float64   `gorm:"column:mbh_tdee_target;type:decimal(6,2)"`
 }
 
 func (Member) TableName() string           { return "member_profile" }

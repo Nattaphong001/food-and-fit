@@ -28,6 +28,41 @@ func TestAgeFromBirthDate_BirthdayNotYetThisYear(t *testing.T) {
 	}
 }
 
+// AgeOn เทียบเดือน+วัน ไม่ใช่ YearDay — เคสรอบวันเกิดข้ามปีอธิกสุรทิน (วันที่ตายตัว ไม่พึ่ง time.Now)
+func TestAgeOn_LeapYearBoundaries(t *testing.T) {
+	d := func(y int, m time.Month, day int) time.Time {
+		return time.Date(y, m, day, 0, 0, 0, 0, time.UTC)
+	}
+	cases := []struct {
+		name  string
+		birth time.Time
+		on    time.Time
+		want  int
+	}{
+		// เคสที่ YearDay เดิมพลาด: เกิดปีอธิกสุรทิน (1 มี.ค. = วันที่ 61) เทียบปีปกติ (1 มี.ค. = วันที่ 60)
+		{"เกิด 1 มี.ค. 2000 ครบ 25 ใน 1 มี.ค. 2025", d(2000, time.March, 1), d(2025, time.March, 1), 25},
+		{"เกิด 1 มี.ค. 2000 ก่อนครบ 25 ใน 28 ก.พ. 2025", d(2000, time.March, 1), d(2025, time.February, 28), 24},
+		// เคสกลับกัน YearDay เดิมนับเกินวัน: เกิดปีปกติ (1 มี.ค. = วันที่ 60) เทียบปีอธิกสุรทิน (29 ก.พ. = วันที่ 60)
+		{"เกิด 1 มี.ค. 2001 ยังไม่ครบ 23 ใน 29 ก.พ. 2024", d(2001, time.March, 1), d(2024, time.February, 29), 22},
+		{"เกิด 1 มี.ค. 2001 ครบ 23 ใน 1 มี.ค. 2024", d(2001, time.March, 1), d(2024, time.March, 1), 23},
+		// เกิด 29 ก.พ. — ปีปกติถือครบรอบวันที่ 1 มี.ค.
+		{"เกิด 29 ก.พ. 2000 ยังไม่ครบ 25 ใน 28 ก.พ. 2025", d(2000, time.February, 29), d(2025, time.February, 28), 24},
+		{"เกิด 29 ก.พ. 2000 ครบ 25 ใน 1 มี.ค. 2025", d(2000, time.February, 29), d(2025, time.March, 1), 25},
+		{"เกิด 29 ก.พ. 2000 ครบ 24 ใน 29 ก.พ. 2024", d(2000, time.February, 29), d(2024, time.February, 29), 24},
+		// วันเกิดตรงวัน / วันก่อนหน้า / ปลายปี
+		{"วันเกิดตรงวัน", d(1999, time.July, 15), d(2025, time.July, 15), 26},
+		{"ก่อนวันเกิด 1 วัน", d(1999, time.July, 15), d(2025, time.July, 14), 25},
+		{"เกิด 31 ธ.ค. ยังไม่ครบใน 30 ธ.ค.", d(1999, time.December, 31), d(2025, time.December, 30), 25},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := AgeOn(c.birth, c.on); got != c.want {
+				t.Errorf("AgeOn(%s, %s) = %d, want %d", c.birth.Format("2006-01-02"), c.on.Format("2006-01-02"), got, c.want)
+			}
+		})
+	}
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // NetEnergyKcal / CalculateCardioCalories — สูตร ACSM (METs−1)×3.5×kg/200×นาที
 // ─────────────────────────────────────────────────────────────────────────
