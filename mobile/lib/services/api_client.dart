@@ -1,8 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_storage/get_storage.dart';
 
-import 'api_fault_injector.dart';
+import 'lan_scanner.dart';
 
 class _CacheEntry {
   final Response response;
@@ -11,47 +12,99 @@ class _CacheEntry {
 }
 
 class ApiClient {
-  // ============================================================
-  // 📌 ทดสอบบนเครื่องจริง (real device) ต้องแก้ IP ตรงนี้ทุกครั้งที่ย้าย Wi-Fi
-  //
-  //    วิธีหา IP:
-  //    1. เปิด PowerShell/CMD บน PC ที่รัน backend → พิมพ์ `ipconfig`
-  //    2. หาบรรทัด "Wireless LAN adapter Wi-Fi" → เอาเลข IPv4 Address มาใส่ด้านล่าง
-  //    3. มือถือกับ PC ต้องต่อ Wi-Fi วงเดียวกัน
-  //
-  //    ถ้าเชื่อมไม่ติด (ลอง http://<IP>:8081/api ในเบราว์เซอร์มือถือแล้วไม่ขึ้น):
-  //    - เช็คก่อนว่า backend รันอยู่จริง (`go run main.go`) และ Windows Firewall
-  //      อนุญาต inbound port 8081 แล้ว
-  //    - Wi-Fi บางเครือข่าย (เช่น หอพัก/ที่สาธารณะ) เปิด "client isolation"
-  //      บล็อกอุปกรณ์ในวงเดียวกันคุยกันเอง → ต่อ IP จริงไม่ติดแน่นอน
-  //      ทางแก้ชั่วคราว: ต่อสาย USB แล้วรัน `adb reverse tcp:8081 tcp:8081`
-  //      จากนั้นเปลี่ยนค่าด้านล่างเป็น '127.0.0.1' แทน IP จริง
-  //
-  //    ไม่อยากแก้โค้ดทุกครั้งที่ IP เปลี่ยน? ใส่ IP ผ่านคำสั่งรันแทนได้:
-  //    flutter run --dart-define=DEVICE=real --dart-define=REAL_IP=<IP ปัจจุบันของ PC>
-  //    ไม่ใส่ REAL_IP มา = ใช้ค่า default ด้านล่าง
-  // ============================================================
-  static const _realDeviceIp =
-      String.fromEnvironment('REAL_IP', defaultValue: '192.168.1.50');
+  static const _port = 8081;
+  static const _storageKeyIp = 'api_client_detected_real_device_ip';
 
   // ตัวเลือก: 'emulator' (default) | 'real'
   // กำหนดผ่าน --dart-define=DEVICE=real ตอน run (ดู .vscode/launch.json)
   static const _device = String.fromEnvironment('DEVICE', defaultValue: 'emulator');
 
+  // ใช้เฉพาะตอน autoDetectServer() หา backend เองไม่เจอจริงๆ (ไม่มี Wi-Fi/ไฟร์วอลล์บล็อก
+  // ทั้งวง client isolation) — ไม่ใช่ทางหลักแล้ว ไม่ต้องแก้เลขนี้เวลาเปลี่ยน Wi-Fi
+  static const _fallbackIp =
+      String.fromEnvironment('REAL_IP', defaultValue: '192.168.1.122');
+
+  // ผลลัพธ์จาก autoDetectServer() — cache ไว้ในหน่วยความจำระหว่างรันแอปครั้งนี้
+  static String? _detectedIp;
+
   static String get serverUrl {
-    if (kIsWeb) return 'http://localhost:8081';           // Chrome
-    if (_device == 'real') return 'http://$_realDeviceIp:8081'; // เครื่องจริง
-    return 'http://10.0.2.2:8081';                        // Android Emulator
+    if (kIsWeb) return 'http://localhost:$_port';                    // Chrome
+    if (_device == 'real') return 'http://${_detectedIp ?? _fallbackIp}:$_port'; // เครื่องจริง
+    return 'http://10.0.2.2:$_port';                                 // Android Emulator
   }
 
   static String get baseUrl => '$serverUrl/api';
 
-  late Dio dio;
-  final storage = GetStorage();
+  /// เรียกครั้งเดียวใน main() ก่อน runApp (ก่อนสร้าง ApiClient() ตัวแรก) — หา IP เครื่องที่รัน
+  /// backend เองอัตโนมัติ แก้ปัญหาเดิมที่ต้องแก้ค่าคงที่ในไฟล์นี้ทุกครั้งที่ย้าย Wi-Fi/IP เปลี่ยน
+  /// (เผลอลืมแก้ = รันแล้วข้อมูลไม่มา เพราะยังชี้ IP เก่าอยู่)
+  ///
+  /// ลำดับที่ลอง:
+  /// 1. IP ที่เคย detect สำเร็จล่าสุด (persist ใน GetStorage) — เร็วสุด ผ่านเกือบทุกครั้งที่ Wi-Fi ไม่เปลี่ยน
+  /// 2. สแกน subnet /24 ของวง Wi-Fi ที่เครื่องต่ออยู่ตอนนี้ หา backend จาก GET /api/health
+  /// 3. หาไม่เจอทั้งคู่ (ไม่มี Wi-Fi, client isolation บล็อก, ไฟร์วอลล์ปิด port) → fallback ไปใช้
+  ///    _fallbackIp เหมือนพฤติกรรมเดิม (ยังแก้ผ่าน --dart-define=REAL_IP=... ได้เหมือนเดิมถ้าจำเป็น)
+  static Future<void> autoDetectServer() async {
+    if (kIsWeb || _device != 'real') return; // Chrome/Emulator ใช้ IP คงที่อยู่แล้ว ไม่ต้อง detect
 
-  /// ทดสอบเท่านั้น (integration_test) — สั่ง arm(...) เพื่อจำลอง network พังกลางทาง
-  /// ไม่เรียกอะไรเลย = ไม่มีผลกับแอปจริง
-  static final ApiFaultInjector faultInjector = ApiFaultInjector();
+    final storage = GetStorage();
+    final cachedIp = storage.read<String>(_storageKeyIp);
+    if (cachedIp != null && await _probe(cachedIp)) {
+      _detectedIp = cachedIp;
+      return;
+    }
+
+    final found = await _scanForBackend();
+    if (found != null) {
+      _detectedIp = found;
+      await storage.write(_storageKeyIp, found);
+    }
+    // หาไม่เจอ — ปล่อยให้ serverUrl fallback ไปใช้ _fallbackIp ต่อ (หน้าจอจะขึ้น error state
+    // ตามปกติถ้ายังต่อไม่ติด ไม่ต่างจากพฤติกรรมเดิม)
+  }
+
+  static final Dio _probeDio = Dio(BaseOptions(
+    connectTimeout: const Duration(milliseconds: 350),
+    receiveTimeout: const Duration(milliseconds: 350),
+  ));
+
+  static Future<bool> _probe(String ip) async {
+    try {
+      final res = await _probeDio.get('http://$ip:$_port/api/health');
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<String?> _scanForBackend() async {
+    final prefixes = await localSubnetPrefixes();
+    for (final prefix in prefixes) {
+      final hit = await _scanPrefix(prefix);
+      if (hit != null) return hit;
+    }
+    return null;
+  }
+
+  /// สแกน .1-.254 ของ subnet เป็นชุดๆ ละ 64 ตัวพร้อมกัน (timeout สั้นต่อตัวอยู่แล้วจาก _probeDio)
+  static Future<String?> _scanPrefix(String prefix) async {
+    const batchSize = 64;
+    for (var start = 1; start <= 254; start += batchSize) {
+      final end = (start + batchSize - 1).clamp(1, 254);
+      final candidates = [for (var i = start; i <= end; i++) '$prefix.$i'];
+      final results = await Future.wait(
+        candidates.map((ip) async => (await _probe(ip)) ? ip : null),
+      );
+      for (final ip in results) {
+        if (ip != null) return ip;
+      }
+    }
+    return null;
+  }
+
+  late Dio dio;
+  static const _secureStorage = FlutterSecureStorage();
+  static const _tokenKey = 'auth_token';
 
   ApiClient() {
     dio = Dio(BaseOptions(
@@ -65,14 +118,12 @@ class ApiClient {
       validateStatus: (status) => status != null,
     ));
 
-    // --- Interceptor: จำลอง network fault (ทดสอบเท่านั้น) ต้องอยู่ก่อนตัวอื่นเสมอ
-    //     เพื่อ reject request ก่อนที่จะแตะ header/ยิงจริง ---
-    dio.interceptors.add(faultInjector.interceptor);
-
     // --- Interceptor: ใส่ Token อัตโนมัติก่อนส่ง Request ---
+    // token ย้ายไปเก็บ flutter_secure_storage แล้ว (เข้ารหัสระดับ OS) — อ่านเป็น async
+    // ต้องรอผลก่อนค่อย handler.next() ไม่งั้น request หลุดออกไปแบบไม่มี Authorization header
     dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) {
-        final token = storage.read('auth_token');
+      onRequest: (options, handler) async {
+        final token = await _secureStorage.read(key: _tokenKey);
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';
         }

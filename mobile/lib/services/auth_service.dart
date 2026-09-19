@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'api_client.dart';
@@ -12,12 +13,25 @@ class AuthService extends GetxService {
 
   final ApiClient _api = ApiClient();
   final _storage = GetStorage();
+  // token เก็บแยกด้วย flutter_secure_storage (เข้ารหัสระดับ OS — Keychain/Keystore) ต่างจาก
+  // ข้อมูลอื่นที่ไม่อ่อนไหวเท่า (user_data, flag ต่างๆ) ซึ่งยังใช้ GetStorage ธรรมดาต่อไป
+  static const _secureStorage = FlutterSecureStorage();
 
   // Keys สำหรับเก็บข้อมูล
   static const String _tokenKey = 'auth_token';
   static const String _userDataKey = 'user_data';
   static const String _profileCompleteKey = 'is_profile_complete';
   static const String _installMarkerKey = 'app_install_marker';
+
+  // write() ทับค่าเดิมของ key เดียวกันไม่ติดในบางเครื่อง Android (เจอจริงกับ
+  // remembered_credentials_service.dart) ต้อง delete() ก่อนเขียนใหม่เสมอถึงจะชัวร์
+  Future<void> _writeToken(String token) async {
+    await _secureStorage.delete(key: _tokenKey);
+    await _secureStorage.write(key: _tokenKey, value: token);
+  }
+
+  Future<String?> _readToken() => _secureStorage.read(key: _tokenKey);
+  Future<void> _deleteToken() => _secureStorage.delete(key: _tokenKey);
 
   // Observable variables สำหรับ UI
   final isLoggedIn = false.obs;
@@ -27,9 +41,10 @@ class AuthService extends GetxService {
   @override
   void onInit() {
     super.onInit();
-    // เช็คสถานะตอนเปิดแอป
+    // เช็คสถานะตอนเปิดแอป — checkLoginStatus() เรียกจาก main() แบบ await ก่อน runApp() แทน
+    // (ต้อง await เพราะ token เป็น flutter_secure_storage แบบ async แล้ว) ไม่เรียกซ้ำที่นี่
+    // กันยิง _validateToken() ซ้ำ 2 รอบตอนเปิดแอป
     _clearRememberedCredentialsOnFreshInstall();
-    checkLoginStatus();
   }
 
   // iOS Keychain ไม่ถูกลบตอนถอนแอป (ต่างจาก GetStorage ที่เก็บในโฟลเดอร์แอปแล้วถูกลบไปด้วย)
@@ -42,8 +57,8 @@ class AuthService extends GetxService {
     }
   }
 
-  void checkLoginStatus() {
-    final token = _storage.read(_tokenKey);
+  Future<void> checkLoginStatus() async {
+    final token = await _readToken();
     final profileStatus = _storage.read(_profileCompleteKey) ?? false;
 
     if (token != null) {
@@ -55,11 +70,11 @@ class AuthService extends GetxService {
   }
 
   Future<void> _validateToken() async {
-    final tokenAtStart = _storage.read<String>(_tokenKey);
+    final tokenAtStart = await _readToken();
     try {
       final response = await _api.get('/member/profile');
       // ถ้า token เปลี่ยนระหว่างรอ = มี login ใหม่เข้ามา ไม่ต้อง clear
-      final tokenNow = _storage.read<String>(_tokenKey);
+      final tokenNow = await _readToken();
       if (response.statusCode == 401 && tokenAtStart == tokenNow) {
         await _clearSession();
       }
@@ -70,8 +85,9 @@ class AuthService extends GetxService {
 
   Future<void> _eraseUserData() async {
     // ลบทีละ key แทน erase() เพื่อความปลอดภัย
+    await _deleteToken();
     for (final key in [
-      _tokenKey, _userDataKey, _profileCompleteKey,
+      _userDataKey, _profileCompleteKey,
       // workout plan keys
       'active_plan_id', 'active_plan_days', 'active_plan_name',
       'active_plan_type', 'active_plan_weekday_based',
@@ -121,7 +137,7 @@ class AuthService extends GetxService {
           await _eraseUserData();
           print('[Login] 4. eraseUserData done');
           // บันทึก token ก่อน เพื่อให้เรียก API ถัดไปได้
-          await _storage.write(_tokenKey, token);
+          await _writeToken(token);
           await _storage.write(_userDataKey, userData);
 
           bool isComplete = false;
@@ -226,7 +242,7 @@ class AuthService extends GetxService {
         final data = response.data;
         final token = data['token'];
         if (token != null) {
-          await _storage.write(_tokenKey, token);
+          await _writeToken(token);
           if (data['user'] != null) {
             await _storage.write(_userDataKey, data['user']);
           }
@@ -352,6 +368,6 @@ class AuthService extends GetxService {
   }
 
   // Helper Methods
-  String? getToken() => _storage.read(_tokenKey);
+  Future<String?> getToken() => _readToken();
   Map<String, dynamic>? getUserData() => _storage.read(_userDataKey);
 }
