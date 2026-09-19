@@ -13,12 +13,10 @@ package controllers
 
 // #region [SECTION] Imports
 import (
-	"fmt"
 	"food_and_fit_api/config"
 	"food_and_fit_api/helpers"
 	"food_and_fit_api/models"
-	"log"
-	"math/rand"
+	"log/slog"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -98,8 +96,7 @@ func RequestOTP(c *gin.Context) {
 	}
 
 	// สร้างรหัส OTP 6 หลัก
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	otpCode := fmt.Sprintf("%06d", r.Intn(1000000))
+	otpCode := helpers.GenerateOTPCode()
 	expiredAt := time.Now().Add(5 * time.Minute)
 
 	// อัปเดต OTP ลงในตาราง member_profile
@@ -116,7 +113,7 @@ func RequestOTP(c *gin.Context) {
 	// ส่งอีเมลจริงผ่าน Gmail SMTP helper (async กันไม่ให้ request ค้างรอ SMTP handshake)
 	go func() {
 		if err := helpers.SendResetPasswordEmail(req.Email, otpCode); err != nil {
-			log.Printf("WARNING: Could not send reset password email to %s: %v", req.Email, err)
+			slog.Warn("could not send reset password email", "email", req.Email, "err", err)
 		}
 	}()
 
@@ -181,6 +178,7 @@ func ResetPassword(c *gin.Context) {
 		return
 	}
 
+	helpers.LogAudit(c, "member", member.MbID, "reset_password_success", "")
 	helpers.RespondSuccess(c, "เปลี่ยนรหัสผ่านสำเร็จ คุณสามารถเข้าสู่ระบบได้ทันที", nil)
 }
 
@@ -215,6 +213,7 @@ func ChangePassword(c *gin.Context) {
 
 	// 3. ตรวจสอบว่า "รหัสผ่านเดิม" ถูกต้องหรือไม่
 	if err := bcrypt.CompareHashAndPassword([]byte(member.MbPasswordHash), []byte(req.OldPassword)); err != nil {
+		helpers.LogAudit(c, "member", member.MbID, "change_password_failed", "รหัสผ่านเดิมไม่ถูกต้อง")
 		helpers.RespondBadRequest(c, "old_password", "รหัสผ่านเดิมไม่ถูกต้อง")
 		return
 	}
@@ -238,7 +237,16 @@ func ChangePassword(c *gin.Context) {
 		return
 	}
 
-	helpers.RespondSuccess(c, "เปลี่ยนรหัสผ่านสำเร็จ", nil)
+	// 7. เปลี่ยนรหัสผ่านสำเร็จแล้ว revoke token ปัจจุบันทันที (เหมือน Logout) บังคับ re-login ด้วย token ใหม่
+	// (รูปแบบเดียวกับ ChangeAdminPassword ใน admin_profile_controller.go — ทำแค่ session ปัจจุบัน
+	// ไม่ได้ revoke session อื่นที่อาจ login ค้างอยู่เครื่องอื่น เพราะระบบนี้ track แค่ jti ที่ revoke แล้ว
+	// ไม่มีตาราง list token ที่ยัง active ของแต่ละ user ให้ revoke ทั้งหมดได้) — best-effort ไม่ block response
+	if _, err := helpers.RevokeCurrentToken(c); err != nil {
+		slog.Error("ChangePassword: revoke token failed", "err", err)
+	}
+
+	helpers.LogAudit(c, "member", member.MbID, "change_password_success", "")
+	helpers.RespondSuccess(c, "เปลี่ยนรหัสผ่านสำเร็จ กรุณาเข้าสู่ระบบใหม่", nil)
 }
 
 // #endregion

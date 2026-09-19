@@ -2,7 +2,7 @@ package config
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -18,7 +18,7 @@ func ConnectDatabase() {
 	err := godotenv.Load(".env")
 	if err != nil {
 		if err := godotenv.Load(); err != nil {
-			log.Println("Warning: .env file not found, will use environment variables")
+			slog.Warn(".env file not found, will use environment variables")
 		}
 	}
 
@@ -49,17 +49,19 @@ func ConnectDatabase() {
 		dbUser, dbPass, dbHost, dbPort, dbName,
 	)
 
-	log.Printf("🔗 Connecting to database: %s:%s@%s:%s/%s", dbUser, "***", dbHost, dbPort, dbName)
+	slog.Info("connecting to database", "user", dbUser, "host", dbHost, "port", dbPort, "db", dbName)
 
 	database, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("❌ Failed to connect to database! Error: %v", err)
+		slog.Error("failed to connect to database", "err", err)
+		os.Exit(1)
 	}
 
 	// ตั้งค่า connection pool ป้องกัน "invalid connection"
 	sqlDB, err := database.DB()
 	if err != nil {
-		log.Fatalf("❌ Failed to get sql.DB: %v", err)
+		slog.Error("failed to get sql.DB", "err", err)
+		os.Exit(1)
 	}
 	sqlDB.SetMaxOpenConns(25)
 	sqlDB.SetMaxIdleConns(10)
@@ -78,7 +80,7 @@ func ConnectDatabase() {
 	// เหตุผลเดียวกับที่ WorkoutSchedule ถูกถอดไปก่อนแล้ว — จัดการ schema
 	// ผ่าน migration script เท่านั้น
 	if err := DB.AutoMigrate(&models.RevokedToken{}, &models.AuditLog{}); err != nil {
-		log.Printf("⚠️  AutoMigrate warning (security tables): %v", err)
+		slog.Warn("AutoMigrate warning (security tables)", "err", err)
 	}
 
 	fmt.Println("✅ Database connected successfully!")

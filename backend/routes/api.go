@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"food_and_fit_api/config"
 	"food_and_fit_api/controllers"
 	"food_and_fit_api/middleware"
 
@@ -31,6 +32,10 @@ func allowedOrigins() []string {
 func SetupRouter() *gin.Engine {
 	r := gin.Default()
 
+	// ติด request id ก่อน middleware อื่นทั้งหมด ให้ log/response ทุกจุดของ request นี้ (รวม
+	// error ที่ตอบก่อนถึง handler จริง เช่น CORS/rate limit) มี id เดียวกันเสมอ
+	r.Use(middleware.RequestID())
+
 	origins := allowedOrigins()
 
 	// ✅ CORS Middleware — สะท้อน origin กลับเฉพาะที่อยู่ใน allowlist เท่านั้น (ไม่เปิดกว้างด้วย "*")
@@ -45,7 +50,7 @@ func SetupRouter() *gin.Engine {
 		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
-		c.Header("Access-Control-Expose-Headers", "Content-Length")
+		c.Header("Access-Control-Expose-Headers", "Content-Length, X-Request-ID")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
@@ -82,8 +87,30 @@ func SetupRouter() *gin.Engine {
 
 		// ==========================================
 		// 🔓 Public Routes (ไม่ต้องใช้ Token)
-		// จำกัด rate เข้มกว่าเฉลี่ยเพราะเป็นจุดเสี่ยง brute-force/spam OTP
 		// ==========================================
+
+		// GET /api/health — endpoint เปล่าไว้ให้ mobile "probe" หา IP เครื่อง backend เองตอนเปิดแอป
+		// (ดู mobile/lib/services/api_client.dart -> autoDetectServer) ไม่มี logic อะไร ไม่แตะ DB
+		// /health เดิมตอบ 200 ตายตัวเสมอ ไม่เช็คอะไรจริง — ใช้แยกแยะ "API ตอบสนอง" กับ
+		// "API ตอบสนองแต่ DB ล่ม" ไม่ได้เลย (เช่นเคส audit_logs tablespace เพี้ยนที่เจอจริงในเซสชันนี้
+		// แต่ไม่มีใครรู้เพราะ /health ไม่เช็ค DB) เพิ่ม ping DB จริงก่อนตอบ — ยังไม่ error ทั้งระบบ
+		// ถ้า DB ล่ม (ไม่ทำให้ endpoint นี้ panic) แค่เปลี่ยนสถานะ/HTTP code ให้สะท้อนความจริง
+		// /health เดิมตอบ 200 ตายตัวเสมอ ไม่เช็คอะไรจริง — เพิ่ม ping DB จริงเป็นข้อมูลเสริม
+		// (คีย์ "db") ให้แยกแยะ "API ตอบสนอง" กับ "API ตอบสนองแต่ DB ล่ม" ได้ (เช่นเคส audit_logs
+		// tablespace เพี้ยนที่เจอจริงในเซสชันนี้ แต่ไม่มีใครรู้เพราะ /health ไม่เช็ค DB เลย)
+		// ⚠️ HTTP status/"status" field เดิมคงเป็น 200/"ok" เสมอโดยตั้งใจ — ห้ามเปลี่ยนเป็น 503
+		// ตอน DB ล่ม เพราะ mobile ใช้ endpoint นี้สแกนหา backend IP บนวง LAN
+		// (api_client.dart _probe เช็คแค่ statusCode == 200) ถ้าตอบ 503 ตอน DB ล่ม จะทำให้ auto-
+		// detect มองว่า "ไม่ใช่ backend" ทั้งที่ตัว API server เองยังทำงานอยู่ปกติ
+		api.GET("/health", func(c *gin.Context) {
+			dbOk := true
+			if sqlDB, err := config.DB.DB(); err != nil || sqlDB.Ping() != nil {
+				dbOk = false
+			}
+			c.JSON(200, gin.H{"success": true, "message": "", "data": gin.H{"status": "ok", "db": dbOk}})
+		})
+
+		// จำกัด rate เข้มกว่าเฉลี่ยเพราะเป็นจุดเสี่ยง brute-force/spam OTP
 		authLimiter := middleware.RateLimitMiddleware(10, time.Minute)
 		api.POST("/register", authLimiter, controllers.Register)
 		api.POST("/login", authLimiter, controllers.Login)
@@ -98,7 +125,6 @@ func SetupRouter() *gin.Engine {
 		// ==========================================
 		admin := api.Group("/admin")
 		{
-			admin.POST("/login", authLimiter, controllers.AdminLogin)
 			admin.POST("/logout", middleware.AdminAuthMiddleware(), controllers.AdminLogout)
 			admin.GET("/analytics/overview", middleware.AdminAuthMiddleware(), controllers.GetAdminAnalyticsOverview)
 			admin.GET("/dashboard/summary", middleware.AdminAuthMiddleware(), controllers.GetAdminDashboardSummary)

@@ -3,7 +3,6 @@ package controllers
 import (
 	"net/http"
 	"strings"
-	"time"
 
 	"food_and_fit_api/config"
 	"food_and_fit_api/helpers"
@@ -142,15 +141,7 @@ func ChangeAdminPassword(c *gin.Context) {
 		return
 	}
 
-	if jti, ok := c.Get("jti"); ok {
-		if jtiStr, ok := jti.(string); ok && jtiStr != "" {
-			if expiresAt, ok := c.Get("token_expires_at"); ok {
-				if expTime, ok := expiresAt.(time.Time); ok {
-					config.DB.Create(&models.RevokedToken{Jti: jtiStr, ExpiresAt: expTime})
-				}
-			}
-		}
-	}
+	_, _ = helpers.RevokeCurrentToken(c) // best-effort — ไม่ block response ถ้า revoke ไม่สำเร็จ
 
 	helpers.LogAudit(c, "admin", int(sysUser.SysID), "change_password_success", "")
 

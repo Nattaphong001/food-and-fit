@@ -3,6 +3,7 @@ package helpers
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"net/http"
 	"regexp"
 	"strings"
@@ -47,6 +48,16 @@ func ValidateOTP(otp string) (bool, string) {
 	return true, ""
 }
 
+// GenerateOTPCode - สุ่มรหัส OTP 6 หลัก (000000-999999) ใช้ร่วมกันทั้งสมัครสมาชิก (Register),
+// ส่ง OTP ใหม่ (ResendOTP) และขอรีเซ็ตรหัสผ่าน (RequestOTP) — เดิมโค้ดสุ่มนี้อินไลน์ซ้ำ 3 จุด
+// (บางจุดใช้ math/rand global เฉยๆ บางจุดสร้าง rand.Source เองจาก time.Now().UnixNano() —
+// Go 1.20+ auto-seed math/rand global อยู่แล้ว ความสุ่มเทียบเท่ากัน ไม่ต่างกันจริง) รวมมาไว้จุดเดียว
+// อายุ OTP (5 นาทีสำหรับรีเซ็ตรหัสผ่าน, 10 นาทีสำหรับสมัคร/ยืนยันอีเมล) ยังกำหนดแยกที่ caller เอง
+// เพราะแตกต่างกันจริงตามการออกแบบเดิม ไม่ใช่ความไม่สอดคล้องที่ต้องรวม
+func GenerateOTPCode() string {
+	return fmt.Sprintf("%06d", rand.Intn(1000000))
+}
+
 // ValidateGender - ตรวจสอบเพศ (1=ชาย, 2=หญิง เท่านั้น)
 // [USED] member_controller.go (SetupProfile, EditProfile)
 func ValidateGender(gender int) (bool, string) {
@@ -76,11 +87,11 @@ func ValidateActivityLevel(level float64) (bool, string) {
 	return false, "ระดับกิจกรรมต้องเป็น 1 ใน 5 ระดับมาตรฐานเท่านั้น (1.2, 1.375, 1.55, 1.725, 1.9)"
 }
 
-// ValidateTarget - ตรวจสอบเป้าหมาย (1=ลดน้ำหนัก, 2=เพิ่มกล้ามเนื้อ, 3=รักษาน้ำหนัก เท่านั้น)
+// ValidateTarget - ตรวจสอบเป้าหมาย (1=ลดน้ำหนัก, 2=เพิ่มน้ำหนัก, 3=รักษาน้ำหนัก เท่านั้น)
 // [USED] member_controller.go (SetupProfile, UpdateWeight)
 func ValidateTarget(target int) (bool, string) {
 	if target < 1 || target > 3 {
-		return false, "เป้าหมายต้องเป็น 1 (ลดน้ำหนัก), 2 (เพิ่มกล้ามเนื้อ) หรือ 3 (รักษาน้ำหนัก) เท่านั้น"
+		return false, "เป้าหมายต้องเป็น 1 (ลดน้ำหนัก), 2 (เพิ่มน้ำหนัก) หรือ 3 (รักษาน้ำหนัก) เท่านั้น"
 	}
 	return true, ""
 }

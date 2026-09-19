@@ -2,9 +2,15 @@ package helpers
 
 import (
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -66,6 +72,43 @@ func ValidateVideoUpload(fh *multipart.FileHeader) error {
 		return errors.New("รองรับเฉพาะไฟล์วิดีโอชนิด MP4 เท่านั้น")
 	}
 	return nil
+}
+
+// SaveUploadedImage - validate (ValidateImageUpload) แล้วบันทึกไฟล์รูปจาก field ที่ระบุ ตั้งชื่อไฟล์
+// กันซ้ำด้วย timestamp อัตโนมัติ คืน path สัมพัทธ์ (public, เช่น "uploads/weight_exercises/image/...")
+// สำหรับเก็บ DB — เดิมโค้ดนี้อินไลน์ซ้ำ 6+ จุดใน exercise_controller.go รวมมาไว้จุดเดียว
+// ถ้า validate ไม่ผ่านคืน error (caller ตอบ 400) ถ้า validate ผ่านแต่บันทึกไฟล์จริงลงดิสก์ล้มเหลว
+// คืน "", nil (เงียบๆ ไม่ error — พฤติกรรมเดิมทุกจุดที่เคยอินไลน์สูตรนี้ ยกเว้น
+// UpdateCardioCategoryImage ที่ต้องการไฟล์บังคับ จุดนั้นเช็ค newPath=="" เองแล้วตอบ 500 เพิ่ม)
+func SaveUploadedImage(c *gin.Context, file *multipart.FileHeader, uploadDir, publicDir string) (string, error) {
+	if verr := ValidateImageUpload(file); verr != nil {
+		return "", verr
+	}
+	os.MkdirAll(uploadDir, os.ModePerm)
+	extension := filepath.Ext(file.Filename)
+	newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), extension)
+	savePath := filepath.Join(uploadDir, newFileName)
+	if err := c.SaveUploadedFile(file, savePath); err != nil {
+		return "", nil
+	}
+	return publicDir + "/" + newFileName, nil
+}
+
+// SaveUploadedVideo - เหมือน SaveUploadedImage แต่ validate ด้วย ValidateVideoUpload และตั้งชื่อไฟล์
+// รูปแบบ "<timestamp>_loop<ext>" — ใช้เฉพาะ loop video ของท่าฝึก/คาร์ดิโอเท่านั้น (วิดีโอสอนเต็มใช้ลิงก์
+// YouTube ผ่าน ValidateTutorialVideoURL แยกต่างหาก ไม่ใช่ไฟล์อัปโหลด)
+func SaveUploadedVideo(c *gin.Context, file *multipart.FileHeader, uploadDir, publicDir string) (string, error) {
+	if verr := ValidateVideoUpload(file); verr != nil {
+		return "", verr
+	}
+	os.MkdirAll(uploadDir, os.ModePerm)
+	extension := filepath.Ext(file.Filename)
+	newFileName := fmt.Sprintf("%d_loop%s", time.Now().UnixNano(), extension)
+	savePath := filepath.Join(uploadDir, newFileName)
+	if err := c.SaveUploadedFile(file, savePath); err != nil {
+		return "", nil
+	}
+	return publicDir + "/" + newFileName, nil
 }
 
 var youtubeURLPattern = regexp.MustCompile(`^https://(www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)`)

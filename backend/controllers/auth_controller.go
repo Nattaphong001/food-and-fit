@@ -6,8 +6,7 @@ import (
 	"food_and_fit_api/helpers"
 	"food_and_fit_api/models"
 	"food_and_fit_api/utils"
-	"log"
-	"math/rand"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -59,7 +58,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	otpCode := fmt.Sprintf("%06d", rand.Intn(1000000))
+	otpCode := helpers.GenerateOTPCode()
 	expiration := time.Now().Add(10 * time.Minute)
 
 	var existingUser models.Member
@@ -75,13 +74,13 @@ func Register(c *gin.Context) {
 			"mb_otp":           otpCode,
 			"mb_otp_expired":   expiration,
 		}).Error; err != nil {
-			log.Printf("Register: update existing user failed: %v", err)
+			slog.Error("Register: update existing user failed", "err", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่"})
 			return
 		}
 		go func() {
 			if err := helpers.SendWelcomeOTPEmail(req.Email, otpCode); err != nil {
-				log.Printf("WARNING: Could not send welcome email to %s: %v", req.Email, err)
+				slog.Warn("could not send welcome email", "email", req.Email, "err", err)
 			}
 		}()
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "ส่งรหัส OTP ใหม่ไปที่อีเมลแล้ว กรุณายืนยันตัวตน"})
@@ -107,7 +106,7 @@ func Register(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "อีเมลนี้มีในระบบแล้ว"})
 			return
 		}
-		log.Printf("Register: create member failed: %v", err)
+		slog.Error("Register: create member failed", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่"})
 		return
 	}
@@ -115,7 +114,7 @@ func Register(c *gin.Context) {
 	// หมายเหตุ: ห้าม log ค่า OTP ลง console/log แม้ตอนส่งอีเมลไม่สำเร็จ (ข้อมูลอ่อนไหว)
 	go func() {
 		if err := helpers.SendWelcomeOTPEmail(req.Email, otpCode); err != nil {
-			log.Printf("WARNING: Could not send welcome email to %s: %v", req.Email, err)
+			slog.Warn("could not send welcome email", "email", req.Email, "err", err)
 		}
 	}()
 
@@ -191,6 +190,16 @@ func Login(c *gin.Context) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "อีเมลหรือรหัสผ่านไม่ถูกต้อง"})
 			return
 		}
+		// sys_start_date = วันที่ login ครั้งแรกจริง (ไม่ใช่วันที่ถูกสร้างบัญชี) — ตั้งครั้งเดียวตอน
+		// ยังเป็น NULL อยู่เท่านั้น login ครั้งต่อๆ ไปจะไม่ทับค่าเดิม (ย้ายมาจาก AdminLogin เดิมที่
+		// ไม่มี client เรียกจริง — ดู admin_auth_controller.go)
+		if sysUser.SysStartDate == nil {
+			now := time.Now()
+			if err := config.DB.Model(&sysUser).Update("sys_start_date", now).Error; err != nil {
+				slog.Error("Login: set sys_start_date failed", "sys_id", sysUser.SysID, "err", err)
+			}
+		}
+
 		token, err := utils.GenerateAdminToken(sysUser.SysID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถสร้าง Token ได้"})
@@ -297,7 +306,7 @@ func ResendOTP(c *gin.Context) {
 		return
 	}
 
-	newOtp := fmt.Sprintf("%06d", rand.Intn(1000000))
+	newOtp := helpers.GenerateOTPCode()
 	expiration := time.Now().Add(10 * time.Minute)
 
 	if err := config.DB.Model(&member).Updates(map[string]interface{}{
@@ -310,7 +319,7 @@ func ResendOTP(c *gin.Context) {
 
 	go func() {
 		if err := helpers.SendWelcomeOTPEmail(req.Email, newOtp); err != nil {
-			fmt.Printf("WARNING: Could not resend OTP email: %v\n", err)
+			slog.Warn("could not resend OTP email", "email", req.Email, "err", err)
 		}
 	}()
 
@@ -322,20 +331,15 @@ func ResendOTP(c *gin.Context) {
 
 // Logout - ยกเลิก JWT token ปัจจุบันทันที (เพิ่มลง denylist) ต้องผ่าน AuthMiddleware มาก่อน
 func Logout(c *gin.Context) {
-	jti, _ := c.Get("jti")
-	expiresAt, _ := c.Get("token_expires_at")
 	userID, _ := c.Get("user_id")
 
-	jtiStr, _ := jti.(string)
-	expTime, ok := expiresAt.(time.Time)
-	if jtiStr == "" || !ok {
+	revoked, err := helpers.RevokeCurrentToken(c)
+	if !revoked {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่พบข้อมูล token"})
 		return
 	}
-
-	revoked := models.RevokedToken{Jti: jtiStr, ExpiresAt: expTime}
-	if err := config.DB.Create(&revoked).Error; err != nil {
-		log.Printf("Logout: revoke token failed: %v", err)
+	if err != nil {
+		slog.Error("Logout: revoke token failed", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ออกจากระบบไม่สำเร็จ กรุณาลองใหม่"})
 		return
 	}

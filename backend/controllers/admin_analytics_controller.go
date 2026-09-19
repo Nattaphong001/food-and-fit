@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"food_and_fit_api/config"
+	"math"
 	"net/http"
 	"time"
 
@@ -69,18 +70,20 @@ func GetAdminOverview(c *gin.Context) {
 		) all_workouts
 	`, start, end, start, end).Scan(&totalWorkouts)
 
-	// ── 5. เวลาออกกำลังกายรวม (นาที) — นับจากคาร์ดิโอเท่านั้น (cdors_duration เก็บเป็นนาทีจริง)
+	// ── 5. เวลาออกกำลังกายรวม (นาที) — นับจากคาร์ดิโอเท่านั้น (cdors_duration เก็บเป็นวินาที
+	// เปลี่ยนจากนาที 2026-09-14, SUM ด้านล่างจึงได้วินาทีรวม ต้องหาร 60 ก่อนส่งออก)
 	// เดิมใช้ COUNT(*) จาก workout_schedules ซึ่งเป็นแค่จำนวนแถว template ที่ถูกสร้าง/copy
 	// (wsch_date = วันที่สร้างแถว ไม่ใช่วันฝึก, workout_schedules ไม่มี column เวลาเลย) —
 	// ตัวเลขที่ได้ไม่ใช่นาทีจริง ไม่สัมพันธ์กับเวลาออกกำลังกายเลย เปลี่ยนมาใช้แหล่งเดียวกับ
 	// analytics_controller.go (รายงานรายบุคคล) ให้ตรงกันทั้งระบบ — เวทเทรนนิ่งไม่รวม เพราะ
 	// wtrs_duration เป็นวินาทีออกแรงต่อเซต ไม่ใช่ความยาว session รวมตรงๆ ไม่ได้ความหมาย
-	var totalDuration int64
+	var totalDurationSecondsSum int64
 	config.DB.Raw(`
 		SELECT COALESCE(SUM(cdors_duration), 0)
 		FROM cardio_result
 		WHERE cdors_date BETWEEN ? AND ?
-	`, start, end).Scan(&totalDuration)
+	`, start, end).Scan(&totalDurationSecondsSum)
+	totalDuration := int64(math.Round(float64(totalDurationSecondsSum) / 60.0))
 
 	// ── 6. สัดส่วน เวท vs คาร์ดิโอ ──────────────────────────────────────
 	var weightCount, cardioCount float64
