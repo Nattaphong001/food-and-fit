@@ -108,19 +108,16 @@ func CalculateGoals(weight, height float64, age, gender int, activityLevel float
 //  4. "ต่อเนื่อง" ของหมวดน้ำหนักตัว → พัก < 30 วินาที
 //  5. ช่วงพัก 30 และ 90 วินาทีของหมวดน้ำหนักตัว (สเปกให้เลขพักเฉพาะหมวดแรงต้าน 60–90)
 //
-// เวลาพักต่อเซต: ใช้ค่าจริงจาก wtrs_rest_seconds (มือถือส่งขึ้น API แล้วตั้งแต่ 2026-09-18) — แถวที่เป็น
-// nil ระบบ fallback ไปใช้ "ความหนาแน่นเฉลี่ยทั้งเซสชัน" (cappedMinutes/totalSets แปลงเป็นวินาที)
-// เป็น proxy แทนเวลาพักต่อเซตนั้น
+// เวลาพักต่อเซต: ใช้ค่าจริงจาก wtrs_rest_seconds (มือถือส่งขึ้น API แล้วตั้งแต่ 2026-09-18) — เซตสุดท้ายของ
+// เซสชันไม่มีการพักจริง (ผู้ใช้กรอกเสร็จแล้วจบการฝึกเลย เวลาที่นับได้เป็นแค่เวลากรอกข้อมูล) มือถือจึงส่งเป็น
+// nil (2026-09-19) เซตที่เป็น nil ใช้ "ค่าเฉลี่ยเวลาพักของเซตอื่นในเซสชันเดียวกัน" แทน — ถ้าทั้งเซสชันไม่มี
+// เวลาพักจริงเลย (แถวเก่าก่อน 2026-09-18 หรือเซสชันเซตเดียว) ค่อย fallback ไปใช้ "ความหนาแน่นเฉลี่ยทั้งเซสชัน"
+// (เวลารวมทั้งเซสชัน/จำนวนเซต แปลงเป็นวินาที) เป็น proxy
 const (
 	// ค่าคงที่สูตรพลังงานสุทธิ ACSM (บทที่ 2 ข้อ 2.1.4.10/2.1.4.12): 3.5 = การใช้ออกซิเจนขณะพัก
 	// 1 MET (ml/kg/min), 200 = ตัวหารแปลง (ml O₂/kg/min × kg) เป็น kcal/min (1 L O₂ ≈ 5 kcal)
 	METOxygenMlPerKgPerMin = 3.5
 	METKcalDivisor         = 200.0
-
-	// เพดานเวลาเฉลี่ยต่อเซต (นาที) กันนับเวลาพักเกิน/ลืมกดจบเวิร์กเอาท์ซ้ำกับ Baseline
-	// Expenditure (BMR×1.2) ที่นับพลังงานพักนิ่งไปแล้ว — ไม่มีเพดานนี้ พักนานเท่าไหร่ก็ยิ่งได้
-	// พลังงานเพิ่มไม่จำกัด ทั้งที่งานที่ทำจริงเท่าเดิม
-	WeightTrainingCapMinutesPerSet = 4.0
 
 	// ขอบเขต Final MET กันหลุดขอบจากอินพุตสุดโต่ง (ไม่ใช่ค่าที่ควรชนบ่อยในการใช้งานปกติ)
 	WeightTrainingMETFloor = 1.5
@@ -154,7 +151,7 @@ const (
 // NetEnergyKcal คือสูตรพลังงานสุทธิ ACSM ที่ใช้ร่วมกันทั้งคาร์ดิโอและเวทเทรนนิ่ง (บทที่ 2 ข้อ 2.1.4.10
 // และ 2.1.4.12 ข้อ 1) — จุดเดียวใน Go ที่มีสูตรนี้:
 //
-//	Kcal (NET) = (METs − 1) × 3.5 × น้ำหนักตัว(kg) / 200 × ระยะเวลา(นาที)
+//	Kcal (NET) = [(METs − 1) × 3.5 × น้ำหนักตัว(kg) / 200] × ระยะเวลา(นาที)
 //
 // หัก 1 MET (พลังงานพักนิ่ง ซึ่ง Baseline BMR×1.2 นับไปแล้ว) กันนับซ้ำเมื่อรวมเป็น Total Daily Energy
 // Output — clamp METs ≤ 1 เป็น 0 กันค่าติดลบ (Dart preview ของคาร์ดิโอใช้สูตรเดียวกัน ดู formula-guard)
@@ -176,8 +173,8 @@ func CalculateCardioCalories(mets, bodyWeightKg float64, durationSeconds int) fl
 type SetLog struct {
 	WeightKg float64 // น้ำหนักที่ยกจริง (0 = ท่า bodyweight)
 	Reps     int
-	// RestSeconds คือเวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป — nil = ไม่ทราบ (มือถือยังไม่ส่งมา)
-	// ระบบ fallback ไปใช้ความหนาแน่นเฉลี่ยทั้งเซสชันแทน ดูคอมเมนต์หัวไฟล์
+	// RestSeconds คือเวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป — nil = ไม่ทราบ (เซตสุดท้ายของเซสชันที่ไม่มีการพัก
+	// จริง หรือแถวเก่าที่มือถือยังไม่ส่งมา) ระบบใช้ค่าเฉลี่ยเวลาพักของเซตอื่นแทน ดูคอมเมนต์หัวไฟล์
 	RestSeconds *int
 }
 
@@ -222,7 +219,7 @@ func resolveSetBaseMET(profile ExerciseProfile, reps int, restSeconds float64) f
 type WeightTrainingCalorieResult struct {
 	SessionBaseMET   float64 // ค่าเฉลี่ย MET ต่อเซตจาก Logic Matrix = FinalMET เสมอ (ไม่มีตัวคูณต่อ)
 	FinalMET         float64
-	EffectiveMinutes float64 // เวลาที่ใช้จริงในการคำนวณ (หลังผ่านเพดาน CapMinutesPerSet แล้ว)
+	DurationMinutes  float64 // เวลารวมทั้งเซสชัน (นาที) ที่ใช้คำนวณ = total_duration_seconds ÷ 60 ตรงๆ ไม่มีเพดาน
 	TotalCalories    float64 // NET (หัก 1 MET แล้ว) รวมทั้งเซสชัน
 	CaloriesPerSet   float64 // TotalCalories หารเท่ากันทุกเซต — ใช้เก็บลง wtrs_calories รายแถว
 	// IntensityLevel (1=เบา, 2=กลาง, 3=หนัก) เป็น label แสดงผลเท่านั้น มาจาก %1RM เฉลี่ยของเซสชัน
@@ -233,7 +230,8 @@ type WeightTrainingCalorieResult struct {
 // CalculateWeightTrainingCalories คำนวณพลังงานเวทเทรนนิ่งทั้งเซสชันในครั้งเดียว (ตรงข้ามกับของเดิม
 // ที่คำนวณทีละเซตแยกกัน) — oneRepMax คือ 1RM ที่ดีที่สุดของสมาชิกคนนี้ในท่านี้ (ดึงจาก
 // getBestOneRepMax ก่อนเรียกฟังก์ชันนี้ — ฟังก์ชันนี้ไม่แตะ DB) ส่ง 0 ถ้าไม่มีประวัติ, sets[i].RestSeconds
-// เป็น nil ได้ (แถวเก่าก่อน 2026-09-18) จะ fallback ไปใช้ความหนาแน่นเฉลี่ยทั้งเซสชันแทนต่อเซตนั้น —
+// เป็น nil ได้ (เซตสุดท้ายที่ไม่มีการพักจริง หรือแถวเก่าก่อน 2026-09-18) จะใช้ค่าเฉลี่ยเวลาพักของเซตอื่น
+// (ไม่มีเลยจึงใช้ความหนาแน่นเฉลี่ยทั้งเซสชัน) แทนต่อเซตนั้น —
 // oneRepMax ใช้ทำ IntensityLevel (label แสดงผล) เท่านั้น ไม่มีผลต่อการเลือก MET, profile คือหมวด/
 // ประเภทของท่าที่ฝึก (Logic Matrix)
 func CalculateWeightTrainingCalories(bodyWeightKg float64, totalDurationSeconds int, oneRepMax float64, profile ExerciseProfile, sets []SetLog) WeightTrainingCalorieResult {
@@ -248,17 +246,30 @@ func CalculateWeightTrainingCalories(bodyWeightKg float64, totalDurationSeconds 
 	}
 	totalSets := float64(len(validSets))
 
-	// เพดานเวลา + ความหนาแน่น (นาที/เซต) — คำนวณก่อนเลือก MET เพราะใช้เป็น proxy แทนเวลาพักรายเซตจริง
-	// เมื่อ SetLog.RestSeconds เป็น nil (ดูคอมเมนต์หัวไฟล์)
-	actualMinutes := float64(totalDurationSeconds) / 60.0
-	cappedMinutes := math.Min(actualMinutes, totalSets*WeightTrainingCapMinutesPerSet)
-	density := cappedMinutes / totalSets
-	densityProxySeconds := density * 60.0
+	// ฐานเวลา = เวลารวมทั้งเซสชัน (รวมช่วงพัก) ตรงๆ เหมือนคาร์ดิโอ ไม่มีเพดาน ค่านี้ใช้ตามที่รับมา — การตรวจ
+	// ความสมเหตุสมผลของเวลาเป็นหน้าที่ของชั้นรับอินพุต ไม่ใช่ของสูตร ความหนาแน่น (นาที/เซต) ใช้เป็น proxy แทนเวลาพัก
+	// รายเซตเมื่อไม่มีเวลาพักจริงเลยทั้งเซสชัน (ดูคอมเมนต์หัวไฟล์)
+	durationMinutes := float64(totalDurationSeconds) / 60.0
+	densityProxySeconds := durationMinutes / totalSets * 60.0
+
+	// เวลาพักที่ใช้แทนเซตที่ไม่ทราบ (RestSeconds = nil) = ค่าเฉลี่ยของเซตที่ทราบในเซสชันเดียวกัน — ไม่มีเซตไหน
+	// ทราบเลยจึงใช้ proxy ความหนาแน่น เซตสุดท้ายที่ไม่มีการพักจริงจึงไม่ดึง MET เฉลี่ยไปทางใดทางหนึ่ง
+	unknownRestSeconds := densityProxySeconds
+	knownRestSum, knownRestCount := 0.0, 0.0
+	for _, s := range validSets {
+		if s.RestSeconds != nil {
+			knownRestSum += float64(*s.RestSeconds)
+			knownRestCount++
+		}
+	}
+	if knownRestCount > 0 {
+		unknownRestSeconds = knownRestSum / knownRestCount
+	}
 
 	// MET ต่อเซตตาม Logic Matrix (ตารางในคอมเมนต์หัวไฟล์) แล้วเฉลี่ยเป็น Session MET
 	sumBaseMET := 0.0
 	for _, s := range validSets {
-		restSeconds := densityProxySeconds
+		restSeconds := unknownRestSeconds
 		if s.RestSeconds != nil {
 			restSeconds = float64(*s.RestSeconds)
 		}
@@ -304,12 +315,12 @@ func CalculateWeightTrainingCalories(bodyWeightKg float64, totalDurationSeconds 
 
 	// NET calories: หัก 1 MET (=พลังงานพักนิ่ง) ก่อนคืนค่า — เหตุผลเดียวกับ SaveCardioResult กัน
 	// นับซ้ำตอนรวมกับ Baseline Expenditure (BMR×1.2) เป็น Total Daily Energy Output
-	totalCalories := NetEnergyKcal(finalMET, bodyWeightKg, cappedMinutes)
+	totalCalories := NetEnergyKcal(finalMET, bodyWeightKg, durationMinutes)
 
 	return WeightTrainingCalorieResult{
 		SessionBaseMET:   sessionBaseMET,
 		FinalMET:         finalMET,
-		EffectiveMinutes: cappedMinutes,
+		DurationMinutes:  durationMinutes,
 		TotalCalories:    totalCalories,
 		CaloriesPerSet:   totalCalories / totalSets,
 		IntensityLevel:   intensityLevel,

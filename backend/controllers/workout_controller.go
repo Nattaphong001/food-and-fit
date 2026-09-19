@@ -845,12 +845,11 @@ func GetUserSchedules(c *gin.Context) {
 // =========================================================
 
 // WeightSessionSetInput - 1 เซตที่บันทึกจริงในเซสชัน (ดู weight_training_exercise_view.dart
-// _completedSets) — ActiveSeconds มาจาก _activeSetSeconds ต่อเซตจริง ไม่ใช่ค่าเฉลี่ยทั้งเซสชัน
+// _completedSets)
 type WeightSessionSetInput struct {
-	WtrsSetNo     int     `json:"wtrs_set_no" binding:"required,gt=0"`
-	WtrsReps      int     `json:"wtrs_reps" binding:"required,gt=0"`
-	WtrsWeight    float64 `json:"wtrs_weight"`
-	ActiveSeconds int     `json:"active_seconds"`
+	WtrsSetNo  int     `json:"wtrs_set_no" binding:"required,gt=0"`
+	WtrsReps   int     `json:"wtrs_reps" binding:"required,gt=0"`
+	WtrsWeight float64 `json:"wtrs_weight"`
 	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป — optional, nil เมื่อมือถือยังไม่ส่งมา (เพิ่มคอลัมน์
 	// 2026-09-18 ใช้กับ Dynamic METs Logic Matrix, services.CalculateWeightTrainingCalories) —
 	// nil ให้ fallback เป็นความหนาแน่นเฉลี่ยทั้งเซสชันแทนเวลาพักจริง
@@ -880,6 +879,13 @@ type CardioResultRequest struct {
 }
 
 
+// recentWeightSessions จำคำขอบันทึกเวทที่เพิ่งสำเร็จ 60 วินาที เพื่อกันกดบันทึกซ้ำ/ลองใหม่หลังเน็ตหลุดแล้วได้แถวและ
+// พลังงานซ้ำ 2 เท่า (ดู helpers.RecentSubmissions) — recentSubmissionWait คือเวลาสูงสุดที่คำขอซ้ำที่เข้ามาพร้อมกัน
+// จะรอผลของคำขอแรก
+var recentWeightSessions = helpers.NewRecentSubmissions(60 * time.Second)
+
+const recentSubmissionWait = 15 * time.Second
+
 // SaveWorkoutResult บันทึกผลเวทเทรนนิ่งทั้งเซสชัน (Smart Auto Calorie — ออกแบบ 2026-09-08)
 // แทนที่ระบบเดิมที่ผู้ใช้เลือกความหนัก 3 ระดับเอง (wtrs_intensity_level) ซึ่งตรวจแล้วพบว่าไม่เคย
 // ทำงานจริง — mobile ไม่เคยส่งค่านี้ขึ้น API เลย ทุกแถวเก่าใน DB จึง fallback เป็น 1 (เบา) หมด
@@ -898,6 +904,56 @@ func SaveWorkoutResult(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบข้อมูลที่ส่งมา"})
 		return
 	}
+
+	// ตรวจเวลารวม/เวลาพัก/เซต ก่อนแตะ DB — เวลารวมคูณ kcal ตรงๆ (สูตรไม่มีเพดาน) และเวลาพักเลือก MET จึงต้อง
+	// ปฏิเสธค่าที่เป็นไปไม่ได้ที่นี่ ไม่แก้ค่าเงียบๆ (ดู helpers.ValidateWeightSession)
+	checks := make([]helpers.WeightSetCheck, 0, len(req.Sets))
+	for _, s := range req.Sets {
+		checks = append(checks, helpers.WeightSetCheck{Reps: s.WtrsReps, WeightKg: s.WtrsWeight, RestSeconds: s.WtrsRestSeconds})
+	}
+	if ok, msg := helpers.ValidateWeightSession(req.TotalDurationSeconds, checks); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+
+	// กันบันทึกซ้ำ: คำขอที่เหมือนกันเป๊ะ (สมาชิก ท่า เวลารวม ทุกเซต) ภายใน 60 วินาทีตอบผลเดิม ไม่เขียน DB ซ้ำ —
+	// กดปุ่มบันทึกรัว หรือเน็ตหลุดหลังบันทึกสำเร็จแล้วผู้ใช้กดลองใหม่ (ตอบซ้ำมี "duplicate": true)
+	fingerprint := helpers.WeightSessionFingerprint(uid, req.WetID, req.TotalDurationSeconds, checks)
+	var submission *helpers.Submission
+	for attempt := 0; submission == nil; attempt++ {
+		if attempt >= 3 {
+			c.JSON(http.StatusConflict, gin.H{"error": "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"})
+			return
+		}
+		s, owner := recentWeightSessions.Acquire(fingerprint)
+		if owner {
+			submission = s
+			break
+		}
+		select {
+		case <-s.Done():
+		case <-time.After(recentSubmissionWait):
+			c.JSON(http.StatusConflict, gin.H{"error": "กำลังบันทึกการฝึกนี้อยู่ กรุณารอสักครู่แล้วตรวจประวัติการฝึก"})
+			return
+		}
+		if status, body, ok := s.Result(); ok {
+			replay := gin.H{}
+			if saved, isMap := body.(gin.H); isMap {
+				for k, v := range saved {
+					replay[k] = v
+				}
+			}
+			replay["duplicate"] = true
+			c.JSON(status, replay)
+			return
+		}
+	}
+	saved := false
+	defer func() {
+		if !saved {
+			recentWeightSessions.Abort(fingerprint, submission)
+		}
+	}()
 
 	var exercise models.WeightExercise
 	if err := config.DB.First(&exercise, req.WetID).Error; err != nil {
@@ -947,14 +1003,12 @@ func SaveWorkoutResult(c *gin.Context) {
 		if s.WtrsReps <= 0 {
 			continue // เซตไม่สมบูรณ์ ข้าม — เหมือนตัวกรองใน CalculateWeightTrainingCalories
 		}
-		activeSeconds := s.ActiveSeconds
 		duration := req.TotalDurationSeconds
 		rows = append(rows, models.WeightTrainingResult{
 			WtrsDate:           today,
 			WtrsSetNo:          nextSetNo,
 			WtrsReps:           s.WtrsReps,
 			WtrsWeight:         s.WtrsWeight,
-			WtrsActiveSeconds:  &activeSeconds,
 			WtrsDuration:       &duration,
 			WtrsRestSeconds:    s.WtrsRestSeconds,
 			WtrsIntensityLevel: calc.IntensityLevel,
@@ -987,21 +1041,24 @@ func SaveWorkoutResult(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	body := gin.H{
 		"message":         "บันทึกผลการฝึกสำเร็จ",
 		"data":            rows,
 		"calories_burned": calc.TotalCalories,
 		"estimated_1rm":   sessionBest1RM,
 		// รายละเอียดที่มาของตัวเลข — ให้ debug/ตรวจสอบได้ว่าทำไมได้ค่านี้ ไม่ใช่กล่องดำ
 		"calculation": gin.H{
-			"session_base_met":  calc.SessionBaseMET,
-			"final_met":         calc.FinalMET,
-			"effective_minutes": calc.EffectiveMinutes,
-			"intensity_level":   calc.IntensityLevel,
-			"one_rep_max_used":  oneRepMax,
-			"body_weight_kg":    bodyWeight,
+			"session_base_met": calc.SessionBaseMET,
+			"final_met":        calc.FinalMET,
+			"duration_minutes": calc.DurationMinutes,
+			"intensity_level":  calc.IntensityLevel,
+			"one_rep_max_used": oneRepMax,
+			"body_weight_kg":   bodyWeight,
 		},
-	})
+	}
+	recentWeightSessions.Complete(submission, http.StatusOK, body)
+	saved = true
+	c.JSON(http.StatusOK, body)
 }
 
 // GetBest1RM - ดึง estimated 1RM สูงสุดของ user สำหรับท่าฝึกที่ระบุ
