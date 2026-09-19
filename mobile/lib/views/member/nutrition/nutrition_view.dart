@@ -100,7 +100,10 @@ class NutritionViewState extends State<NutritionView> with RouteAware {
 
   Map<String, double> get _macroTargetPct => di.macroTargetPct(_goalType);
 
-  double get _targetCalories => (_analytics?.targetTdee ?? 0) > 0 ? _analytics!.targetTdee : 2000;
+  // ไม่มีเป้าหมายจาก API (ยังโหลดไม่ได้/ไม่มีโปรไฟล์) → 0 แล้วแสดง "-" ห้ามเดาเป็น 2000 kcal
+  // (เดิมมี fallback 2000 ทำให้เป้าหมายเท็จค้างบนหน้าจอ) — ดู _hasTarget
+  double get _targetCalories => (_analytics?.targetTdee ?? 0) > 0 ? _analytics!.targetTdee : 0;
+  bool get _hasTarget => _targetCalories > 0;
   double get _targetProtein => _targetCalories * _macroTargetPct['protein']! / 4;
   double get _targetCarbs   => _targetCalories * _macroTargetPct['carb']! / 4;
   double get _targetFat     => _targetCalories * _macroTargetPct['fat']! / 9;
@@ -317,8 +320,8 @@ class NutritionViewState extends State<NutritionView> with RouteAware {
 
   Widget _buildCalorieDonut() {
     final consumed = _totalCalories;
-    final progress = (consumed / _targetCalories).clamp(0.0, 1.0);
-    final remaining = (_targetCalories - consumed).clamp(0.0, double.infinity);
+    final progress = _hasTarget ? (consumed / _targetCalories).clamp(0.0, 1.0) : 0.0;
+    final remaining = _hasTarget ? (_targetCalories - consumed).clamp(0.0, double.infinity) : null;
     // สถานะเทียบเป้า ±10% (บทที่ 2 หัวข้อ 2.1.4.7) — ใช้ calc.energyBalanceStatus() เดียวกับ
     // dashboard_view.dart แทนการคำนวณเอง (เดิมคนละสี/คนละข้อความกับหน้า dashboard ทั้งที่เกณฑ์
     // เดียวกัน — รวมมาไว้จุดเดียวกันแล้ว)
@@ -383,11 +386,11 @@ class NutritionViewState extends State<NutritionView> with RouteAware {
           IntrinsicHeight(
             child: Row(
               children: [
-                Expanded(child: _buildCalorieStat('เป้าหมาย', _targetCalories.round(), AppColors.textMuted)),
+                Expanded(child: _buildCalorieStat('เป้าหมาย', _hasTarget ? _targetCalories.round().toString() : '-', AppColors.textMuted)),
                 _buildStatDivider(),
-                Expanded(child: _buildCalorieStat('รับแล้ว', consumed.round(), isOver ? Colors.orange : (isUnder ? AppColors.alertInfo : AppColors.textDark))),
+                Expanded(child: _buildCalorieStat('รับแล้ว', consumed.round().toString(), isOver ? Colors.orange : (isUnder ? AppColors.alertInfo : AppColors.textDark))),
                 _buildStatDivider(),
-                Expanded(child: _buildCalorieStat('คงเหลือ', remaining.round(), AppColors.primaryGreen)),
+                Expanded(child: _buildCalorieStat('คงเหลือ', remaining == null ? '-' : remaining.round().toString(), AppColors.primaryGreen)),
               ],
             ),
           ),
@@ -396,11 +399,11 @@ class NutritionViewState extends State<NutritionView> with RouteAware {
     );
   }
 
-  Widget _buildCalorieStat(String label, int value, Color valueColor) {
+  Widget _buildCalorieStat(String label, String value, Color valueColor) {
     return Column(
       children: [
         Text(
-          value.toString(),
+          value,
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: valueColor),
         ),
         const SizedBox(height: 2),
@@ -418,7 +421,7 @@ class NutritionViewState extends State<NutritionView> with RouteAware {
   }
 
   Widget _buildMacrosRow() {
-    if (!_hasValidGoalType) return const SizedBox.shrink(); // ไม่รู้เป้าหมาย — ซ่อน section มาโครแทนเดา
+    if (!_hasValidGoalType || !_hasTarget) return const SizedBox.shrink(); // ไม่รู้เป้าหมาย/พลังงานเป้าหมาย — ซ่อน section มาโครแทนเดา
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Row(
