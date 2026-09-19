@@ -101,7 +101,9 @@ class _CardioActivityExerciseViewState extends State<CardioActivityExerciseView>
 
   // น้ำหนักจริงของสมาชิก ใช้คำนวณพลังงานสดระหว่างเล่น ให้ตรงกับที่ backend
   // ใช้คำนวณตอนบันทึกจริง (SaveCardioResult ใช้ mbs_weight ล่าสุดของสมาชิก ไม่ใช่ค่าคงที่)
-  double _memberWeightKg = 65.0;
+  // null = ยังโหลดโปรไฟล์ไม่ได้ → preview แสดง "-" ห้ามเดาน้ำหนักแทน (เดิมใช้ 65.0 ซึ่งไม่ตรงทั้ง
+  // น้ำหนักจริงและค่า fallback ของ backend ทำให้ตัวเลขเท็จค้างบนหน้าจอ)
+  double? _memberWeightKg;
 
   @override
   void initState() {
@@ -298,12 +300,20 @@ class _CardioActivityExerciseViewState extends State<CardioActivityExerciseView>
   // สดก่อนบันทึกเท่านั้น ไม่ได้เก็บ DB เอง จึงยังไม่เข้าข่ายผิดกฎ "ห้ามคำนวณสูตรซ้ำ" แต่ต้องได้
   // ผลลัพธ์ตรงกับที่ backend คำนวณเป๊ะ ไม่ใช่ตรงแค่สูตรฐาน — ตัด fallback mets=6.0 ทิ้งด้วย เพราะ
   // METs ต้องมาจาก DB (cardio.cdo_mets) เท่านั้น ห้าม hardcode ค่าเดา
-  double _getCalculatedCalories() {
+  double? _getCalculatedCalories() {
+    final weightKg = _memberWeightKg;
+    if (weightKg == null) return null;
     return calc.cardioNetKcal(
       mets: widget.mets,
-      weightKg: _memberWeightKg,
+      weightKg: weightKg,
       minutes: _globalSeconds / 60.0,
     );
+  }
+
+  // ไม่มีน้ำหนัก → "-" (ค่าจริงที่บันทึกมาจาก backend ไม่เกี่ยวกับ preview นี้)
+  String _caloriesLabel() {
+    final kcal = _getCalculatedCalories();
+    return kcal == null ? '-' : '${kcal.round()}';
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -553,7 +563,7 @@ class _CardioActivityExerciseViewState extends State<CardioActivityExerciseView>
           _liveStatBox(
             icon: Icons.local_fire_department_rounded,
             label: 'เผาผลาญ',
-            value: '${_getCalculatedCalories().round()} cal',
+            value: '${_caloriesLabel()} cal',
             color: const Color(0xFFFFB74D),
           ),
         ],
@@ -781,7 +791,7 @@ class _CardioActivityExerciseViewState extends State<CardioActivityExerciseView>
 
   Widget _buildSummaryOverlay() {
     const Color green = Color(0xFF2BEE8C);
-    final String autoCalories = _getCalculatedCalories().round().toString();
+    final String autoCalories = _caloriesLabel();
     final String distText = _distanceController.text.trim();
 
     return Positioned.fill(
