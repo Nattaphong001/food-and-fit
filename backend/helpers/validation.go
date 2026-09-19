@@ -147,6 +147,72 @@ func ValidateCardioResult(durationSeconds int, distanceKm float64, hasDistance b
 	return true, ""
 }
 
+// ── ขอบเขตของข้อมูลเซสชันเวทเทรนนิ่ง (ValidateWeightSession) ──
+// เวลารวมกับเวลาพักคือตัวที่ทำให้ kcal เพี้ยนได้มากที่สุด: kcal เป็นเส้นตรงกับเวลารวม (สูตรไม่มีเพดานแล้ว
+// ตั้งแต่ 2026-09-19) และเวลาพักเป็นตัวเลือก MET ในหมวดน้ำหนักตัว (8.0 กับ 3.5) — จึงต้องกันค่าที่เป็นไปไม่ได้
+// ตั้งแต่ชั้นรับข้อมูล ค่าเพดานด้านล่างเป็นค่าที่ผู้พัฒนาเลือก ไม่ได้มาจากสเปกบทที่ 2
+const (
+	// เวลาต่ำสุดต่อเซต: 1 เซตที่บันทึกได้จริงต้องใช้เวลาอย่างน้อยกี่วินาที (กันข้อมูลขยะจากการกดรัว)
+	WeightSessionMinSecondsPerSet = 5
+	// เวลารวมสูงสุดของ 1 ท่า 1 เซสชัน (2 ชม.) — ท่าเดียว 5×5 พัก 5 นาทีก็ราว 35 นาที ยาวกว่า 2 ชม.
+	// เกือบแน่นอนว่าลืมกดจบ ต้องไม่เอาไปคิด kcal (คอลัมน์ wtrs_duration เป็น SMALLINT UNSIGNED เก็บได้ถึง 65535)
+	WeightSessionMaxSeconds = 7200
+	// จำนวนเซตสูงสุดต่อคำขอ (wtrs_set_no เป็น TINYINT UNSIGNED)
+	WeightSessionMaxSets = 50
+	// Reps สูงสุดต่อเซต ให้ตรงกับรูปแบบ Reps 3 หลักของแผนฝึก (RepsPattern)
+	WeightSetMaxReps = 999
+	// น้ำหนักที่ยกสูงสุด ตรงเพดานจริงของคอลัมน์ wtrs_weight DECIMAL(5,2)
+	WeightSetMaxWeightKg = 999.99
+	// ผลรวมเวลาพักทุกเซตต้องไม่เกินเวลารวม (ช่วงพักเป็นส่วนหนึ่งของเวลาเซสชัน) เผื่อคลาดเคลื่อนจากการปัดวินาที
+	WeightRestSumToleranceSeconds = 10
+)
+
+// WeightSetCheck - ข้อมูลต่อเซตที่ ValidateWeightSession ตรวจ (ประกาศแยกจาก controller กัน import วน)
+type WeightSetCheck struct {
+	Reps        int
+	WeightKg    float64
+	RestSeconds *int // nil = ไม่ทราบเวลาพัก (client เก่า) ไม่ตรวจ
+}
+
+// ValidateWeightSession - ตรวจความสมเหตุสมผลของเวลาและเซตตอนบันทึกผลเวทเทรนนิ่ง (SaveWorkoutResult)
+// ตอบ false พร้อมข้อความเมื่อค่าเป็นไปไม่ได้ ไม่แก้ค่าเงียบๆ (ต่างจากการตัดเพดานในสูตร) เพื่อไม่ให้ผลคำนวณ
+// ถูกปรับโดยที่ผู้ใช้ไม่รู้ — ลำดับ: จำนวนเซต → เวลารวม → แต่ละเซต → ผลรวมเวลาพัก
+// [USED] workout_controller.go (SaveWorkoutResult)
+func ValidateWeightSession(totalDurationSeconds int, sets []WeightSetCheck) (bool, string) {
+	if len(sets) < 1 {
+		return false, "ต้องมีอย่างน้อย 1 เซต"
+	}
+	if len(sets) > WeightSessionMaxSets {
+		return false, fmt.Sprintf("จำนวนเซตไม่ถูกต้อง (สูงสุด %d เซต)", WeightSessionMaxSets)
+	}
+	if totalDurationSeconds < len(sets)*WeightSessionMinSecondsPerSet {
+		return false, "เวลารวมสั้นเกินไปเมื่อเทียบกับจำนวนเซต กรุณาตรวจสอบเวลาการฝึก"
+	}
+	if totalDurationSeconds > WeightSessionMaxSeconds {
+		return false, fmt.Sprintf("เวลารวมยาวผิดปกติ (สูงสุด %d นาทีต่อท่า) อาจลืมกดจบการฝึก", WeightSessionMaxSeconds/60)
+	}
+	restSum := 0
+	for _, s := range sets {
+		if s.Reps < 1 || s.Reps > WeightSetMaxReps {
+			return false, fmt.Sprintf("จำนวนครั้งต้องอยู่ระหว่าง 1-%d", WeightSetMaxReps)
+		}
+		if s.WeightKg < 0 || s.WeightKg > WeightSetMaxWeightKg {
+			return false, fmt.Sprintf("น้ำหนักที่ยกต้องอยู่ระหว่าง 0-%.2f กก.", WeightSetMaxWeightKg)
+		}
+		if s.RestSeconds == nil {
+			continue
+		}
+		if *s.RestSeconds < 0 || *s.RestSeconds > totalDurationSeconds {
+			return false, "เวลาพักไม่ถูกต้อง (ติดลบหรือมากกว่าเวลารวม)"
+		}
+		restSum += *s.RestSeconds
+	}
+	if restSum > totalDurationSeconds+WeightRestSumToleranceSeconds {
+		return false, "ผลรวมเวลาพักมากกว่าเวลารวมของการฝึก"
+	}
+	return true, ""
+}
+
 // ValidateNutritionMacros - ตรวจช่วงค่าพลังงาน/สารอาหารของ nutrition (V3)
 // calories: 0-9000 kcal, protein/carbs/fat: 0-1000 g, serving_weight: 0.1-5000
 func ValidateNutritionMacros(calories, protein, carbs, fat float64, servingWeight int) (bool, string) {

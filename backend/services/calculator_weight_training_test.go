@@ -87,7 +87,7 @@ func TestResolveSetBaseMET_Bodyweight(t *testing.T) {
 // ทุกเซตส่ง RestSeconds จริงมาครบ (ไม่ใช้ proxy) — เทียบค่าที่คำนวณมือ
 // ท่า Isolation แรงต้าน: เซต1 Reps 5 → 6.0 · เซต2 Reps 10 พัก 75 → 5.0 · เซต3 Reps 12 พัก 120 → 3.5
 // Session MET = (6.0+5.0+3.5)/3 = 4.8333... = Final MET
-// duration=180s=3min, cap=min(3, 3*4=12)=3min
+// duration=180s=3min
 // Kcal = (4.8333-1)*3.5*70/200*3 = 3.8333*1.225*3 = 14.0875
 func TestCalculateWeightTrainingCalories_UsesRealRestSecondsAndAveragesPerSet(t *testing.T) {
 	sets := []SetLog{
@@ -150,7 +150,7 @@ func TestCalculateWeightTrainingCalories_WorkedExamples(t *testing.T) {
 }
 
 // ไม่มี RestSeconds เลย (แถวเก่าก่อน 2026-09-18) → fallback เป็น proxy ความหนาแน่นเฉลี่ยทั้งเซสชัน
-// 4 เซต, 4 นาที (240s): cappedMinutes=min(4, 4*4=16)=4, density=1.0 นาที/เซต = 60 วิ/เซต
+// 4 เซต, 4 นาที (240s): ระยะเวลา=4 นาที, density=1.0 นาที/เซต = 60 วิ/เซต
 // ท่า Isolation แรงต้าน Reps 10: proxy 60 วิ อยู่ในช่วง 60–90 → 5.0 ทุกเซต
 // Kcal = (5.0-1)*3.5*75/200*4 = 4*1.3125*4 = 21.0
 func TestCalculateWeightTrainingCalories_FallsBackToDensityProxyWhenRestSecondsMissing(t *testing.T) {
@@ -168,22 +168,26 @@ func TestCalculateWeightTrainingCalories_FallsBackToDensityProxyWhenRestSecondsM
 	}
 }
 
-// พักนานกว่าปกติ (อู้/ลืมกดจบ) งานเท่าเดิม ต้องได้พลังงานเท่ากัน — ไม่มี RestSeconds ต่อเซต ใช้ proxy
-// ทั้งคู่ ซึ่งถูกเพดาน 44 นาที (11×4) เท่ากันแล้วไม่ว่าจะพักจริงกี่นาที Compound Reps 15 → 5.0 ทั้งคู่
-func TestCalculateWeightTrainingCalories_DurationCapPreventsInflation(t *testing.T) {
+// ไม่มีเพดานเวลา — ใช้เวลารวมตามที่รับมาตรงๆ: เวลา 2 เท่า (MET เท่ากัน) ต้องได้พลังงาน 2 เท่าพอดี
+// ไม่มี RestSeconds ต่อเซต ใช้ proxy (เวลารวม ÷ เซต = 245 วิ และ 490 วิ) Compound → 5.0 ทั้งคู่
+// ความสมเหตุสมผลของเวลาที่รับมาตรวจที่ชั้น controller ไม่ใช่ในสูตร
+func TestCalculateWeightTrainingCalories_DurationHasNoCap(t *testing.T) {
 	sets := make([]SetLog, 11)
 	for i := range sets {
 		sets[i] = SetLog{WeightKg: 10, Reps: 15}
 	}
 
-	fast := CalculateWeightTrainingCalories(75, 45*60, 0, barbellCompound, sets)
-	slow := CalculateWeightTrainingCalories(75, 90*60, 0, barbellCompound, sets)
+	short := CalculateWeightTrainingCalories(75, 45*60, 0, barbellCompound, sets)
+	long := CalculateWeightTrainingCalories(75, 90*60, 0, barbellCompound, sets)
 
-	if !almostEqual(fast.EffectiveMinutes, 44.0, 0.01) || !almostEqual(slow.EffectiveMinutes, 44.0, 0.01) {
-		t.Errorf("EffectiveMinutes fast=%.2f slow=%.2f ต้องถูกเพดานที่ 44 นาที (11 เซต × 4 นาที)", fast.EffectiveMinutes, slow.EffectiveMinutes)
+	if !almostEqual(short.DurationMinutes, 45.0, 0.0001) || !almostEqual(long.DurationMinutes, 90.0, 0.0001) {
+		t.Errorf("DurationMinutes short=%.2f long=%.2f ต้องเท่าเวลาจริง 45 และ 90 นาที (ไม่มีเพดาน)", short.DurationMinutes, long.DurationMinutes)
 	}
-	if !almostEqual(fast.TotalCalories, slow.TotalCalories, 0.01) {
-		t.Errorf("45 นาที (%.2f kcal) กับ 90 นาที (%.2f kcal) งานเท่ากันต้องได้พลังงานเท่ากัน", fast.TotalCalories, slow.TotalCalories)
+	if !almostEqual(short.FinalMET, 5.0, 0.0001) || !almostEqual(long.FinalMET, 5.0, 0.0001) {
+		t.Errorf("FinalMET short=%.2f long=%.2f want 5.0 ทั้งคู่", short.FinalMET, long.FinalMET)
+	}
+	if !almostEqual(long.TotalCalories, 2*short.TotalCalories, 0.001) {
+		t.Errorf("90 นาที (%.2f kcal) ต้องเป็น 2 เท่าของ 45 นาที (%.2f kcal)", long.TotalCalories, short.TotalCalories)
 	}
 }
 
@@ -266,5 +270,258 @@ func TestCalculateWeightTrainingCalories_FinalMETStaysWithinClampRange(t *testin
 				}
 			}
 		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ตารางทดสอบปลายทาง (end-to-end ของ CalculateWeightTrainingCalories) — ชุดข้อมูลเดียวกับที่ใช้ทดสอบมือ
+// ตั้งค่ากลาง: น้ำหนักตัว 70 กก., 3 เซต, เวลารวม 540 วินาที (ระยะเวลา = 9 นาที)
+// จึงได้ Kcal = (MET−1) × 3.5 × 70 / 200 × 9 = (MET−1) × 11.025 — ค่า want ด้านล่างมาจากการรันฟังก์ชันจริง
+// แล้วเทียบสูตรมือ ไม่ได้คัดลอกจากผลของฟังก์ชันอย่างเดียว
+// ─────────────────────────────────────────────────────────────────────────
+
+// setsOf สร้างเซตที่ Reps/พัก เท่ากันทุกเซต (rest < 0 = RestSeconds เป็น nil)
+func setsOf(n, reps, rest int) []SetLog {
+	sets := make([]SetLog, n)
+	for i := range sets {
+		sets[i] = SetLog{Reps: reps}
+		if rest >= 0 {
+			sets[i].RestSeconds = intPtr(rest)
+		}
+	}
+	return sets
+}
+
+func TestCalculateWeightTrainingCalories_LogicMatrixEndToEnd(t *testing.T) {
+	cases := []struct {
+		name     string
+		profile  ExerciseProfile
+		reps     int
+		rest     int
+		wantMET  float64
+		wantKcal float64
+	}{
+		// หมวดแรงต้าน
+		{"R1 Reps 5 Iso พัก 120 → หนัก", dumbbellIsolated, 5, 120, 6.0, 55.125},
+		{"R2 Reps 7 (ขอบ) Iso พัก 120 → หนัก", dumbbellIsolated, 7, 120, 6.0, 55.125},
+		{"R3 Reps 8 (ขอบ) Iso พัก 120 → เบา", dumbbellIsolated, 8, 120, 3.5, 27.5625},
+		{"R4 Reps 10 Compound พัก 120 → ปานกลาง", barbellCompound, 10, 120, 5.0, 44.1},
+		{"R5 Iso พัก 60 (ขอบล่าง) → ปานกลาง", dumbbellIsolated, 10, 60, 5.0, 44.1},
+		{"R6 Iso พัก 90 (ขอบบน) → ปานกลาง", dumbbellIsolated, 10, 90, 5.0, 44.1},
+		{"R7 Iso พัก 59 → เบา", dumbbellIsolated, 10, 59, 3.5, 27.5625},
+		{"R8 Iso พัก 91 → เบา", dumbbellIsolated, 10, 91, 3.5, 27.5625},
+		{"R9 Reps 5 Compound พัก 75 → ลำดับ: Reps<8 ชนะ", barbellCompound, 5, 75, 6.0, 55.125},
+		{"R10 Reps 12 Iso พัก 30 → เบา", dumbbellIsolated, 12, 30, 3.5, 27.5625},
+		{"R11 Reps 8 Compound พัก 0 → ปานกลาง", barbellCompound, 8, 0, 5.0, 44.1},
+		// หมวดน้ำหนักตัว
+		{"B1 Iso พัก 10 → 2.8", bodyweightIsoltd, 15, 10, 2.8, 19.845},
+		{"B2 Iso พัก 120 → 2.8 (Isolation ชนะก่อนดูเวลาพัก)", bodyweightIsoltd, 15, 120, 2.8, 19.845},
+		{"B3 Compound พัก 0 → หนัก", bodyweightCompnd, 15, 0, 8.0, 77.175},
+		{"B4 Compound พัก 29 → หนัก", bodyweightCompnd, 15, 29, 8.0, 77.175},
+		{"B5 Compound พัก 30 (ขอบ) → ปานกลาง", bodyweightCompnd, 15, 30, 3.8, 30.87},
+		{"B6 Compound พัก 90 (ขอบ) → ปานกลาง", bodyweightCompnd, 15, 90, 3.8, 30.87},
+		{"B7 Compound พัก 91 → เบา", bodyweightCompnd, 15, 91, 3.5, 27.5625},
+		{"B8 Reps 3 พัก 120 → เบา (Reps ไม่มีผลในหมวดนี้)", bodyweightCompnd, 3, 120, 3.5, 27.5625},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CalculateWeightTrainingCalories(70, 540, 0, tc.profile, setsOf(3, tc.reps, tc.rest))
+			if !almostEqual(got.FinalMET, tc.wantMET, 0.0001) {
+				t.Errorf("FinalMET = %.4f, want %.4f", got.FinalMET, tc.wantMET)
+			}
+			if !almostEqual(got.TotalCalories, tc.wantKcal, 0.001) {
+				t.Errorf("TotalCalories = %.4f, want %.4f", got.TotalCalories, tc.wantKcal)
+			}
+			if !almostEqual(got.CaloriesPerSet*3, got.TotalCalories, 0.0001) {
+				t.Errorf("CaloriesPerSet×3 = %.4f ต้องเท่ากับ TotalCalories %.4f (หารเท่ากันทุกเซต)", got.CaloriesPerSet*3, got.TotalCalories)
+			}
+		})
+	}
+}
+
+// เซสชันที่ MET ต่างกันต่อเซต — Session MET ต้องเป็นค่าเฉลี่ยของ MET รายเซต
+func TestCalculateWeightTrainingCalories_MixedSetsAverageMET(t *testing.T) {
+	cases := []struct {
+		name     string
+		profile  ExerciseProfile
+		sets     []SetLog
+		wantMET  float64
+		wantKcal float64
+	}{
+		{"M1 Compound Reps 5/10/10 พัก 120 → (6+5+5)/3", barbellCompound,
+			[]SetLog{{Reps: 5, RestSeconds: intPtr(120)}, {Reps: 10, RestSeconds: intPtr(120)}, {Reps: 10, RestSeconds: intPtr(120)}},
+			16.0 / 3.0, 47.775},
+		{"M2 Iso Reps 10 พัก 30/75/120 → (3.5+5+3.5)/3", dumbbellIsolated,
+			[]SetLog{{Reps: 10, RestSeconds: intPtr(30)}, {Reps: 10, RestSeconds: intPtr(75)}, {Reps: 10, RestSeconds: intPtr(120)}},
+			4.0, 33.075},
+		{"M3 น้ำหนักตัว Compound พัก 10/60/120 → (8+3.8+3.5)/3", bodyweightCompnd,
+			[]SetLog{{Reps: 15, RestSeconds: intPtr(10)}, {Reps: 15, RestSeconds: intPtr(60)}, {Reps: 15, RestSeconds: intPtr(120)}},
+			15.3 / 3.0, 45.2025},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CalculateWeightTrainingCalories(70, 540, 0, tc.profile, tc.sets)
+			if !almostEqual(got.FinalMET, tc.wantMET, 0.0001) {
+				t.Errorf("FinalMET = %.4f, want %.4f", got.FinalMET, tc.wantMET)
+			}
+			if !almostEqual(got.TotalCalories, tc.wantKcal, 0.001) {
+				t.Errorf("TotalCalories = %.4f, want %.4f", got.TotalCalories, tc.wantKcal)
+			}
+		})
+	}
+}
+
+// RestSeconds = nil → ใช้ความหนาแน่นเฉลี่ย (เวลารวม ÷ จำนวนเซต) แปลงเป็นวินาทีแทนเวลาพักต่อเซตนั้น
+func TestCalculateWeightTrainingCalories_DensityProxyBoundaries(t *testing.T) {
+	cases := []struct {
+		name     string
+		profile  ExerciseProfile
+		sets     []SetLog
+		duration int
+		wantMET  float64
+		wantMins float64
+		wantKcal float64
+	}{
+		{"F1 แรงต้าน Iso 180 วิ/เซต → เบา", dumbbellIsolated, setsOf(3, 10, -1), 540, 3.5, 9, 27.5625},
+		{"F2 แรงต้าน Iso 60 วิ/เซต → ปานกลาง", dumbbellIsolated, setsOf(3, 10, -1), 180, 5.0, 3, 14.7},
+		{"F3 น้ำหนักตัว Compound 20 วิ/เซต → หนัก", bodyweightCompnd, setsOf(3, 15, -1), 60, 8.0, 1, 8.575},
+		{"F4 น้ำหนักตัว Compound 60 วิ/เซต → ปานกลาง", bodyweightCompnd, setsOf(3, 15, -1), 180, 3.8, 3, 10.29},
+		{"F5 ผสม: เซต 1 พัก 30 จริง เซต 2 เป็น nil (proxy 60 วิ)", bodyweightCompnd,
+			[]SetLog{{Reps: 15, RestSeconds: intPtr(30)}, {Reps: 15}}, 120, 3.8, 2, 6.86},
+		// ไม่มีพักจริง + เวลารวมยาวมาก → proxy = เวลารวมต่อเซตตรงๆ (1200 วิ) ไม่มีเพดาน, เวลา 60 นาทีเต็ม
+		{"F6 ไม่มีเพดาน: 3 เซต 3600 วิ ไม่มีพักจริง → proxy 1200 วิ", dumbbellIsolated, setsOf(3, 10, -1), 3600, 3.5, 60, 183.75},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CalculateWeightTrainingCalories(70, tc.duration, 0, tc.profile, tc.sets)
+			if !almostEqual(got.FinalMET, tc.wantMET, 0.0001) {
+				t.Errorf("FinalMET = %.4f, want %.4f", got.FinalMET, tc.wantMET)
+			}
+			if !almostEqual(got.DurationMinutes, tc.wantMins, 0.0001) {
+				t.Errorf("DurationMinutes = %.4f, want %.4f", got.DurationMinutes, tc.wantMins)
+			}
+			if !almostEqual(got.TotalCalories, tc.wantKcal, 0.001) {
+				t.Errorf("TotalCalories = %.4f, want %.4f", got.TotalCalories, tc.wantKcal)
+			}
+		})
+	}
+}
+
+// ไม่มีเพดานเวลา: ระยะเวลาที่ใช้ = เวลารวม ÷ 60 ตรงๆ ไม่ว่าจะสั้นหรือยาวเท่าไหร่ (ตัวเลขเดิมที่เคยเป็นขอบเพดาน 720 วิ
+// ต้องไม่มีผลอีกต่อไป)
+func TestCalculateWeightTrainingCalories_DurationUsedAsIs(t *testing.T) {
+	cases := []struct {
+		name     string
+		duration int
+		wantMins float64
+	}{
+		{"719 วิ", 719, 719.0 / 60.0},
+		{"720 วิ (ขอบเพดานเดิม 3 เซต × 4 นาที)", 720, 12.0},
+		{"3600 วิ (เกินขอบเพดานเดิม)", 3600, 60.0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CalculateWeightTrainingCalories(70, tc.duration, 0, dumbbellIsolated, setsOf(3, 10, 120))
+			if !almostEqual(got.DurationMinutes, tc.wantMins, 0.0001) {
+				t.Errorf("DurationMinutes = %.4f, want %.4f", got.DurationMinutes, tc.wantMins)
+			}
+		})
+	}
+}
+
+// ขอบของ IntensityLevel (label แสดงผล): RI < 0.50 → 1 · 0.50 ≤ RI < 0.70 → 2 · RI ≥ 0.70 → 3
+// และต้องไม่กระทบ Final MET/พลังงานเลย (เทียบกับเคสน้ำหนัก 0)
+func TestCalculateWeightTrainingCalories_IntensityLevelBoundaries(t *testing.T) {
+	const oneRepMax = 100.0
+	baseline := CalculateWeightTrainingCalories(70, 180, oneRepMax, barbellCompound, []SetLog{{WeightKg: 0, Reps: 10, RestSeconds: intPtr(90)}})
+	cases := []struct {
+		weight float64
+		want   int8
+	}{
+		{0, 2}, // ท่า bodyweight ไม่มี RI → กลาง
+		{40, 1},
+		{49.9, 1},
+		{50, 2}, // ขอบ 0.50 นับเป็นกลาง
+		{69.9, 2},
+		{70, 3}, // ขอบ 0.70 นับเป็นหนัก
+		{100, 3},
+	}
+	for _, tc := range cases {
+		got := CalculateWeightTrainingCalories(70, 180, oneRepMax, barbellCompound, []SetLog{{WeightKg: tc.weight, Reps: 10, RestSeconds: intPtr(90)}})
+		if got.IntensityLevel != tc.want {
+			t.Errorf("weight=%.1f (RI=%.3f): IntensityLevel=%d, want %d", tc.weight, tc.weight/oneRepMax, got.IntensityLevel, tc.want)
+		}
+		if got.FinalMET != baseline.FinalMET || !almostEqual(got.TotalCalories, baseline.TotalCalories, 0.0001) {
+			t.Errorf("weight=%.1f: MET/kcal ต้องไม่เปลี่ยนตามน้ำหนักที่ยก (got MET=%.2f kcal=%.4f)", tc.weight, got.FinalMET, got.TotalCalories)
+		}
+	}
+	// เซตที่ weight=0 ปนกับเซตที่มีน้ำหนัก ต้องไม่ถูกนับใน RI เฉลี่ย (ไม่ดึงค่าลง)
+	mixed := CalculateWeightTrainingCalories(70, 180, oneRepMax, barbellCompound, []SetLog{
+		{WeightKg: 80, Reps: 10, RestSeconds: intPtr(90)},
+		{WeightKg: 0, Reps: 10, RestSeconds: intPtr(90)},
+	})
+	if mixed.IntensityLevel != 3 {
+		t.Errorf("เซต weight=0 ต้องไม่ถูกนับใน RI เฉลี่ย: IntensityLevel=%d, want 3", mixed.IntensityLevel)
+	}
+}
+
+// พลังงานต้องเป็นเส้นตรงกับน้ำหนักตัว (ทดสอบมือบนบัญชีที่น้ำหนักไม่ใช่ 70 กก. คูณตามน้ำหนักได้เลย)
+func TestCalculateWeightTrainingCalories_ScalesLinearlyWithBodyWeight(t *testing.T) {
+	at70 := CalculateWeightTrainingCalories(70, 540, 0, barbellCompound, setsOf(3, 10, 120))
+	at105 := CalculateWeightTrainingCalories(105, 540, 0, barbellCompound, setsOf(3, 10, 120))
+	if !almostEqual(at105.TotalCalories, at70.TotalCalories*1.5, 0.0001) {
+		t.Errorf("105 กก. = %.4f, want 70 กก. × 1.5 = %.4f", at105.TotalCalories, at70.TotalCalories*1.5)
+	}
+}
+
+// เซตสุดท้ายไม่มีการพักจริง (ผู้ใช้กรอกเสร็จแล้วจบการฝึกเลย) มือถือส่ง RestSeconds = nil — เซตนั้นต้องใช้ค่าเฉลี่ย
+// เวลาพักของเซตอื่นในเซสชัน ไม่ใช่ proxy ความหนาแน่น และไม่ดึง MET เฉลี่ยไปทางใดทางหนึ่ง เทียบสูตรมือที่ 70 กก. 9 นาที
+// (kcal = (MET−1) × 1.225 × 9)
+func TestCalculateWeightTrainingCalories_UnknownRestUsesMeanOfKnownRests(t *testing.T) {
+	cases := []struct {
+		name     string
+		profile  ExerciseProfile
+		sets     []SetLog
+		duration int
+		wantMET  float64
+		wantKcal float64
+	}{
+		{"U1 น้ำหนักตัว Compound พัก 60,60,nil → เซตสุดท้ายใช้ 60 → ปานกลางทั้งหมด", bodyweightCompnd,
+			[]SetLog{{Reps: 15, RestSeconds: intPtr(60)}, {Reps: 15, RestSeconds: intPtr(60)}, {Reps: 15}}, 540, 3.8, 30.87},
+		{"U2 น้ำหนักตัว Compound พัก 10,60,nil → เฉลี่ย 35 → หนัก+ปานกลาง+ปานกลาง", bodyweightCompnd,
+			[]SetLog{{Reps: 15, RestSeconds: intPtr(10)}, {Reps: 15, RestSeconds: intPtr(60)}, {Reps: 15}}, 540, (8.0 + 3.8 + 3.8) / 3, 46.305},
+		{"U3 แรงต้าน Iso พัก 120,120,nil → เฉลี่ย 120 → เบาทั้งหมด", dumbbellIsolated,
+			[]SetLog{{Reps: 10, RestSeconds: intPtr(120)}, {Reps: 10, RestSeconds: intPtr(120)}, {Reps: 10}}, 540, 3.5, 27.5625},
+		{"U4 แรงต้าน Iso พัก 75,75,nil → เฉลี่ย 75 → ปานกลางทั้งหมด", dumbbellIsolated,
+			[]SetLog{{Reps: 10, RestSeconds: intPtr(75)}, {Reps: 10, RestSeconds: intPtr(75)}, {Reps: 10}}, 540, 5.0, 44.1},
+		{"U5 แรงต้าน เซตสุดท้าย Reps < 8 ยังเป็นหนัก ไม่ขึ้นกับเวลาพักที่ไม่ทราบ", dumbbellIsolated,
+			[]SetLog{{Reps: 10, RestSeconds: intPtr(75)}, {Reps: 5}}, 360, (5.0 + 6.0) / 2, 33.075},
+		{"U6 เซตเดียวและไม่ทราบพัก → ใช้ proxy ความหนาแน่น (120 วิ → เบา)", dumbbellIsolated,
+			[]SetLog{{Reps: 10}}, 120, 3.5, 6.125},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CalculateWeightTrainingCalories(70, tc.duration, 0, tc.profile, tc.sets)
+			if !almostEqual(got.FinalMET, tc.wantMET, 0.0001) {
+				t.Errorf("FinalMET = %.4f, want %.4f", got.FinalMET, tc.wantMET)
+			}
+			minutes := float64(tc.duration) / 60.0
+			wantKcal := (tc.wantMET - 1) * 3.5 * 70 / 200 * minutes
+			if !almostEqual(got.TotalCalories, wantKcal, 0.0001) {
+				t.Errorf("TotalCalories = %.4f, want %.4f (สูตรมือ)", got.TotalCalories, wantKcal)
+			}
+			if !almostEqual(got.TotalCalories, tc.wantKcal, 0.01) {
+				t.Errorf("TotalCalories = %.4f, want %.4f (ค่าที่คำนวณมือไว้ล่วงหน้า)", got.TotalCalories, tc.wantKcal)
+			}
+		})
+	}
+
+	// เซตสุดท้ายที่ nil ต้องให้ผลเท่ากับส่งค่าเฉลี่ยของเซตอื่นมาตรงๆ
+	withNil := CalculateWeightTrainingCalories(70, 540, 0, bodyweightCompnd,
+		[]SetLog{{Reps: 15, RestSeconds: intPtr(10)}, {Reps: 15, RestSeconds: intPtr(60)}, {Reps: 15}})
+	withMean := CalculateWeightTrainingCalories(70, 540, 0, bodyweightCompnd,
+		[]SetLog{{Reps: 15, RestSeconds: intPtr(10)}, {Reps: 15, RestSeconds: intPtr(60)}, {Reps: 15, RestSeconds: intPtr(35)}})
+	if !almostEqual(withNil.TotalCalories, withMean.TotalCalories, 0.0001) {
+		t.Errorf("nil = %.4f แต่ส่งค่าเฉลี่ย 35 วิ = %.4f ต้องเท่ากัน", withNil.TotalCalories, withMean.TotalCalories)
 	}
 }

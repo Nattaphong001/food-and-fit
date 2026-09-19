@@ -180,9 +180,6 @@ type WeightTrainingResult struct {
 	WtrsWeight         float64        `gorm:"type:decimal(5,2);column:wtrs_weight" json:"wtrs_weight"`
 	// *int เพราะคอลัมน์ nullable จริง (เพิ่มเข้ามา 2026-09-08 — แถวเก่าก่อนหน้านั้นเป็น NULL หมด)
 	// เหตุผลเดียวกับ WetID/WschID ด้านล่าง: ประกาศเป็น int เฉยๆ GORM scan NULL ไม่ได้
-	// เวลาออกแรงจริงของเซตนี้ (วินาที) — เก็บไว้เป็นหลักฐานตรวจสอบย้อนหลังเท่านั้น
-	// CalculateWeightTrainingCalories ไม่ได้อ่านค่านี้ ใช้ WtrsDuration (เวลารวมทั้งเซสชัน) เป็นฐานเวลา
-	WtrsActiveSeconds *int `gorm:"type:smallint unsigned;column:wtrs_active_seconds" json:"wtrs_active_seconds"`
 	// เวลารวมทั้งเซสชัน (วินาที) ซ้ำกันทุกแถวของเซสชันเดียวกัน — ห้าม SUM ข้ามแถว
 	WtrsDuration *int `gorm:"type:smallint unsigned;column:wtrs_duration" json:"wtrs_duration"`
 	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป (เพิ่มเข้ามา 2026-09-18, migrations/2026-09-18_

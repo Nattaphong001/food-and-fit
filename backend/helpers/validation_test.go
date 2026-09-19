@@ -38,3 +38,65 @@ func TestValidateActivityLevel(t *testing.T) {
 		})
 	}
 }
+
+// ValidateWeightSession: ขอบของเวลารวม/เวลาพัก/เซต — ต้อง reject ค่าที่ทำให้ kcal เพี้ยนหรือชน DB
+func TestValidateWeightSession(t *testing.T) {
+	rest := func(v int) *int { return &v }
+	sets := func(n, reps int, restSec *int) []WeightSetCheck {
+		out := make([]WeightSetCheck, n)
+		for i := range out {
+			out[i] = WeightSetCheck{Reps: reps, WeightKg: 40, RestSeconds: restSec}
+		}
+		return out
+	}
+
+	cases := []struct {
+		name     string
+		duration int
+		sets     []WeightSetCheck
+		want     bool
+	}{
+		{"ปกติ 3 เซต 9 นาที พัก 120", 540, sets(3, 10, rest(120)), true},
+		{"ไม่มีเวลาพัก (client เก่า)", 540, sets(3, 10, nil), true},
+		{"ไม่มีเซต", 540, nil, false},
+		{"เซตเกิน 50", 7200, sets(51, 10, nil), false},
+		{"เซต 50 พอดี", 7200, sets(50, 10, nil), true},
+		{"เวลาสั้นกว่า 5 วิ/เซต (3 เซต 14 วิ)", 14, sets(3, 10, nil), false},
+		{"เวลา 5 วิ/เซตพอดี (3 เซต 15 วิ)", 15, sets(3, 10, nil), true},
+		{"เวลา 0", 0, sets(1, 10, nil), false},
+		{"เวลาติดลบ", -60, sets(1, 10, nil), false},
+		{"เวลารวม 7200 วิ พอดี (2 ชม.)", 7200, sets(3, 10, rest(120)), true},
+		{"เวลารวม 7201 วิ", 7201, sets(3, 10, rest(120)), false},
+		{"เวลารวมเกินคอลัมน์ SMALLINT", 70000, sets(3, 10, nil), false},
+		{"พักติดลบ", 540, sets(3, 10, rest(-1)), false},
+		{"พักเซตเดียวมากกว่าเวลารวม", 540, sets(1, 10, rest(541)), false},
+		{"ผลรวมพักเกินเวลารวมเกินค่าเผื่อ (3×190 = 570 > 540+10)", 540, sets(3, 10, rest(190)), false},
+		{"ผลรวมพักเกินเวลารวมแต่อยู่ในค่าเผื่อ (3×183 = 549 ≤ 550)", 540, sets(3, 10, rest(183)), true},
+		{"Reps 0", 540, sets(3, 0, nil), false},
+		{"Reps 999", 540, sets(3, 999, nil), true},
+		{"Reps 1000", 540, sets(3, 1000, nil), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, msg := ValidateWeightSession(tc.duration, tc.sets)
+			if ok != tc.want {
+				t.Errorf("ValidateWeightSession(%d, ...) = (%v, %q), want ok=%v", tc.duration, ok, msg, tc.want)
+			}
+			if !ok && msg == "" {
+				t.Errorf("ต้องมีข้อความบอกเหตุผลเมื่อ reject")
+			}
+		})
+	}
+
+	t.Run("น้ำหนักที่ยก", func(t *testing.T) {
+		for _, tc := range []struct {
+			kg   float64
+			want bool
+		}{{0, true}, {999.99, true}, {1000, false}, {-1, false}} {
+			ok, _ := ValidateWeightSession(540, []WeightSetCheck{{Reps: 10, WeightKg: tc.kg}})
+			if ok != tc.want {
+				t.Errorf("weight %.2f → ok=%v, want %v", tc.kg, ok, tc.want)
+			}
+		}
+	})
+}
