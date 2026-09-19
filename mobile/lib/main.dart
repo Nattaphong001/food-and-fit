@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 // Import ส่วนของ Core, Services และ Views
 import 'core/constants/app_colors.dart';
 import 'core/widgets/undo_snackbar.dart';
+import 'services/api_client.dart';
 import 'services/auth_service.dart';
 import 'services/member_service.dart';
 import 'services/nutrition_service.dart';
@@ -36,8 +37,18 @@ void main() async {
   await GetStorage.init();
   await LocalNotificationService.to.init();
 
+  // หา IP เครื่อง backend เองอัตโนมัติ (เฉพาะโหมด DEVICE=real) ต้องรันก่อนสร้าง ApiClient()
+  // ตัวแรก (AuthService() ด้านล่างสร้างทันทีตอน Get.put) ไม่งั้น service จะจับ IP เก่าค้างไป
+  // ทั้งเซสชัน — ดู ApiClient.autoDetectServer()
+  await ApiClient.autoDetectServer();
+
   // ลงทะเบียน Services
   Get.put(AuthService());
+  // token ย้ายไปเก็บใน flutter_secure_storage แล้ว (async) — ต้อง await ให้ checkLoginStatus()
+  // อ่านเสร็จก่อน runApp() เสมอ ไม่งั้น _resolveInitialRoute() ด้านล่างอ่าน isLoggedIn ไม่ทัน
+  // แล้วเด้งไปหน้า Welcome ทั้งที่ยัง login ค้างอยู่ (บั๊กเดิมที่เคยแก้ไปแล้วตอนยังใช้ GetStorage
+  // sync ตรงๆ — ดูคอมเมนต์ยาวที่ _resolveInitialRoute() ด้านล่าง)
+  await AuthService.to.checkLoginStatus();
   Get.lazyPut(() => MemberService(), fenix: true);
   Get.lazyPut(() => NutritionService(), fenix: true);
   Get.lazyPut(() => WorkoutService(), fenix: true);
@@ -56,10 +67,11 @@ class GenZFitApp extends StatelessWidget {
   // recent apps, OS kill พื้นหลังตอนหน่วยความจำตึง, restart เครื่อง) ผู้ใช้หลุดไปหน้า Welcome
   // ต้อง login ใหม่ทุกครั้งทั้งที่ token ยังไม่หมดอายุ — เซสชันที่ทำค้างอยู่ (เช่นกำลังจับเวลา
   // ออกกำลังกาย) หายไปเงียบๆ ไปด้วย (พบจากทดสอบจริงบนเครื่อง 2026-08-21)
-  // AuthService.onInit() (เรียกจาก Get.put ใน main() ก่อน runApp) ทำ checkLoginStatus()
-  // แบบ synchronous ไปแล้ว (อ่าน GetStorage เสร็จก่อนถึงบรรทัดนี้เสมอ) จึงอ่านค่าที่นี่ได้ตรงๆ
-  // ไม่ต้องรอ async — ตรรกะ role/profile-complete เดียวกับที่ login_view.dart ใช้ตอน login
-  // สำเร็จ (บรรทัด 91-99) เพื่อให้ cold start กับ login สด พาไปหน้าเดียวกันเสมอ
+  // main() await AuthService.to.checkLoginStatus() เสร็จก่อน runApp() เสมอ (token ย้ายไป
+  // flutter_secure_storage แบบ async แล้ว — เดิมเคยเป็น sync GetStorage read ตรงๆ) จึงอ่าน
+  // isLoggedIn/isProfileComplete ที่นี่ได้ตรงๆ ไม่มีค่า default ค้างจากตอนยังไม่โหลดเสร็จ —
+  // ตรรกะ role/profile-complete เดียวกับที่ login_view.dart ใช้ตอน login สำเร็จ (บรรทัด 91-99)
+  // เพื่อให้ cold start กับ login สด พาไปหน้าเดียวกันเสมอ
   String _resolveInitialRoute() {
     final auth = AuthService.to;
     if (!auth.isLoggedIn.value) return '/welcome';
