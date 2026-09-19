@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Food &amp; Fit — ตัวคำนวณสูตรพลังงาน</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --in:#16a34a; --in-dark:#15803d; --in-bg:#f0fdf4; --in-border:#bbf7d0;
+  --out:#ea580c; --out-dark:#c2410c; --out-bg:#fff7ed; --out-border:#fed7aa;
+  --base:#2563eb; --base-dark:#1d4ed8; --base-bg:#eff6ff; --base-border:#bfdbfe;
+  --bal:#7c3aed; --bal-dark:#6d28d9; --bal-bg:#f5f3ff; --bal-border:#ddd6fe;
+  --bg:#f1f5f9; --card:#ffffff; --border:#e2e8f0; --text:#0f172a; --muted:#64748b;
+  --danger:#dc2626; --danger-dark:#b91c1c; --warn:#d97706; --warn-bg:#fffbeb; --warn-border:#fde68a;
+  --mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Sarabun',sans-serif;}
+body{background:var(--bg);color:var(--text);line-height:1.6;padding:16px 16px 90px;}
+
+/* ── แถบบนสุด: ห่อ topbar + hero-toggle ไว้ด้วยกันเป็น sticky ก้อนเดียว
+   กันปัญหาเดิมที่ hero-toggle sticky แยกด้วย top:66px ตายตัว — ถ้า topbar
+   ขยายสูงขึ้น (ซูม/ตัวอักษรใหญ่ขึ้น/ขึ้นบรรทัดใหม่) จะบังทับกันเอง ── */
+.sticky-head{position:sticky;top:0;z-index:100;background:var(--bg);max-width:1440px;margin:0 auto 16px;padding-top:0}
+.topbar{background:#0f172a;color:#fff;padding:14px 18px;border-radius:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;box-shadow:0 4px 14px rgba(0,0,0,.15);flex-wrap:wrap;transition:padding .15s}
+.topbar h1{font-size:1.05rem;font-weight:700;display:flex;align-items:center;gap:8px;transition:font-size .15s}
+.topbar small{color:#94a3b8;font-weight:400;display:block;font-size:.72rem;transition:.15s}
+.btn{border:none;border-radius:9px;padding:8px 14px;font-size:.82rem;font-weight:600;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-danger:hover{background:var(--danger-dark)}
+.btn-glossary{background:#1e293b;color:#fff;border:1px solid #334155}
+.btn-glossary:hover{background:#334155}
+.btn-fold{background:#1e293b;color:#fff;border:1px solid #334155;width:36px;padding:8px;justify-content:center;font-size:1rem}
+.btn-fold:hover{background:#334155}
+
+/* ── ป้ายลัดข้ามไปแต่ละส่วน (พื้นฐาน/พลังงานเข้า/พลังงานออก/สรุป) ── */
+.quicknav{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.qn-chip{flex:0 0 auto;font-size:.76rem;font-weight:600;padding:6px 12px;border-radius:99px;background:#1e293b;color:#cbd5e1;border:1px solid #334155;text-decoration:none;white-space:nowrap;transition:.15s}
+.qn-chip:hover{background:#334155;color:#fff}
+.qn-chip.in{background:var(--in-bg);color:var(--in-dark);border-color:var(--in-border)}
+.qn-chip.in:hover,.qn-chip.in.active{background:var(--in);color:#fff}
+.qn-chip.out{background:var(--out-bg);color:var(--out-dark);border-color:var(--out-border)}
+.qn-chip.out:hover,.qn-chip.out.active{background:var(--out);color:#fff}
+
+/* ── โหมดพับ: ลดความสูงแถบบนให้เหลือน้อยที่สุด — กดพับเองได้ หรือระบบพับให้อัตโนมัติ
+   ตอนตรวจจับว่าเบราว์เซอร์กำลังซูม (visualViewport.scale > 1) กันแถบบนบังเนื้อหาที่ซูมดู ── */
+.sticky-head.compact .topbar{padding:7px 14px}
+.sticky-head.compact .topbar h1{font-size:.85rem}
+.sticky-head.compact .topbar small{display:none}
+.sticky-head.compact .quicknav{display:none}
+
+body.is-zoomed .glossary-fab{transform:scale(.68);opacity:.45}
+body.is-zoomed .glossary-fab:hover,body.is-zoomed .glossary-fab:focus-visible{transform:scale(1);opacity:1}
+
+main{max-width:1440px;margin:0 auto;display:flex;flex-direction:column;gap:18px;width:100%}
+main > section, main > div.tab-content > section{scroll-margin-top:var(--head-h,150px)}
+#tabIn,#tabOut,#secC{scroll-margin-top:var(--head-h,150px)}
+.explain,.card-sub,.flow-body .d{max-width:78ch}
+
+@media (min-width:1200px){
+  .grid{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+  .result-grid{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.card.tone-base{border-color:var(--base-border);background:linear-gradient(180deg,var(--base-bg),var(--card) 90px)}
+.card.tone-in{border-color:var(--in-border);background:linear-gradient(180deg,var(--in-bg),var(--card) 90px)}
+.card.tone-out{border-color:var(--out-border);background:linear-gradient(180deg,var(--out-bg),var(--card) 90px)}
+.card.tone-bal{border-color:var(--bal-border);background:linear-gradient(180deg,var(--bal-bg),var(--card) 90px)}
+
+.card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:4px;flex-wrap:wrap}
+.card-head h2{font-size:1.05rem;font-weight:700}
+.card-head .badge{font-size:.68rem;font-weight:700;padding:2px 9px;border-radius:99px;color:#fff;white-space:nowrap}
+.tone-base .badge{background:var(--base)}
+.tone-in .badge{background:var(--in)}
+.tone-out .badge{background:var(--out)}
+.tone-bal .badge{background:var(--bal)}
+.card-sub{font-size:.78rem;color:var(--muted);margin-bottom:14px}
+.src-ref{font-family:var(--mono);font-size:.7rem;color:var(--muted);background:#f8fafc;border:1px solid var(--border);border-radius:6px;padding:2px 7px;display:inline-block;margin-top:2px}
+
+.formula-eq{font-family:var(--mono);font-size:.85rem;background:#0f172a;color:#a5f3fc;padding:10px 14px;border-radius:10px;margin:10px 0;overflow-x:auto;white-space:pre}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:6px}
+.field label{display:block;font-size:.76rem;color:var(--muted);margin-bottom:4px;font-weight:600}
+.field label small{font-weight:400;color:#94a3b8}
+.field input,.field select{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:.88rem;background:#fff}
+.field input:focus,.field select:focus{outline:2px solid var(--base);outline-offset:1px}
+
+.pull-btn{font-size:.7rem;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:7px;padding:4px 9px;cursor:pointer;font-weight:600;white-space:nowrap}
+.pull-btn:hover{background:#e0e7ff}
+.pull-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+
+.result-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}
+.result-box{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center}
+.result-box .lbl{font-size:.7rem;color:var(--muted);font-weight:600;margin-bottom:3px}
+.result-box .val{font-size:1.3rem;font-weight:700;font-family:var(--mono)}
+.result-box .sub{font-size:.68rem;color:var(--muted);margin-top:2px}
+.result-box.hl{border:2px solid currentColor}
+.tone-in .result-box.hl{color:var(--in)}
+.tone-out .result-box.hl{color:var(--out)}
+.tone-base .result-box.hl{color:var(--base)}
+.tone-bal .result-box.hl{color:var(--bal)}
+
+.step-box{font-family:var(--mono);font-size:.76rem;background:#f8fafc;border:1px dashed var(--border);border-radius:10px;padding:12px 14px;white-space:pre-wrap;color:#334155;margin-top:8px;line-height:1.7}
+.warn-note{background:var(--warn-bg);border:1px solid var(--warn-border);color:#92400e;font-size:.78rem;border-radius:8px;padding:8px 11px;margin-top:8px;display:none}
+.warn-note.show{display:block}
+
+table.crud{width:100%;border-collapse:collapse;margin-top:8px;font-size:.82rem}
+table.crud th{text-align:left;font-size:.68rem;color:var(--muted);text-transform:uppercase;padding:6px 8px;border-bottom:2px solid var(--border)}
+table.crud td{padding:5px 6px;border-bottom:1px solid var(--border)}
+table.crud input,table.crud select{width:100%;padding:6px 7px;border:1px solid var(--border);border-radius:6px;font-size:.82rem}
+table.crud tfoot td{font-weight:700;padding-top:8px}
+.del-btn{background:#fee2e2;color:var(--danger);border:none;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:.85rem}
+.del-btn:hover{background:#fecaca}
+.add-btn{margin-top:10px;background:#f1f5f9;border:1px dashed var(--muted);color:var(--text);font-weight:600;font-size:.8rem;padding:7px 12px;border-radius:8px;cursor:pointer}
+.add-btn:hover{background:#e2e8f0}
+.crud-note{font-size:.72rem;color:var(--muted);margin-top:4px}
+
+.tab-content{display:flex;flex-direction:column;gap:18px}
+
+.status-badge{display:inline-block;padding:6px 16px;border-radius:99px;font-weight:700;font-size:.85rem}
+.status-over{background:#fee2e2;color:#b91c1c}
+.status-on{background:#dcfce7;color:#166534}
+.status-under{background:#dbeafe;color:#1e40af}
+
+.glossary-fab{position:fixed;bottom:20px;right:20px;z-index:200;background:#0f172a;color:#fff;border:none;border-radius:99px;padding:13px 18px;font-weight:700;font-size:.85rem;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;gap:7px}
+.glossary-fab:hover{background:#1e293b}
+.glossary-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:300;display:none}
+.glossary-overlay.show{display:block}
+.glossary-panel{position:fixed;top:0;right:0;bottom:0;width:min(380px,92vw);background:#fff;z-index:301;transform:translateX(100%);transition:transform .25s;overflow-y:auto;padding:20px;box-shadow:-8px 0 24px rgba(0,0,0,.15)}
+.glossary-panel.show{transform:translateX(0)}
+.glossary-panel h3{font-size:1.1rem;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
+.glossary-panel .close-x{cursor:pointer;background:#f1f5f9;border:none;border-radius:8px;width:30px;height:30px;font-size:1rem}
+.gterm{margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.gterm b{color:var(--base);display:block;margin-bottom:3px;font-size:.9rem}
+.gterm span{font-size:.8rem;color:var(--muted)}
+
+/* ── หัวข้อกลุ่มคำศัพท์ในลิ้นชัก — แบ่งพื้นฐาน/พลังงานเข้า/พลังงานออก/สรุป ── */
+.gcat{display:flex;align-items:center;gap:7px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin:18px 0 8px;padding-bottom:5px;border-bottom:2px solid var(--border)}
+.gcat:first-child{margin-top:0}
+.gcat-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+.gcat-base{color:var(--base-dark)} .gcat-base .gcat-dot{background:var(--base)}
+.gcat-in{color:var(--in-dark)} .gcat-in .gcat-dot{background:var(--in)}
+.gcat-out{color:var(--out-dark)} .gcat-out .gcat-dot{background:var(--out)}
+.gcat-bal{color:var(--bal-dark)} .gcat-bal .gcat-dot{background:var(--bal)}
+.gterm b{color:inherit}
+.gterm.g-base b{color:var(--base-dark)}
+.gterm.g-in b{color:var(--in-dark)}
+.gterm.g-out b{color:var(--out-dark)}
+.gterm.g-bal b{color:var(--bal-dark)}
+
+.bmi-table{width:100%;border-collapse:collapse;font-size:.8rem;margin-top:8px}
+.bmi-table td,.bmi-table th{padding:6px 8px;border-bottom:1px solid var(--border)}
+.bmi-table tr.match td{background:var(--bal-bg);font-weight:700;color:var(--bal-dark);border-radius:6px}
+
+footer.note{max-width:1440px;margin:20px auto 0;font-size:.72rem;color:var(--muted);text-align:center;line-height:1.8}
+
+/* ── ป้ายบอก "ค่านี้มาจากไหน" — ใช้ทั้ง A3 และ B3 ── */
+.src-legend{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
+.chip{font-size:.68rem;font-weight:600;padding:3px 9px;border-radius:99px;border:1px solid;white-space:nowrap}
+.chip-db{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+.chip-user{background:#f0fdf4;color:#15803d;border-color:#bbf7d0}
+.chip-auto{background:#faf5ff;color:#7e22ce;border-color:#e9d5ff}
+.chip-fix{background:#f1f5f9;color:#475569;border-color:#cbd5e1}
+.field .chip{display:inline-block;margin-bottom:5px}
+
+/* ── กล่องอธิบายแนวคิดก่อนเข้าสูตร ── */
+.explain{background:#fff;border:1px solid var(--border);border-left:4px solid var(--out);border-radius:10px;padding:12px 14px;font-size:.8rem;line-height:1.75;margin:10px 0}
+.explain b{color:var(--out-dark)}
+.explain .q{font-weight:700;display:block;margin-bottom:3px;font-size:.85rem}
+
+/* ── ขั้นตอนคำนวณแบบการ์ดไล่ทีละสเต็ป (แทนกล่อง monospace ก้อนเดียว) ── */
+.flow{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.flow-step{display:grid;grid-template-columns:32px 1fr auto;gap:12px;align-items:start;background:#fff;border:1px solid var(--border);border-radius:12px;padding:11px 14px}
+.flow-step.final{border:2px solid var(--out);background:var(--out-bg)}
+.flow-num{width:32px;height:32px;border-radius:50%;background:#0f172a;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:.82rem}
+.flow-step.final .flow-num{background:var(--out)}
+.flow-body .t{font-weight:700;font-size:.87rem;line-height:1.45}
+.flow-body .t em{font-style:normal;font-family:var(--mono);font-size:.7rem;color:var(--muted);font-weight:500;margin-left:6px}
+.flow-body .d{font-size:.76rem;color:var(--muted);margin-top:2px}
+.flow-body .m{font-family:var(--mono);font-size:.74rem;color:#1e293b;background:#f8fafc;border:1px solid var(--border);border-radius:7px;padding:6px 9px;margin-top:7px;white-space:pre-wrap;line-height:1.75;overflow-x:auto}
+.flow-body .m u{text-decoration:none;background:#fef08a;border-radius:3px;padding:0 3px}
+.flow-val{text-align:right;font-family:var(--mono);font-weight:700;font-size:1.05rem;white-space:nowrap;padding-top:3px}
+.flow-val small{display:block;font-size:.62rem;color:var(--muted);font-weight:500;font-family:'Sarabun',sans-serif;margin-top:1px}
+
+/* ── ตารางอ้างอิงค่าที่ระบบตั้งไว้ตายตัว ── */
+.ref-table{width:100%;border-collapse:collapse;font-size:.76rem;margin-top:8px}
+.ref-table th{text-align:left;background:#f8fafc;color:var(--muted);font-size:.68rem;text-transform:uppercase;padding:6px 9px;border:1px solid var(--border)}
+.ref-table td{padding:6px 9px;border:1px solid var(--border)}
+.ref-table td.k{font-family:var(--mono);font-weight:600;white-space:nowrap}
+.ref-table tr.on td{background:#fef9c3;font-weight:600}
+details.ref{margin-top:10px;border:1px solid var(--border);border-radius:10px;background:#fff;padding:0}
+details.ref summary{cursor:pointer;padding:9px 13px;font-size:.8rem;font-weight:600;color:var(--text);list-style:none;display:flex;align-items:center;gap:7px}
+details.ref summary::-webkit-details-marker{display:none}
+details.ref summary::before{content:'▸';color:var(--muted);font-size:.9rem}
+details.ref[open] summary::before{content:'▾'}
+details.ref .body{padding:0 13px 13px}
+
+/* ── ตัวปรับจำนวนหน่วยอาหาร (−/+ ทีละ 0.5) ── */
+.qty-step{display:flex;align-items:center;gap:3px;justify-content:center}
+.qty-step button{width:26px;height:26px;flex:0 0 26px;border:1px solid var(--in-border);background:var(--in-bg);color:var(--in-dark);border-radius:7px;font-weight:700;font-size:.95rem;cursor:pointer;line-height:1;padding:0}
+.qty-step button:hover{background:#dcfce7}
+.qty-step input{width:52px!important;text-align:center;font-weight:700;font-family:var(--mono)}
+.row-total{font-family:var(--mono);font-weight:700;font-size:.82rem;white-space:nowrap}
+.row-total small{display:block;font-family:'Sarabun',sans-serif;font-weight:500;font-size:.67rem;color:var(--muted)}
+table.crud td.unit-cell input{background:#fcfcfd}
+
+@media (max-width:620px){
+  .grid{grid-template-columns:1fr 1fr}
+  .result-grid{grid-template-columns:1fr 1fr}
+  .topbar{flex-direction:column;align-items:flex-start}
+  .card{padding:15px}
+  table.crud{font-size:.74rem}
+  table.crud th{display:none}
+  table.crud td{display:block;padding:4px 2px}
+  table.crud tr{display:block;border-bottom:2px solid var(--border);padding-bottom:6px;margin-bottom:6px}
+  table.crud td::before{content:attr(data-th);display:block;font-size:.64rem;color:var(--muted);font-weight:600;margin-bottom:2px}
+  .flow-step{grid-template-columns:28px 1fr;gap:9px}
+  .flow-val{grid-column:2;text-align:left;padding-top:5px}
+}
+</style>
+</head>
+<body>
+
+<div class="sticky-head" id="stickyHead">
+  <div class="topbar">
+    <h1>🧮 Food &amp; Fit — ตัวคำนวณสูตรพลังงาน
+      <small>สำหรับนำเสนอ/สอบปริญญานิพนธ์ — ทุกโมดูลอิสระต่อกัน แก้ค่าแล้วผลลัพธ์อัปเดตสด</small>
+    </h1>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-glossary" onclick="App.toggleGlossary(true)">📖 คำศัพท์</button>
+      <button class="btn btn-danger" onclick="App.resetAll()">↺ รีเซ็ตทั้งหมด</button>
+      <button class="btn btn-fold" id="foldBtn" onclick="App.toggleFold()" title="พับ/ขยายแถบบน">▴</button>
+    </div>
+  </div>
+
+  <div class="quicknav" id="quicknav">
+    <a href="#sec0" class="qn-chip" onclick="App.jump(event,'sec0')">🧍 พื้นฐานร่างกาย</a>
+    <a href="#tabIn" class="qn-chip in" onclick="App.jump(event,'tabIn','in')">🍽️ พลังงานเข้า</a>
+    <a href="#tabOut" class="qn-chip out" onclick="App.jump(event,'tabOut','out')">🔥 พลังงานออก</a>
+    <a href="#secC" class="qn-chip" onclick="App.jump(event,'secC')">⚖️ สรุปเทียบพลังงาน</a>
+  </div>
+</div>
+
+<main>
+
+  <!-- ============ [0] FOUNDATION ============ -->
+  <section class="card tone-base" id="sec0">
+    <div class="card-head">
+      <h2>🧍 [0] ข้อมูลพื้นฐานร่างกาย</h2>
+      <span class="badge">Foundation</span>
+    </div>
+    <div class="card-sub">BMI → BMR → TDEE — จุดเริ่มต้นที่ค่าอื่นในหน้านี้ดึงไปใช้ต่อ
+      <span class="src-ref">backend/services/calculator.go : CalculateGoals</span>
+    </div>
+
+    <div class="grid">
+      <div class="field">
+        <label>เพศ</label>
+        <select id="f_gender" onchange="App.calcFoundation()">
+          <option value="male" selected>ชาย</option>
+          <option value="female">หญิง</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>อายุ <small>(ปี)</small></label>
+        <input type="number" id="f_age" value="30" oninput="App.calcFoundation()">
+      </div>
+      <div class="field">
+        <label>น้ำหนัก <small>(กก.)</small></label>
+        <input type="number" id="f_weight" value="70" step="0.1" oninput="App.calcFoundation()">
+      </div>
+      <div class="field">
+        <label>ส่วนสูง <small>(ซม.)</small></label>
+        <input type="number" id="f_height" value="175" step="0.1" oninput="App.calcFoundation()">
+      </div>
+      <div class="field">
+        <label>Activity Factor</label>
+        <select id="f_af" onchange="App.calcFoundation()">
+          <option value="1.2">1.2 — แทบไม่ออกกำลังกาย</option>
+          <option value="1.375">1.375 — เบา 1-3 วัน/สัปดาห์</option>
+          <option value="1.55" selected>1.55 — ปานกลาง 3-5 วัน/สัปดาห์</option>
+          <option value="1.725">1.725 — หนัก 6-7 วัน/สัปดาห์</option>
+          <option value="1.9">1.9 — หนักมาก + ใช้แรงงาน</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="result-grid">
+      <div class="result-box hl"><div class="lbl">BMI</div><div class="val" id="r0_bmi">-</div><div class="sub" id="r0_bmi_label">-</div></div>
+      <div class="result-box hl"><div class="lbl">BMR (kcal/วัน)</div><div class="val" id="r0_bmr">-</div></div>
+      <div class="result-box hl"><div class="lbl">TDEE (kcal/วัน)</div><div class="val" id="r0_tdee">-</div></div>
+    </div>
+    <div class="step-box" id="s0_steps">กรอกข้อมูลด้านบนเพื่อดูขั้นตอนคำนวณ</div>
+  </section>
+
+  <!-- ============ [A] ENERGY IN ============ -->
+  <div class="tab-content" id="tabIn">
+
+    <section class="card tone-in" id="secA1">
+      <div class="card-head"><h2>🎯 [A1] Target Calories</h2><span class="badge">Energy In</span></div>
+      <div class="card-sub">เป้าหมายพลังงานที่ "ควรกิน" ต่อวัน ตามเป้าหมายร่างกาย
+        <span class="src-ref">calculator.go : CalculateGoals (บรรทัด 54-64)</span>
+      </div>
+      <div class="pull-row">
+        <button class="pull-btn" onclick="App.pull('a1_tdee','tdee');App.pull('a1_bmr','bmr');App.calcTarget()">↺ ใช้ TDEE/BMR ล่าสุดจาก [0]</button>
+      </div>
+      <div class="grid">
+        <div class="field"><label>TDEE <small>(kcal)</small></label><input type="number" id="a1_tdee" value="2555.56" oninput="App.calcTarget()"></div>
+        <div class="field"><label>BMR <small>(kcal, ใช้เช็ค clamp)</small></label><input type="number" id="a1_bmr" value="1648.75" oninput="App.calcTarget()"></div>
+        <div class="field">
+          <label>เป้าหมาย (goal_type)</label>
+          <select id="a1_goal" onchange="App.calcTarget()">
+            <option value="1" selected>1 = ลดน้ำหนัก (TDEE −20%)</option>
+            <option value="2">2 = เพิ่มน้ำหนัก (TDEE +15%)</option>
+            <option value="3">3 = รักษาน้ำหนัก (=TDEE)</option>
+          </select>
+        </div>
+      </div>
+      <div class="result-grid">
+        <div class="result-box hl"><div class="lbl">Target Calories</div><div class="val" id="ra1_target">-</div></div>
+      </div>
+      <div class="warn-note" id="a1_warn">⚠️ ค่าที่คำนวณได้ต่ำกว่า BMR — ระบบปรับให้เท่ากับ BMR แทน (กฎเหล็กข้อ 3)</div>
+      <div class="step-box" id="s_a1"></div>
+    </section>
+
+    <section class="card tone-in" id="secA2">
+      <div class="card-head"><h2>🥗 [A2] สัดส่วนสารอาหาร (Macro grams)</h2><span class="badge">Energy In</span></div>
+      <div class="card-sub">แปลง Target Calories เป็นกรัม โปรตีน/คาร์บ/ไขมัน
+        <span class="src-ref">mobile/lib/.../nutrition_view.dart (client-side เท่านั้น ไม่มีใน backend)</span>
+      </div>
+      <div class="pull-row">
+        <button class="pull-btn" onclick="App.pull('a2_target','target');App.calcMacros()">↺ ใช้ Target ล่าสุดจาก [A1]</button>
+      </div>
+      <div class="grid">
+        <div class="field"><label>Target Calories <small>(kcal)</small></label><input type="number" id="a2_target" value="2044.45" oninput="App.calcMacros()"></div>
+        <div class="field">
+          <label>เป้าหมาย (goal_type)</label>
+          <select id="a2_goal" onchange="App.calcMacros()">
+            <option value="1" selected>1 ลดน้ำหนัก (P40:C35:F25)</option>
+            <option value="2">2 เพิ่มน้ำหนัก (P30:C50:F20)</option>
+            <option value="3">3 รักษาน้ำหนัก (P20:C50:F30)</option>
+          </select>
+        </div>
+      </div>
+      <div class="result-grid">
+        <div class="result-box hl"><div class="lbl">โปรตีน</div><div class="val" id="ra2_p">-</div><div class="sub">กรัม</div></div>
+        <div class="result-box hl"><div class="lbl">คาร์บ</div><div class="val" id="ra2_c">-</div><div class="sub">กรัม</div></div>
+        <div class="result-box hl"><div class="lbl">ไขมัน</div><div class="val" id="ra2_f">-</div><div class="sub">กรัม</div></div>
+      </div>
+      <div class="step-box" id="s_a2"></div>
+    </section>
+
+    <section class="card tone-in" id="secA3">
+      <div class="card-head"><h2>🍱 [A3] พลังงานที่กินจริงวันนี้ (Energy In)</h2><span class="badge">Energy In</span></div>
+      <div class="card-sub">ของจริงคือหลายรายการอาหารต่อวัน (มื้อเช้า/กลางวัน/เย็น/ว่าง) — เพิ่ม/ลบ/แก้แถวได้อิสระ
+        <span class="src-ref">SUM(dntt_total_calories) — analytics_controller.go : GetDailyAnalytics</span>
+      </div>
+
+      <div class="explain">
+        <span class="q">ค่าสารอาหารกรอก "ต่อ 1 หน่วย" ครั้งเดียว แล้วปรับแค่จำนวนหน่วย</span>
+        ตาราง <code>nutrition</code> เก็บค่าของอาหาร <b>ต่อ 1 หน่วยเสิร์ฟ</b> (<code>ntt_calories</code>, <code>ntt_protein</code>,
+        <code>ntt_carbs</code>, <code>ntt_fat</code>) ส่วนตอนกินจริงเก็บแค่ "กินกี่หน่วย" (<code>dntt_quantity</code>)
+        แล้ว backend คูณให้เอง → <b>รวมแถว = ค่าต่อหน่วย × จำนวน</b> ทั้ง 4 ค่า (kcal/P/C/F) พร้อมกัน
+        <span class="src-ref" style="margin-top:6px">nutrition_controller.go บรรทัด 461-464 : dntt_total_calories = ntt_calories × dntt_quantity</span>
+      </div>
+
+      <table class="crud">
+        <thead><tr>
+          <th style="width:19%">ชื่ออาหาร</th><th style="width:11%">มื้อ</th>
+          <th style="width:9%">kcal<br><small style="font-weight:400;text-transform:none">/หน่วย</small></th>
+          <th style="width:8%">P(g)<br><small style="font-weight:400;text-transform:none">/หน่วย</small></th>
+          <th style="width:8%">C(g)<br><small style="font-weight:400;text-transform:none">/หน่วย</small></th>
+          <th style="width:8%">F(g)<br><small style="font-weight:400;text-transform:none">/หน่วย</small></th>
+          <th style="width:15%">จำนวน<br><small style="font-weight:400;text-transform:none">(หน่วย)</small></th>
+          <th style="width:16%">รวมแถว</th><th></th>
+        </tr></thead>
+        <tbody id="a3_tbody"></tbody>
+        <tfoot><tr>
+          <td colspan="6" style="text-align:right">รวมทุกรายการ →</td>
+          <td id="a3_sum_qty">-</td>
+          <td class="row-total" id="a3_sum_all">-</td>
+          <td></td>
+        </tr></tfoot>
+      </table>
+      <button class="add-btn" onclick="App.addFood()">+ เพิ่มรายการอาหาร</button>
+      <div class="crud-note">แต่ละแถว = 1 แถวจริงใน <code>daily_nutrition</code> · ปุ่ม − / + ปรับทีละ 0.5 หน่วย (ต่ำสุด 0.5) เหมือนในแอปจริง
+        — ช่อง kcal/P/C/F เป็นค่า <b>ต่อ 1 หน่วย</b> ไม่ต้องคูณเอง</div>
+
+      <div class="result-grid" style="margin-top:12px">
+        <div class="result-box hl"><div class="lbl">Energy In วันนี้</div><div class="val" id="ra3_total">-</div><div class="sub">kcal</div></div>
+        <div class="result-box"><div class="lbl">โปรตีนรวม</div><div class="val" id="ra3_p">-</div><div class="sub">กรัม</div></div>
+        <div class="result-box"><div class="lbl">คาร์บรวม</div><div class="val" id="ra3_c">-</div><div class="sub">กรัม</div></div>
+        <div class="result-box"><div class="lbl">ไขมันรวม</div><div class="val" id="ra3_f">-</div><div class="sub">กรัม</div></div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ============ [B] ENERGY OUT ============ -->
+  <div class="tab-content" id="tabOut" style="display:none">
+
+    <section class="card tone-out" id="secB1">
+      <div class="card-head"><h2>🛌 [B1] Baseline Expenditure</h2><span class="badge">Energy Out</span></div>
+      <div class="card-sub">พลังงานพักนิ่งทั้งวัน = BMR × 1.2 คงที่เสมอ (ไม่ใช่ Activity Factor จริง — กฎเหล็กข้อ 4)
+        <span class="src-ref">calculator.go : CalculateBaselineExpenditure</span>
+      </div>
+      <div class="pull-row">
+        <button class="pull-btn" onclick="App.pull('b1_bmr','bmr');App.calcBaseline()">↺ ใช้ BMR ล่าสุดจาก [0]</button>
+      </div>
+      <div class="grid">
+        <div class="field"><label>BMR <small>(kcal)</small></label><input type="number" id="b1_bmr" value="1648.75" oninput="App.calcBaseline()"></div>
+      </div>
+      <div class="result-grid">
+        <div class="result-box hl"><div class="lbl">Baseline Expenditure</div><div class="val" id="rb1_val">-</div><div class="sub">kcal (= BMR × 1.2)</div></div>
+      </div>
+      <div class="step-box" id="s_b1"></div>
+    </section>
+
+    <section class="card tone-out" id="secB2">
+      <div class="card-head"><h2>🏃 [B2] Cardio Burn</h2><span class="badge">Energy Out</span></div>
+      <div class="card-sub">1 วันอาจมีหลายกิจกรรม — สูตรต่อแถว: (METs−1)×3.5×น้ำหนัก(กก.)/200×เวลา(นาที) [NET, ACSM]
+        <span class="src-ref">workout_controller.go : SaveCardioResult</span> ·
+        <span class="src-ref" style="color:#b45309">METs ในตารางนี้เป็นตัวอย่างเท่านั้น — ของจริงต้องอ่านจากตาราง `cardio`</span>
+      </div>
+      <div class="grid" style="max-width:220px">
+        <div class="field">
+          <label>น้ำหนักตัว <small>(กก., ใช้ทุกแถว)</small></label>
+          <input type="number" id="b2_weight" value="70" step="0.1" oninput="App.calcCardio()">
+        </div>
+      </div>
+      <table class="crud">
+        <thead><tr><th style="width:36%">กิจกรรม</th><th>METs</th><th>เวลา (นาที)</th><th>พลังงาน (kcal)</th><th></th></tr></thead>
+        <tbody id="b2_tbody"></tbody>
+        <tfoot><tr><td>รวมวันนี้</td><td></td><td></td><td id="b2_sum">-</td><td></td></tr></tfoot>
+      </table>
+      <button class="add-btn" onclick="App.addCardio()">+ เพิ่มกิจกรรมคาร์ดิโอ</button>
+      <div class="step-box" id="s_b2"></div>
+    </section>
+
+    <section class="card tone-out" id="secB3">
+      <div class="card-head"><h2>🏋️ [B3] Weight Training — Smart Auto Calorie</h2><span class="badge">Energy Out</span></div>
+      <div class="card-sub">1 เซสชัน = 1 ท่า แต่หลายเซต — MET มาจาก Dynamic METs Logic Matrix (หมวดท่า + ประเภทท่า + เวลาพัก + Reps) ตามบทที่ 2 ข้อ 2.1.4.12
+        <span class="src-ref">calculator.go : CalculateWeightTrainingCalories, resolveSetBaseMET</span>
+      </div>
+
+      <div class="explain">
+        <span class="q">ปัญหาคืออะไร → ทำไมต้องมีสูตรนี้</span>
+        คาร์ดิโอง่าย เพราะ "วิ่ง 30 นาที" มีค่า MET ตายตัวให้เปิดตารางได้เลย แต่เวทเทรนนิ่ง
+        <b>ยกสควอท 4 เซตเท่ากัน คนหนึ่งพักสั้นทำรัวๆ อีกคนพักยาวกว่า → เหนื่อยไม่เท่ากัน</b>
+        แต่แอปไม่มีสายรัดวัดหัวใจ จึงเดาความเหนื่อยจาก <b>อย่างที่ระบบรู้อยู่แล้ว</b> คือ
+        (1) หมวดท่า (แรงต้าน/น้ำหนักตัว) · (2) ประเภทท่า (Compound/Isolation) · (3) เวลาพักหลังเซตนั้น · (4) จำนวนครั้ง (Reps)
+        — ไล่เงื่อนไขของ Logic Matrix ต่อเซต (เจอข้อแรกที่ตรงแล้วหยุด) แล้วเฉลี่ยเป็น
+        Session MET <b>ตรงๆ ไม่มีตัวคูณปรับขึ้น-ลง</b> — สูตรพลังงานใช้ ACSM (MET−1)×3.5×น้ำหนักตัว/200×นาที เหมือนคาร์ดิโอเป๊ะ
+        <br><br>
+        ⚠️ <b>น้ำหนักที่ยก/%1RM ไม่มีผลต่อพลังงาน</b> — %1RM ยังคำนวณอยู่ แต่เหลือแค่ <b>label แสดงผล</b> (เบา/กลาง/หนัก)
+        เกณฑ์ "หนักมาก จนหมดแรง" ของสเปกแปลงเป็น <b>Reps &lt; 8</b> (การตีความของผู้วิจัย สเปกไม่ได้ระบุตัวเลข)
+      </div>
+
+      <div class="explain" style="border-left-color:var(--base)">
+        <span class="q">ค่าแต่ละตัวมาจากไหน (ของจริงในแอป ผู้ใช้กรอกแค่ 2 อย่าง)</span>
+        <div class="src-legend">
+          <span class="chip chip-user">✍️ ผู้ใช้กรอก/แอปจับเอง</span>
+          <span class="chip chip-auto">🤖 ระบบค้นประวัติให้เอง</span>
+          <span class="chip chip-fix">🔒 ค่าคงที่ตายตัว (บทที่ 2)</span>
+        </div>
+        <div style="margin-top:7px">
+          ✍️ <b>ท่าที่ฝึก</b> (ผู้ใช้เลือก — ระบบอ่านหมวด/ประเภทท่าจากตารางท่าฝึกเอง)
+          · ✍️ <b>น้ำหนักที่ยก + จำนวนครั้ง (Reps)</b> (กรอกตอนฝึกแต่ละเซต — Reps ใช้เลือก MET เฉพาะหมวดแรงต้าน)
+          · ✍️ <b>เวลาพักหลังเซตนั้น</b> (นาฬิกาพักในแอปจับเอง ไม่ทราบ → ใช้ความหนาแน่นเฉลี่ยเซสชันแทน)
+          · ✍️ <b>เวลารวม</b> (นาฬิกาในแอปจับเอง ไม่ต้องกด) · ✍️ <b>น้ำหนักตัว</b> (จากโปรไฟล์)
+          · 🤖 <b>1RM เดิมของท่านี้</b> (ระบบค้นจากประวัติเอง — ใช้ทำ label ความหนักเท่านั้น)
+          · 🔒 <b>Logic Matrix เลือก MET/เพดาน/clamp ทั้งหมด</b> (ดูค่าคงที่ด้านล่าง)
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="field">
+          <span class="chip chip-user">✍️ ผู้ใช้เลือกท่า</span>
+          <label>ชื่อท่า <small>(แค่ label — ไม่กระทบสูตร)</small></label><input type="text" id="b3_name" value="สควอท (Squat)" oninput="App.calcWeight()">
+        </div>
+        <div class="field">
+          <span class="chip chip-auto">🤖 อ่านจาก <code>wet_equipment</code></span>
+          <label>หมวดท่า</label>
+          <select id="b3_equip" onchange="App.calcWeight()">
+            <option value="1" selected>แรงต้านและอุปกรณ์ (Barbell/Dumbbell/Machine/Cable)</option>
+            <option value="5">น้ำหนักตัว / แคลิสเทนิกส์ (Bodyweight)</option>
+          </select>
+        </div>
+        <div class="field">
+          <span class="chip chip-auto">🤖 อ่านจาก <code>wet_exercise_type</code></span>
+          <label>ประเภทท่า</label>
+          <select id="b3_extype" onchange="App.calcWeight()">
+            <option value="1" selected>Compound (หลายกลุ่มกล้ามเนื้อ)</option>
+            <option value="2">Isolation (เฉพาะส่วน)</option>
+          </select>
+        </div>
+        <div class="field">
+          <span class="chip chip-user">✍️ จากโปรไฟล์</span>
+          <label>น้ำหนักตัว <small>(กก.)</small></label>
+          <input type="number" id="b3_bw" value="70" step="0.1" oninput="App.calcWeight()">
+          <button class="pull-btn" style="margin-top:5px" onclick="App.pull('b3_bw','weight');App.calcWeight()">↺ ใช้จาก [0]</button>
+        </div>
+        <div class="field">
+          <span class="chip chip-user">✍️ แอปจับเวลาเอง</span>
+          <label>เวลารวมทั้งเซสชัน <small>(วินาที, รวมเวลาพัก)</small></label>
+          <input type="number" id="b3_duration" value="480" oninput="App.calcWeight()">
+        </div>
+        <div class="field">
+          <span class="chip chip-auto">🤖 ระบบค้นเอง</span>
+          <label>1RM เดิมของท่านี้ <small>(กก., จากประวัติ ไม่รวมวันนี้ — ใช้ทำ label เท่านั้น)</small></label>
+          <input type="number" id="b3_prior1rm" value="82.33" step="0.01" oninput="App.calcWeight()">
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400;font-size:12.5px;cursor:pointer">
+            <input type="checkbox" id="b3_no1rm" style="width:auto" onchange="App.toggleNo1RM()">
+            ไม่เคยฝึกท่านี้มาก่อน / ท่า bodyweight
+          </label>
+        </div>
+      </div>
+
+      <details class="ref" id="b3_1rm_help">
+        <summary>❓ "1RM เดิม" คืออะไร แล้วถ้าไม่เคยฝึกท่านี้มาก่อนจะเป็นยังไง</summary>
+        <div class="body" style="font-size:.79rem;line-height:1.8;color:#334155">
+          <b>1RM (One-Rep Max)</b> = น้ำหนักหนักที่สุดที่ยกไหวแค่ครั้งเดียว — ไม่ได้ให้ไปทดสอบยกจริง (อันตราย)
+          แต่<b>ประมาณจากประวัติ</b>ด้วยสูตร <code>น้ำหนัก × (1 + ครั้ง/30)</code> เช่นเคยยก 65 กก. 8 ครั้ง → 65×(1+8/30) = 82.33 กก.<br><br>
+          ระบบใช้ค่านี้เป็น<b>ไม้บรรทัดวัดว่า "วันนี้หนักไหม" เทียบกับตัวคุณเอง</b> ออกมาเป็น<b>label แสดงผล</b>
+          (เบา/กลาง/หนัก) เท่านั้น — <b>ไม่ได้ใช้เลือก MET และไม่ได้เอาไปคูณกับพลังงานที่คำนวณได้</b><br><br>
+          <b style="color:var(--out-dark)">ถ้าไม่เคยฝึกท่านี้มาก่อน (ไม่มีประวัติ) → ไม่ต้องทำอะไรเลย</b> ระบบถือว่า "ความหนักระดับกลาง"
+          เพราะไม่มีข้อมูลก็ไม่เดามั่ว — พอฝึกท่านี้ครั้งต่อไป ระบบจะมีประวัติให้เทียบเอง
+          <b>อัตโนมัติ ผู้ใช้ไม่ต้องกรอกอะไรตลอดทั้งกระบวนการ</b>
+        </div>
+      </details>
+
+      <div style="font-size:.8rem;font-weight:700;margin:14px 0 2px">📋 เซตที่ฝึกวันนี้ <span style="font-weight:400;color:var(--muted);font-size:.75rem">(กรอกตอนฝึกจริงในแอป — เซตไหน Reps = 0 ระบบตัดทิ้งไม่นับ)</span></div>
+      <table class="crud">
+        <thead><tr><th>เซตที่</th><th>น้ำหนัก (กก.)</th><th>Reps (ครั้ง)</th><th>พักหลังเซตนี้ (วิ)<br><small style="font-weight:400;text-transform:none">ว่าง = ไม่ทราบ</small></th><th>%1RM ของเซตนี้</th><th></th></tr></thead>
+        <tbody id="b3_tbody"></tbody>
+      </table>
+      <button class="add-btn" onclick="App.addSet()">+ เพิ่มเซต</button>
+      <div class="crud-note">ช่อง "พักหลังเซตนี้" เว้นว่างได้ (เหมือนแถวเก่าก่อน 2026-09-18 ที่ <code>wtrs_rest_seconds</code> เป็น NULL) —
+        ระบบ fallback ไปใช้ความหนาแน่นเฉลี่ยทั้งเซสชันแทนเฉพาะเซตที่ไม่ทราบเวลาพักจริง</div>
+
+      <div class="result-grid" style="margin-top:14px">
+        <div class="result-box hl"><div class="lbl">พลังงานรวมเซสชัน (NET)</div><div class="val" id="rb3_kcal">-</div><div class="sub">kcal — ค่านี้คือที่เก็บลง DB</div></div>
+        <div class="result-box hl"><div class="lbl">พลังงานต่อเซต</div><div class="val" id="rb3_kcalset">-</div><div class="sub">kcal/เซต (<code>wtrs_calories</code>)</div></div>
+        <div class="result-box"><div class="lbl">ระดับความหนักที่ระบบเดาได้</div><div class="val" id="rb3_level" style="font-size:1.05rem">-</div><div class="sub" id="rb3_level_sub">-</div></div>
+        <div class="result-box"><div class="lbl">Training Volume</div><div class="val" id="rb3_volume">-</div><div class="sub">กก. (แสดงผลเท่านั้น)</div></div>
+        <div class="result-box"><div class="lbl">1RM ใหม่ (จากวันนี้)</div><div class="val" id="rb3_1rm">-</div><div class="sub">กก. (แสดงผลเท่านั้น)</div></div>
+      </div>
+      <div class="warn-note" id="b3_warn">⚠️ Final MET ชนขอบ clamp [1.5, 9.5] — ค่าที่คำนวณได้หลุดช่วงที่ยอมรับ ระบบดึงกลับมาที่ขอบแล้ว</div>
+
+      <div style="font-size:.8rem;font-weight:700;margin:16px 0 0">🔍 ระบบคิดยังไง — ไล่ทีละขั้น (อัปเดตสดตามค่าที่กรอก)</div>
+      <div class="flow" id="b3_flow"></div>
+
+      <details class="ref">
+        <summary>🔒 ค่าคงที่ที่ระบบตั้งไว้ตายตัว (ผู้ใช้/แอดมินแก้ไม่ได้ — ล็อกตามบทที่ 2)</summary>
+        <div class="body">
+          <table class="ref-table">
+            <thead><tr><th>หมวดแรงต้านและอุปกรณ์ (<code>wet_equipment</code> 1-4)</th><th>MET</th><th>ระดับ / รหัส Compendium 2011</th></tr></thead>
+            <tbody>
+              <tr><td class="k">1. Reps &lt; 8 <small>(ตีความ "หนักมาก จนหมดแรง")</small></td><td class="k">6.0</td><td>หนัก / 02050</td></tr>
+              <tr><td class="k">2. ท่า Compound <b>หรือ</b> พัก 60–90 วินาที (รวมปลาย)</td><td class="k">5.0</td><td>ปานกลาง / 02052</td></tr>
+              <tr><td class="k">3. ที่เหลือ (Isolation, พักนอกช่วง 60–90)</td><td class="k">3.5</td><td>เบา / 02054</td></tr>
+            </tbody>
+          </table>
+          <table class="ref-table" style="margin-top:10px">
+            <thead><tr><th>หมวดน้ำหนักตัว (<code>wet_equipment</code> 5)</th><th>MET</th><th>ระดับ / รหัส Compendium 2011</th></tr></thead>
+            <tbody>
+              <tr><td class="k">1. ท่า Isolation (เช่น Crunch)</td><td class="k">2.8</td><td>เบา / 02024</td></tr>
+              <tr><td class="k">2. พัก &lt; 30 วินาที <small>(ตีความ "ต่อเนื่อง")</small></td><td class="k">8.0</td><td>หนัก / 02020</td></tr>
+              <tr><td class="k">3. พัก 30–90 วินาที (รวมปลาย)</td><td class="k">3.8</td><td>ปานกลาง / 02022</td></tr>
+              <tr><td class="k">4. พัก &gt; 90 วินาที</td><td class="k">3.5</td><td>เบา / 02030</td></tr>
+            </tbody>
+          </table>
+          <div class="crud-note">ไล่บนลงล่าง เจอข้อแรกที่ตรงแล้วหยุด — สเปกบทที่ 2 ให้ค่า MET + คำบรรยายระดับ ไม่ได้ให้เกณฑ์ตัวเลขครบ:
+            Reps &lt; 8, ช่วงพัก 30/90 วินาทีของหมวดน้ำหนักตัว, "มัดเล็ก" = Isolation, และการให้ Compound ชนะพักนาน เป็นการตีความของผู้วิจัย</div>
+          <table class="ref-table" style="margin-top:10px">
+            <thead><tr><th>ค่า</th><th>ตั้งไว้เท่าไร</th><th>ทำไมต้องมี</th></tr></thead>
+            <tbody>
+              <tr><td class="k">Final MET</td><td class="k">= Session MET ตรงๆ</td><td>ไม่มีตัวคูณต่อ — MET มาจาก Logic Matrix ล้วนๆ (บทที่ 2 ข้อ 2.1.4.12)</td></tr>
+              <tr><td class="k">เพดานเวลา</td><td class="k">4 นาที/เซต</td><td>กันลืมกดจบเวิร์กเอาท์แล้วนาฬิกาเดินยาว → ได้พลังงานฟรีไม่จำกัด</td></tr>
+              <tr><td class="k">clamp Final MET</td><td class="k">1.5 – 9.5</td><td>กันค่าสุดโต่งหลุดขอบจากอินพุตประหลาด (ในทางปฏิบัติ Logic Matrix ด้านบน 2.8-8.0 ไม่ชนขอบอยู่แล้ว)</td></tr>
+              <tr><td class="k">หัก 1 MET</td><td class="k">NET</td><td>1 MET = พลังงานตอนนั่งเฉยๆ ซึ่ง Baseline (BMR×1.2) นับไปแล้ว ไม่หักออกจะนับซ้ำ</td></tr>
+              <tr><td class="k">%1RM → ระดับความหนัก</td><td class="k">&lt;50% เบา · 50-70% กลาง · ≥70% หนัก</td><td>label แสดงผลเท่านั้น (<code>wtrs_intensity_level</code>) ไม่ใช้เลือก MET และไม่คูณเข้ากับ Final MET</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </section>
+
+    <section class="card tone-out" id="secB4">
+      <div class="card-head"><h2>⛽ [B4] Total Daily Energy Output</h2><span class="badge">Energy Out</span></div>
+      <div class="card-sub">Baseline + คาร์ดิโอวันนี้ + เวทเทรนนิ่งวันนี้ (รวมทุกเซสชัน/ทุกกิจกรรม)</div>
+      <div class="pull-row">
+        <button class="pull-btn" onclick="App.pull('b4_baseline','baseline');App.pull('b4_cardio','cardioSum');App.pull('b4_weight','weightSum');App.calcTotalOutput()">↺ ใช้ค่าล่าสุดจาก B1+B2+B3</button>
+      </div>
+      <div class="grid">
+        <div class="field"><label>Baseline <small>(kcal)</small></label><input type="number" id="b4_baseline" value="1978.5" oninput="App.calcTotalOutput()"></div>
+        <div class="field"><label>คาร์ดิโอรวมวันนี้ <small>(kcal)</small></label><input type="number" id="b4_cardio" value="255.5" oninput="App.calcTotalOutput()"></div>
+        <div class="field"><label>เวทเทรนนิ่งรวมวันนี้ <small>(kcal)</small></label><input type="number" id="b4_weight" value="49.96" oninput="App.calcTotalOutput()"></div>
+      </div>
+      <div class="result-grid">
+        <div class="result-box hl"><div class="lbl">Total Daily Energy Output</div><div class="val" id="rb4_total">-</div><div class="sub">kcal</div></div>
+      </div>
+      <div class="step-box" id="s_b4"></div>
+    </section>
+
+  </div>
+
+  <!-- ============ [C] SUMMARY ============ -->
+  <section class="card tone-bal" id="secC">
+    <div class="card-head"><h2>⚖️ [C] สรุปเทียบพลังงาน</h2><span class="badge">Balance</span></div>
+    <div class="card-sub">รวมผลจากฝั่งกินเข้า (A) และใช้ออก (B)
+      <span class="src-ref">analytics_controller.go : GetDailyAnalytics (บรรทัด 76-108)</span>
+    </div>
+
+    <h3 style="font-size:.9rem;margin:10px 0 6px">C1. Energy Balance</h3>
+    <div class="pull-row">
+      <button class="pull-btn" onclick="App.pull('c1_in','energyIn');App.pull('c1_out','totalOutput');App.calcBalance()">↺ ใช้ A3(In) + B4(Out) ล่าสุด</button>
+    </div>
+    <div class="grid">
+      <div class="field"><label>Energy In <small>(kcal)</small></label><input type="number" id="c1_in" value="2100" oninput="App.calcBalance()"></div>
+      <div class="field"><label>Total Output <small>(kcal)</small></label><input type="number" id="c1_out" value="2283.96" oninput="App.calcBalance()"></div>
+    </div>
+    <div class="result-grid">
+      <div class="result-box hl"><div class="lbl">Energy Balance</div><div class="val" id="rc1_val">-</div><div class="sub">kcal (ลบ=ขาดดุล)</div></div>
+    </div>
+    <div class="step-box" id="s_c1"></div>
+
+    <h3 style="font-size:.9rem;margin:18px 0 6px">C2. สถานะ Over / On / Under (±10% ของ Target)</h3>
+    <div class="pull-row">
+      <button class="pull-btn" onclick="App.pull('c2_target','target');App.pull('c2_in','energyIn');App.calcStatus()">↺ ใช้ A1(Target) + A3(In) ล่าสุด</button>
+    </div>
+    <div class="grid">
+      <div class="field"><label>Target Calories <small>(kcal)</small></label><input type="number" id="c2_target" value="2044.45" oninput="App.calcStatus()"></div>
+      <div class="field"><label>Energy In <small>(kcal)</small></label><input type="number" id="c2_in" value="2100" oninput="App.calcStatus()"></div>
+    </div>
+    <div style="margin:10px 0"><span class="status-badge status-on" id="rc2_badge">-</span></div>
+    <div class="step-box" id="s_c2"></div>
+
+    <h3 style="font-size:.9rem;margin:18px 0 6px">C3. เกณฑ์ BMI (เอเชีย-แปซิฟิก)</h3>
+    <div class="pull-row">
+      <button class="pull-btn" onclick="App.pull('c3_bmi','bmi');App.calcBmiRecap()">↺ ใช้ BMI ล่าสุดจาก [0]</button>
+    </div>
+    <div class="grid" style="max-width:200px">
+      <div class="field"><label>BMI</label><input type="number" id="c3_bmi" value="22.86" step="0.01" oninput="App.calcBmiRecap()"></div>
+    </div>
+    <table class="bmi-table" id="c3_table">
+      <thead><tr><th>ช่วง BMI</th><th>ผล</th></tr></thead>
+      <tbody>
+        <tr data-lo="-999" data-hi="18.5"><td>&lt; 18.5</td><td>ผอมเกินไป</td></tr>
+        <tr data-lo="18.5" data-hi="23"><td>18.5 – 22.9</td><td>สมส่วน</td></tr>
+        <tr data-lo="23" data-hi="25"><td>23.0 – 24.9</td><td>น้ำหนักเกิน</td></tr>
+        <tr data-lo="25" data-hi="999"><td>≥ 25.0</td><td>โรคอ้วน</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+</main>
+
+<footer class="note">
+  ตัวเลข/สูตรทั้งหมดอ้างอิงบทที่ 2 ของเล่ม + โค้ดจริงใน <code>backend/services/calculator.go</code>,
+  <code>backend/controllers/workout_controller.go</code>, <code>backend/controllers/analytics_controller.go</code><br>
+  ดูรายละเอียดสูตรทุกจุดพร้อมที่มาแบบเต็มที่ไฟล์ <code>FORMULAS.md</code> ในโฟลเดอร์เดียวกัน
+</footer>
+
+<button class="glossary-fab" onclick="App.toggleGlossary(true)">📖 คำศัพท์</button>
+<div class="glossary-overlay" id="glOverlay" onclick="App.toggleGlossary(false)"></div>
+<aside class="glossary-panel" id="glPanel">
+  <h3>📖 คำศัพท์ <button class="close-x" onclick="App.toggleGlossary(false)">✕</button></h3>
+  <div id="glContent"></div>
+</aside>
+
+<script>
+"use strict";
+
+const round2 = x => Math.round((x + Number.EPSILON) * 100) / 100;
+const round1 = x => Math.round((x + Number.EPSILON) * 10) / 10;
+const round0 = x => Math.round(x + Number.EPSILON);
+const num = (id) => parseFloat(document.getElementById(id).value) || 0;
+const txt = (id) => document.getElementById(id).value;
+const setv = (id, v) => document.getElementById(id).innerText = v;
+const fmt = (x) => Number(x).toLocaleString('en-US', {maximumFractionDigits: 2});
+
+const MACRO_PCT = {
+  1: {protein: 0.40, carb: 0.35, fat: 0.25},
+  2: {protein: 0.30, carb: 0.50, fat: 0.20},
+  3: {protein: 0.20, carb: 0.50, fat: 0.30},
+};
+
+const App = {
+  latest: {},
+  // kcal/p/c/f = ค่าต่อ 1 หน่วยเสิร์ฟ (ntt_*) · qty = จำนวนหน่วยที่กิน (dntt_quantity)
+  // ตั้ง qty=1 ทุกแถวให้ยอดรวมตรงกับตัวอย่างใน FORMULAS.md (450+650+500+500 = 2,100 kcal)
+  foodItems: [
+    {name:'ข้าวไข่เจียว', meal:1, kcal:450, p:20, c:45, f:20, qty:1},
+    {name:'ข้าวกระเพราไก่', meal:2, kcal:650, p:35, c:70, f:22, qty:1},
+    {name:'สลัดอกไก่', meal:3, kcal:500, p:40, c:30, f:20, qty:1},
+    {name:'นมจืด+กล้วย', meal:4, kcal:500, p:15, c:60, f:12, qty:1},
+  ],
+  cardioItems: [
+    {name:'จ๊อกกิ้ง (Jogging)', mets:8.3, minutes:30},
+  ],
+  // rest = เวลาพักหลังเซตนี้ (วินาที) — null = ไม่ทราบ (แถวเก่าก่อน wtrs_rest_seconds, ใช้ proxy ความหนาแน่นเฉลี่ยแทน)
+  weightSets: [
+    {weight:60, reps:10, rest:null},
+    {weight:60, reps:10, rest:null},
+    {weight:60, reps:10, rest:null},
+    {weight:60, reps:10, rest:null},
+  ],
+
+  // ---------- navigation ----------
+  showTab(which){
+    document.getElementById('tabIn').style.display = which==='in' ? 'flex' : 'none';
+    document.getElementById('tabOut').style.display = which==='out' ? 'flex' : 'none';
+    document.querySelector('.qn-chip.in').classList.toggle('active', which==='in');
+    document.querySelector('.qn-chip.out').classList.toggle('active', which==='out');
+  },
+  toggleGlossary(open){
+    document.getElementById('glPanel').classList.toggle('show', open);
+    document.getElementById('glOverlay').classList.toggle('show', open);
+  },
+  pull(fieldId, key){
+    if (this.latest[key] === undefined) return;
+    document.getElementById(fieldId).value = this.latest[key];
+  },
+
+  // ---------- แถบบนแบบพับได้ ----------
+  // folded = ผู้ใช้กดพับเอง (ค้างไว้จนกว่าจะกดขยาย) · zoomFolded = ระบบพับให้อัตโนมัติตอนตรวจจับว่ากำลังซูม
+  // ทั้งสองอย่างรวมกันด้วย OR — กันแถบบน/ป้ายส่วนหัวไปบังเนื้อหาที่กำลังซูมดูอยู่ (ตามที่ขอ)
+  folded: false,
+  zoomFolded: false,
+  applyHeadState(){
+    const head = document.getElementById('stickyHead');
+    const compact = this.folded || this.zoomFolded;
+    head.classList.toggle('compact', compact);
+    const btn = document.getElementById('foldBtn');
+    if (btn) btn.textContent = compact ? '▾' : '▴';
+    this.updateHeadHeight();
+  },
+  toggleFold(){ this.folded = !this.folded; this.applyHeadState(); },
+  updateHeadHeight(){
+    const head = document.getElementById('stickyHead');
+    if (!head) return;
+    requestAnimationFrame(()=>{
+      document.documentElement.style.setProperty('--head-h', (head.offsetHeight + 14) + 'px');
+    });
+  },
+  // ปุ่มลัดในแถบบน — สลับแท็บ (ถ้าจำเป็น) แล้วเลื่อนไปที่ section นั้น
+  jump(e, id, tab){
+    e.preventDefault();
+    if (tab) this.showTab(tab);
+    requestAnimationFrame(()=>{
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+    });
+  },
+  // ตรวจจับการซูม (pinch-zoom มือถือ) ผ่าน visualViewport.scale — พับแถบบนให้อัตโนมัติ
+  // เพื่อไม่ให้ไปบังส่วนที่ผู้ใช้เพิ่งซูมเข้าไปดู แล้วขยายกลับเองตอนซูมออก (ถ้าไม่ได้กดพับค้างไว้เอง)
+  watchZoom(){
+    if (!window.visualViewport) return;
+    const vv = window.visualViewport;
+    const onChange = () => {
+      const zoomed = vv.scale > 1.08;
+      if (zoomed !== this.zoomFolded){
+        this.zoomFolded = zoomed;
+        document.body.classList.toggle('is-zoomed', zoomed);
+        this.applyHeadState();
+      }
+    };
+    vv.addEventListener('resize', onChange);
+    vv.addEventListener('scroll', onChange);
+  },
+
+  // ---------- [0] Foundation ----------
+  calcFoundation(){
+    const gender = txt('f_gender');
+    const age = num('f_age'), weight = num('f_weight'), height = num('f_height'), af = num('f_af');
+    if (weight<=0 || height<=0){ setv('s0_steps','กรอกน้ำหนัก/ส่วนสูงให้ครบ'); return; }
+
+    const hM = height/100;
+    const bmi = weight/(hM*hM);
+    const bmr = gender==='male' ? (10*weight)+(6.25*height)-(5*age)+5 : (10*weight)+(6.25*height)-(5*age)-161;
+    const tdee = bmr*af;
+
+    const bmi2 = round2(bmi), bmr2 = round2(bmr), tdee2 = round2(tdee);
+    setv('r0_bmi', bmi2.toFixed(2));
+    setv('r0_bmr', bmr2.toFixed(2));
+    setv('r0_tdee', tdee2.toFixed(2));
+    setv('r0_bmi_label', App.bmiLabel(bmi2));
+
+    const genderTxt = gender==='male' ? 'ชาย: (10×kg)+(6.25×cm)−(5×อายุ)+5' : 'หญิง: (10×kg)+(6.25×cm)−(5×อายุ)−161';
+    setv('s0_steps',
+`[BMI] = ${weight} / (${hM.toFixed(2)}²) = ${weight} / ${(hM*hM).toFixed(4)} = ${bmi2}  → ${App.bmiLabel(bmi2)}
+
+[BMR] ${genderTxt}
+    = (10×${weight}) + (6.25×${height}) − (5×${age}) ${gender==='male'?'+ 5':'− 161'}
+    = ${bmr2} kcal/วัน
+
+[TDEE] = BMR × Activity Factor = ${bmr2} × ${af} = ${tdee2} kcal/วัน`);
+
+    this.latest.bmi = bmi2; this.latest.bmr = bmr2; this.latest.tdee = tdee2; this.latest.weight = weight;
+  },
+  bmiLabel(bmi){
+    if (bmi<=0) return '-';
+    if (bmi<18.5) return 'ผอมเกินไป';
+    if (bmi<23) return 'สมส่วน';
+    if (bmi<25) return 'น้ำหนักเกิน';
+    return 'โรคอ้วน';
+  },
+
+  // ---------- [A1] Target ----------
+  calcTarget(){
+    const tdee = num('a1_tdee'), bmr = num('a1_bmr'), goal = txt('a1_goal');
+    let target, clamped=false, stepTxt='';
+    if (goal==='1'){
+      const raw = tdee - (tdee*0.20);
+      target = raw;
+      stepTxt = `Target(ดิบ) = TDEE − (TDEE×20%) = ${tdee} − ${round2(tdee*0.20)} = ${round2(raw)}`;
+      if (raw < bmr){ target = bmr; clamped = true; stepTxt += `\n${round2(raw)} < BMR(${bmr}) → clamp: Target = BMR = ${round2(bmr)}`; }
+    } else if (goal==='2'){
+      target = tdee + (tdee*0.15);
+      stepTxt = `Target = TDEE + (TDEE×15%) = ${tdee} + ${round2(tdee*0.15)} = ${round2(target)}`;
+    } else {
+      target = tdee;
+      stepTxt = `Target = TDEE (รักษาน้ำหนัก) = ${round2(target)}`;
+    }
+    const target2 = round2(target);
+    setv('ra1_target', target2.toFixed(2));
+    document.getElementById('a1_warn').classList.toggle('show', clamped);
+    setv('s_a1', stepTxt);
+    this.latest.target = target2; this.latest.goal = goal;
+  },
+
+  // ---------- [A2] Macros ----------
+  calcMacros(){
+    const target = num('a2_target'), goal = txt('a2_goal');
+    const pct = MACRO_PCT[goal];
+    const p = (target*pct.protein)/4, c = (target*pct.carb)/4, f = (target*pct.fat)/9;
+    const p1=round1(p), c1=round1(c), f1=round1(f);
+    setv('ra2_p', p1); setv('ra2_c', c1); setv('ra2_f', f1);
+    setv('s_a2',
+`สัดส่วนเป้าหมาย ${goal}: โปรตีน ${(pct.protein*100).toFixed(0)}% / คาร์บ ${(pct.carb*100).toFixed(0)}% / ไขมัน ${(pct.fat*100).toFixed(0)}%
+
+โปรตีน(g) = (${target} × ${pct.protein}) / 4 = ${round2(target*pct.protein)} / 4 = ${p1} g
+คาร์บ(g)   = (${target} × ${pct.carb}) / 4 = ${round2(target*pct.carb)} / 4 = ${c1} g
+ไขมัน(g)   = (${target} × ${pct.fat}) / 9 = ${round2(target*pct.fat)} / 9 = ${f1} g`);
+  },
+
+  // ---------- [A3] Food CRUD ----------
+  // kcal/p/c/f ที่เก็บในนี้คือค่า "ต่อ 1 หน่วย" (= คอลัมน์ ntt_* ของตาราง nutrition)
+  // ส่วน qty คือ dntt_quantity — ค่าที่ลง daily_nutrition จริงคือผลคูณของสองอย่างนี้
+  addFood(){ this.foodItems.push({name:'', meal:1, kcal:0, p:0, c:0, f:0, qty:1}); this.renderFood(); },
+  delFood(i){ this.foodItems.splice(i,1); this.renderFood(); },
+  updFood(i, field, val){
+    if (field==='name') this.foodItems[i].name = val;
+    else if (field==='meal') this.foodItems[i].meal = parseInt(val)||1;
+    else if (field==='qty') this.foodItems[i].qty = Math.max(0.5, parseFloat(val)||0.5);
+    else this.foodItems[i][field] = parseFloat(val)||0;
+    this.calcEnergyIn();
+  },
+  // ปุ่ม −/+ ทีละ 0.5 (ขั้นต่ำ 0.5 หน่วย ตรงกับ binding:"required,gt=0" ฝั่ง backend ที่ห้าม 0)
+  stepFoodQty(i, delta){
+    const q = Math.max(0.5, round2((this.foodItems[i].qty || 1) + delta));
+    this.foodItems[i].qty = q;
+    const inp = document.getElementById(`a3_qty_${i}`);
+    if (inp) inp.value = q;
+    this.calcEnergyIn();
+  },
+  renderFood(){
+    const body = document.getElementById('a3_tbody');
+    body.innerHTML = this.foodItems.map((it,i)=>`
+      <tr>
+        <td data-th="ชื่ออาหาร"><input value="${it.name}" oninput="App.updFood(${i},'name',this.value)" placeholder="ชื่ออาหาร"></td>
+        <td data-th="มื้อ"><select onchange="App.updFood(${i},'meal',this.value)">
+          <option value="1" ${it.meal===1?'selected':''}>เช้า</option>
+          <option value="2" ${it.meal===2?'selected':''}>กลางวัน</option>
+          <option value="3" ${it.meal===3?'selected':''}>เย็น</option>
+          <option value="4" ${it.meal===4?'selected':''}>ว่าง</option>
+        </select></td>
+        <td data-th="kcal ต่อหน่วย" class="unit-cell"><input type="number" value="${it.kcal}" oninput="App.updFood(${i},'kcal',this.value)"></td>
+        <td data-th="โปรตีน ต่อหน่วย" class="unit-cell"><input type="number" value="${it.p}" oninput="App.updFood(${i},'p',this.value)"></td>
+        <td data-th="คาร์บ ต่อหน่วย" class="unit-cell"><input type="number" value="${it.c}" oninput="App.updFood(${i},'c',this.value)"></td>
+        <td data-th="ไขมัน ต่อหน่วย" class="unit-cell"><input type="number" value="${it.f}" oninput="App.updFood(${i},'f',this.value)"></td>
+        <td data-th="จำนวนหน่วย">
+          <div class="qty-step">
+            <button type="button" onclick="App.stepFoodQty(${i},-0.5)" title="ลด 0.5 หน่วย">−</button>
+            <input type="number" id="a3_qty_${i}" step="0.5" min="0.5" value="${it.qty ?? 1}" oninput="App.updFood(${i},'qty',this.value)">
+            <button type="button" onclick="App.stepFoodQty(${i},0.5)" title="เพิ่ม 0.5 หน่วย">+</button>
+          </div>
+        </td>
+        <td data-th="รวมแถว" class="row-total" id="a3_row_${i}">-</td>
+        <td><button class="del-btn" onclick="App.delFood(${i})" title="ลบแถว">🗑</button></td>
+      </tr>`).join('');
+    this.calcEnergyIn();
+  },
+  calcEnergyIn(){
+    let sum = {kcal:0, p:0, c:0, f:0, qty:0};
+    this.foodItems.forEach((it,i)=>{
+      const q = it.qty ?? 1;
+      const row = {kcal:it.kcal*q, p:it.p*q, c:it.c*q, f:it.f*q};
+      sum.kcal += row.kcal; sum.p += row.p; sum.c += row.c; sum.f += row.f; sum.qty += q;
+      // อัปเดตช่อง "รวมแถว" ตรงๆ ทุกครั้งที่คำนวณ — ห้ามรอ renderFood() (innerHTML ทั้งตาราง)
+      // เพราะจะรีเซ็ต focus/cursor ของ input ที่กำลังพิมพ์อยู่ (บั๊กแบบเดียวกับที่เจอใน B2)
+      const cell = document.getElementById(`a3_row_${i}`);
+      if (cell) cell.innerHTML =
+        `${fmt(round0(row.kcal))} kcal<small>P ${round1(row.p)} · C ${round1(row.c)} · F ${round1(row.f)}</small>`;
+    });
+    setv('a3_sum_qty', `${round2(sum.qty)} หน่วย`);
+    document.getElementById('a3_sum_all').innerHTML =
+      `${fmt(round0(sum.kcal))} kcal<small>P ${round1(sum.p)} · C ${round1(sum.c)} · F ${round1(sum.f)}</small>`;
+    setv('ra3_total', fmt(round0(sum.kcal)));
+    setv('ra3_p', fmt(round1(sum.p)));
+    setv('ra3_c', fmt(round1(sum.c)));
+    setv('ra3_f', fmt(round1(sum.f)));
+    this.latest.energyIn = round2(sum.kcal);
+    this.latest.proteinIn = round1(sum.p);
+    this.latest.carbIn = round1(sum.c);
+    this.latest.fatIn = round1(sum.f);
+  },
+
+  // ---------- [B1] Baseline ----------
+  calcBaseline(){
+    const bmr = num('b1_bmr');
+    const baseline = round2(bmr*1.2);
+    setv('rb1_val', baseline.toFixed(2));
+    setv('s_b1', `Baseline = BMR × 1.2 = ${bmr} × 1.2 = ${baseline} kcal\n(1.2 = Sedentary Coefficient คงที่เสมอ ไม่ใช่ Activity Factor จริงของผู้ใช้ — กฎเหล็กข้อ 4)`);
+    this.latest.baseline = baseline;
+  },
+
+  // ---------- [B2] Cardio CRUD ----------
+  addCardio(){ this.cardioItems.push({name:'', mets:0, minutes:0}); this.renderCardio(); },
+  delCardio(i){ this.cardioItems.splice(i,1); this.renderCardio(); },
+  updCardio(i, field, val){
+    if (field==='name') this.cardioItems[i].name = val;
+    else this.cardioItems[i][field] = parseFloat(val)||0;
+    this.calcCardio();
+  },
+  renderCardio(){
+    const bw = num('b2_weight');
+    const body = document.getElementById('b2_tbody');
+    body.innerHTML = this.cardioItems.map((it,i)=>{
+      const net = Math.max(it.mets-1,0);
+      const kcal = round2(net*bw*(it.minutes/60));
+      return `<tr>
+        <td><input value="${it.name}" oninput="App.updCardio(${i},'name',this.value)" placeholder="เช่น วิ่ง, ปั่นจักรยาน"></td>
+        <td><input type="number" step="0.1" value="${it.mets}" oninput="App.updCardio(${i},'mets',this.value)"></td>
+        <td><input type="number" value="${it.minutes}" oninput="App.updCardio(${i},'minutes',this.value)"></td>
+        <td id="b2_kcal_${i}" style="font-family:var(--mono);font-weight:700">${kcal.toFixed(2)}</td>
+        <td><button class="del-btn" onclick="App.delCardio(${i})" title="ลบแถว">🗑</button></td>
+      </tr>`;
+    }).join('');
+    this.calcCardio();
+  },
+  // เดิม updCardio()/เปลี่ยน "น้ำหนักตัว" เรียกแค่ calcCardio() ซึ่งอัปเดตแค่ยอดรวม+step box
+  // ไม่แตะ <td> ต่อแถว (เขียนทีเดียวตอน renderCardio ตอนเพิ่ม/ลบแถวเท่านั้น) — ช่องพลังงานต่อแถว
+  // เลยค้างค่าตอนสร้างแถว (ปกติ 0.00) ไม่ขยับตามที่พิมพ์จนกว่าจะเพิ่ม/ลบแถวอื่นให้ re-render ทั้ง tbody
+  // แก้โดยอัปเดต <td> รายแถวตรงนี้ด้วยทุกครั้งที่ calcCardio() ทำงาน (ไม่ใช้ renderCardio()/innerHTML
+  // เพราะจะรีเซ็ต focus/cursor ของ input ที่กำลังพิมพ์อยู่)
+  calcCardio(){
+    const bw = num('b2_weight');
+    let sum = 0, steps = [];
+    this.cardioItems.forEach((it,i)=>{
+      const net = Math.max(it.mets-1,0);
+      const kcal = round2(net*3.5*bw/200*it.minutes);
+      sum += kcal;
+      const cell = document.getElementById(`b2_kcal_${i}`);
+      if (cell) cell.textContent = kcal.toFixed(2);
+      steps.push(`${it.name||'(ไม่มีชื่อ)'}: (${it.mets}−1)×3.5×${bw}/200×${it.minutes} = ${net}×3.5×${bw}/200×${it.minutes} = ${kcal.toFixed(2)} kcal`);
+    });
+    setv('b2_sum', fmt(round2(sum)));
+    setv('s_b2', steps.length ? steps.join('\n') + `\n\nรวมวันนี้ = ${round2(sum).toFixed(2)} kcal` : 'ยังไม่มีรายการคาร์ดิโอ');
+    this.latest.cardioSum = round2(sum);
+  },
+
+  // ---------- [B3] Weight Training ----------
+  addSet(){ this.weightSets.push({weight:0, reps:0, rest:null}); this.renderWeight(); },
+  delSet(i){ this.weightSets.splice(i,1); this.renderWeight(); },
+  updSet(i, field, val){
+    if (field==='rest') this.weightSets[i].rest = (val==='' ? null : parseFloat(val)||0);
+    else this.weightSets[i][field] = parseFloat(val)||0;
+    this.calcWeight();
+  },
+  renderWeight(){
+    const body = document.getElementById('b3_tbody');
+    body.innerHTML = this.weightSets.map((s,i)=>`
+      <tr>
+        <td data-th="เซตที่" style="font-weight:700;color:var(--muted)">#${i+1}</td>
+        <td data-th="น้ำหนัก (กก.)"><input type="number" step="0.5" value="${s.weight}" oninput="App.updSet(${i},'weight',this.value)"></td>
+        <td data-th="Reps (ครั้ง)"><input type="number" value="${s.reps}" oninput="App.updSet(${i},'reps',this.value)"></td>
+        <td data-th="พักหลังเซตนี้ (วิ)"><input type="number" placeholder="ไม่ทราบ" value="${s.rest===null?'':s.rest}" oninput="App.updSet(${i},'rest',this.value)"></td>
+        <td data-th="%1RM ของเซตนี้" id="b3_ri_${i}" style="font-family:var(--mono);font-size:.78rem;color:var(--muted)">-</td>
+        <td><button class="del-btn" onclick="App.delSet(${i})" title="ลบเซต">🗑</button></td>
+      </tr>`).join('');
+    this.calcWeight();
+  },
+  // ติ๊ก "ไม่เคยฝึกท่านี้มาก่อน" → ปิดช่องกรอก 1RM (กันพิมพ์เดาค่า) แล้วคำนวณใหม่เป็น label กลาง
+  // เหมือนที่ backend ทำจริงตอน getBestOneRepMax ไม่เจอประวัติ (hasData=false → oneRepMax=0)
+  toggleNo1RM(){
+    const noHistory = document.getElementById('b3_no1rm').checked;
+    document.getElementById('b3_prior1rm').disabled = noHistory;
+    this.calcWeight();
+  },
+  // 1 การ์ด = 1 ขั้นตอนของสูตร — title/desc เป็นภาษาคน, math โชว์เลขจริงแทนตัวแปรทุกตัว
+  // (ผู้ใช้อ่านแล้วต้องเห็นว่า "เลขนี้มาจากไหน" โดยไม่ต้องเปิดโค้ด Go)
+  flowStep(n, title, jargon, desc, math, val, unit, isFinal){
+    return `<div class="flow-step${isFinal?' final':''}">
+      <div class="flow-num">${n}</div>
+      <div class="flow-body">
+        <div class="t">${title}<em>${jargon}</em></div>
+        <div class="d">${desc}</div>
+        <div class="m">${math}</div>
+      </div>
+      <div class="flow-val">${val}<small>${unit}</small></div>
+    </div>`;
+  },
+  // Dynamic METs Logic Matrix ต่อเซต — ตรงกับ resolveSetBaseMET ใน calculator.go เป๊ะ
+  // (equipment: 5 = Bodyweight, อื่นๆ = แรงต้าน · exType: 1 = Compound, 2 = Isolation)
+  // คืน {met, rule} — rule คือข้อที่ตรงกัน ไว้แสดงในขั้นตอน "ระบบคิดยังไง"
+  resolveSetBaseMET(equipment, exType, reps, restSeconds){
+    if (equipment === 5){
+      if (exType === 2) return {met:2.8, rule:'น้ำหนักตัว · ท่า Isolation → เบา (02024)'};
+      if (restSeconds < 30) return {met:8.0, rule:'น้ำหนักตัว · พัก < 30 วิ (ต่อเนื่อง) → หนัก (02020)'};
+      if (restSeconds <= 90) return {met:3.8, rule:'น้ำหนักตัว · พัก 30–90 วิ → ปานกลาง (02022)'};
+      return {met:3.5, rule:'น้ำหนักตัว · พัก > 90 วิ → เบา (02030)'};
+    }
+    if (reps < 8) return {met:6.0, rule:'แรงต้าน · Reps < 8 (หนักมาก) → หนัก (02050)'};
+    if (exType === 1) return {met:5.0, rule:'แรงต้าน · ท่า Compound → ปานกลาง (02052)'};
+    if (restSeconds >= 60 && restSeconds <= 90) return {met:5.0, rule:'แรงต้าน · พัก 60–90 วิ → ปานกลาง (02052)'};
+    return {met:3.5, rule:'แรงต้าน · ที่เหลือ (Isolation/พักนอกช่วง 60–90) → เบา (02054)'};
+  },
+
+  calcWeight(){
+    const bw = num('b3_bw'), durationSec = num('b3_duration');
+    const noHistory = document.getElementById('b3_no1rm').checked;
+    const prior1RM = noHistory ? 0 : num('b3_prior1rm');
+    const validSets = this.weightSets.filter(s=>s.reps>0);
+    const totalSets = validSets.length;
+    const exName = txt('b3_name') || 'ท่านี้';
+    const equipment = parseInt(document.getElementById('b3_equip').value, 10);
+    const exType = parseInt(document.getElementById('b3_extype').value, 10);
+
+    // Volume + Estimated 1RM — แสดงผลอย่างเดียว ไม่เกี่ยวกับโซ่คำนวณพลังงาน (กฎเหล็กข้อ 2)
+    let volume = 0, est1RM = 0;
+    validSets.forEach(s=>{
+      volume += s.weight*s.reps;
+      if (s.weight>0){ const e = s.weight*(1+s.reps/30); if (e>est1RM) est1RM = e; }
+    });
+    setv('rb3_volume', fmt(round0(volume)));
+    setv('rb3_1rm', round2(est1RM).toFixed(2));
+
+    // %1RM ต่อเซตในตาราง (อัปเดต <td> ตรงๆ ไม่ re-render ทั้งตาราง กัน focus หลุด)
+    this.weightSets.forEach((s,i)=>{
+      const cell = document.getElementById(`b3_ri_${i}`);
+      if (!cell) return;
+      if (s.reps<=0) cell.textContent = 'ไม่นับ (reps=0)';
+      else if (s.weight<=0) cell.textContent = 'bodyweight';
+      else if (prior1RM<=0) cell.textContent = 'ไม่มี 1RM ให้เทียบ';
+      else cell.textContent = `${((s.weight/prior1RM)*100).toFixed(1)}%`;
+    });
+
+    if (totalSets===0){
+      setv('rb3_kcal','-'); setv('rb3_kcalset','-'); setv('rb3_level','-'); setv('rb3_level_sub','-');
+      document.getElementById('b3_flow').innerHTML =
+        '<div class="flow-step"><div class="flow-num">!</div><div class="flow-body"><div class="t">ยังคำนวณไม่ได้</div>' +
+        '<div class="d">ต้องมีอย่างน้อย 1 เซตที่กรอก Reps มากกว่า 0 — เซตที่ Reps = 0 ระบบถือว่ายังไม่ได้ฝึกจริง ตัดทิ้งทั้งแถว</div></div><div class="flow-val">-</div></div>';
+      document.getElementById('b3_warn').classList.remove('show');
+      return;
+    }
+
+    // ── Step 1: เพดานเวลา + ความหนาแน่น (คำนวณก่อน Step 2 เพราะใช้เป็น proxy แทนเวลาพักรายเซตที่ไม่ทราบ)
+    const actualMinutes = durationSec/60;
+    const cap = totalSets*4.0;
+    const cappedMinutes = Math.min(actualMinutes, cap);
+    const capHit = actualMinutes > cap;
+    const density = cappedMinutes/totalSets;
+    const densityProxySeconds = density*60;
+
+    // ── Step 2: Logic Matrix ต่อเซต (หมวดท่า + ประเภทท่า + เวลาพัก + Reps) → เฉลี่ยเป็น Session MET
+    const perSetCalc = validSets.map(s=>{
+      const usedProxy = (s.rest===null || s.rest===undefined);
+      const restUsed = usedProxy ? densityProxySeconds : s.rest;
+      const r = this.resolveSetBaseMET(equipment, exType, s.reps, restUsed);
+      return { ...s, restUsed, usedProxy, met: r.met, rule: r.rule };
+    });
+    const sessionBaseMET = perSetCalc.reduce((a,s)=>a+s.met,0)/totalSets;
+
+    // ── Step 3: %1RM เฉลี่ย → ระดับความหนัก (label แสดงผลเท่านั้น — ไม่คูณเข้ากับ Final MET แล้ว)
+    const levelLabel = {1:'เบา 🟢', 2:'กลาง 🟡', 3:'หนัก 🔴'};
+    let level = 2, riMath;
+    const weighted = validSets.filter(s=>s.weight>0);
+    if (prior1RM>0 && weighted.length>0){
+      const avgRI = weighted.reduce((a,s)=>a+s.weight/prior1RM,0)/weighted.length;
+      if (avgRI<0.50){ level=1; } else if (avgRI<0.70){ level=2; } else { level=3; }
+      riMath = `น้ำหนักเฉลี่ยที่ยกวันนี้ = (${weighted.map(s=>s.weight).join(' + ')}) ÷ ${weighted.length} = ${round2(weighted.reduce((a,s)=>a+s.weight,0)/weighted.length)} กก.
+%1RM = ${round2(weighted.reduce((a,s)=>a+s.weight,0)/weighted.length)} ÷ ${prior1RM} = <u>${(avgRI*100).toFixed(1)}%</u> ของที่เคยทำได้
+เกณฑ์: ต่ำกว่า 50% = เบา · 50–70% = กลาง · 70% ขึ้นไป = หนัก — <b>label แสดงผลเท่านั้น ไม่กระทบพลังงานที่คำนวณได้</b>`;
+      setv('rb3_level_sub', `ยก ${(avgRI*100).toFixed(1)}% ของ 1RM เดิม (แค่ label)`);
+    } else {
+      const reason = noHistory ? 'ติ๊กว่า "ไม่เคยฝึกท่านี้มาก่อน"'
+                   : prior1RM<=0 ? 'ยังไม่มีค่า 1RM เดิมให้เทียบ'
+                   : 'ทุกเซตเป็นท่า bodyweight (น้ำหนัก = 0)';
+      riMath = `${reason} → ไม่มีฐานให้เทียบว่าหนักหรือเบา
+ระบบ<u>ไม่เดา</u> ใช้ label กลาง (ไม่กระทบพลังงานที่คำนวณได้อยู่แล้ว)`;
+      setv('rb3_level_sub', 'ไม่มีประวัติ → label กลาง');
+    }
+    setv('rb3_level', levelLabel[level]);
+
+    // ── Step 4: Final MET = Session MET ตรงๆ + clamp (ไม่มีตัวคูณต่อ)
+    let finalMET = sessionBaseMET, clamped=false;
+    if (finalMET<1.5){ finalMET=1.5; clamped=true; }
+    if (finalMET>9.5){ finalMET=9.5; clamped=true; }
+
+    // ── Step 5: NET kcal + หารต่อเซต
+    let totalKcal = (finalMET-1)*3.5*bw/200*cappedMinutes;
+    if (totalKcal<0) totalKcal=0;
+    const perSet = totalKcal/totalSets;
+
+    setv('rb3_kcal', round2(totalKcal).toFixed(2));
+    setv('rb3_kcalset', round2(perSet).toFixed(2));
+    document.getElementById('b3_warn').classList.toggle('show', clamped);
+
+    const perSetLines = perSetCalc.map((s,i)=>
+      `เซต #${i+1}: Reps=${s.reps}, พัก=${s.restUsed.toFixed(0)}วิ${s.usedProxy?' (proxy — ไม่ทราบค่าจริง)':''} → MET=${s.met.toFixed(1)}  [${s.rule}]`
+    ).join('\n');
+
+    document.getElementById('b3_flow').innerHTML = [
+      this.flowStep(1, 'เวลาที่เอามานับจริง', 'Effective Minutes',
+        'นาฬิกาจับเวลารวมพักด้วย แต่ถ้าลืมกดจบเวิร์กเอาท์จะได้พลังงานฟรี จึงมีเพดาน 4 นาทีต่อเซต',
+        `เวลาที่จับได้จริง = ${durationSec} วินาที = ${actualMinutes.toFixed(2)} นาที
+เพดาน = ${totalSets} เซต × 4 นาที = ${cap.toFixed(0)} นาที
+เอาค่าที่น้อยกว่า → <u>${cappedMinutes.toFixed(2)} นาที</u>${capHit ? '  ⚠️ ชนเพดาน (เวลาจริงยาวเกิน ระบบตัดให้)' : '  (ไม่ชนเพดาน ใช้เวลาจริง)'}
+ความหนาแน่นเฉลี่ย (proxy ใช้แทนเซตที่ไม่ทราบเวลาพักจริง) = ${cappedMinutes.toFixed(2)} ÷ ${totalSets} = ${density.toFixed(2)} นาที/เซต = ${densityProxySeconds.toFixed(0)} วินาที`,
+        cappedMinutes.toFixed(2), 'นาที'),
+
+      this.flowStep(2, 'ท่านี้เหนื่อยแค่ไหนต่อเซต', 'Dynamic METs Logic Matrix',
+        'ไล่เงื่อนไขต่อเซตตามหมวดท่า (แรงต้าน/น้ำหนักตัว) + ประเภทท่า + เวลาพักหลังเซตนั้น (ค่าจริงถ้ามี ไม่งั้นใช้ proxy ด้านบน) + Reps เจอข้อแรกที่ตรงแล้วหยุด แล้วเฉลี่ยรวมทั้งเซสชัน',
+        `${perSetLines}\n\nSession MET = เฉลี่ย ${totalSets} เซต = <u>${sessionBaseMET.toFixed(3)}</u>`,
+        sessionBaseMET.toFixed(2), 'MET เฉลี่ย'),
+
+      this.flowStep(3, 'ยกหนักแค่ไหนเทียบกับตัวเอง (แค่ label)', '%1RM',
+        'เทียบน้ำหนักวันนี้กับ 1RM เดิมของคนคนนี้เอง — เก็บไว้แสดงผล ไม่เอาไปคูณพลังงานแล้ว',
+        riMath,
+        levelLabel[level], '(ไม่กระทบพลังงาน)'),
+
+      this.flowStep(4, 'ความเหนื่อยจริงของเซสชันนี้', 'Final MET',
+        'ไม่มีตัวคูณปรับขึ้น-ลง — Final MET เท่ากับ Session MET ตรงๆ (clamp กันหลุดขอบไว้เฉยๆ)',
+        `Final MET = Session MET = <u>${sessionBaseMET.toFixed(3)}</u>
+${clamped ? `หลุดช่วงที่ยอมรับ [1.5–9.5] → ดึงกลับมาที่ ${finalMET.toFixed(2)}` : 'อยู่ในช่วงที่ยอมรับ [1.5–9.5] ไม่ต้องปรับ'}`,
+        finalMET.toFixed(2), 'MET สุดท้าย'),
+
+      this.flowStep(5, 'แปลงเป็นพลังงาน แล้วหารลงแต่ละเซต', 'kcal (NET)',
+        'สูตร ACSM เดียวกับคาร์ดิโอเป๊ะ — หัก 1 MET ออกก่อน เพราะพลังงานตอนนั่งเฉยๆ ถูกนับไปแล้วใน Baseline',
+        `พลังงาน = (${finalMET.toFixed(2)} − 1) × 3.5 × ${bw} กก. ÷ 200 × ${cappedMinutes.toFixed(2)} นาที = <u>${totalKcal.toFixed(2)} kcal</u>
+หารเท่ากันทุกเซต = ${totalKcal.toFixed(2)} ÷ ${totalSets} = ${perSet.toFixed(2)} kcal/เซต
+(เก็บลง wtrs_calories รายแถว — รวมกลับมาแล้วได้เท่าเดิมพอดี)`,
+        round2(totalKcal).toFixed(2), 'kcal ทั้งเซสชัน', true),
+    ].join('');
+
+    this.latest.weightSum = round2(totalKcal);
+    this.latest.est1RM = round2(est1RM);
+    this.latest.volume = round0(volume);
+  },
+
+  // ---------- [B4] Total Output ----------
+  calcTotalOutput(){
+    const b = num('b4_baseline'), c = num('b4_cardio'), w = num('b4_weight');
+    const total = round2(b+c+w);
+    setv('rb4_total', total.toFixed(2));
+    setv('s_b4', `Total Output = Baseline + Cardio + Weight\n= ${b} + ${c} + ${w} = ${total.toFixed(2)} kcal`);
+    this.latest.totalOutput = total;
+  },
+
+  // ---------- [C1] Balance ----------
+  calcBalance(){
+    const inn = num('c1_in'), out = num('c1_out');
+    const bal = round2(inn-out);
+    setv('rc1_val', (bal>=0?'+':'') + bal.toFixed(2));
+    setv('s_c1', `Balance = Energy In − Total Output = ${inn} − ${out} = ${bal.toFixed(2)} kcal\n${bal<0 ? '→ ขาดดุล (เผาผลาญมากกว่ากิน)' : bal>0 ? '→ เกินดุล (กินมากกว่าเผาผลาญ)' : '→ สมดุลพอดี'}`);
+  },
+
+  // ---------- [C2] Status ----------
+  calcStatus(){
+    const target = num('c2_target'), inn = num('c2_in');
+    const upper = round2(target*1.10), lower = round2(target*0.90);
+    let status, cls;
+    if (inn>upper){ status='Over (เกินเป้าหมาย)'; cls='status-over'; }
+    else if (inn<lower){ status='Under (ต่ำกว่าเป้าหมาย)'; cls='status-under'; }
+    else { status='On (ตรงตามเป้าหมาย)'; cls='status-on'; }
+    const badge = document.getElementById('rc2_badge');
+    badge.innerText = status; badge.className = 'status-badge ' + cls;
+    setv('s_c2', `ขอบบน = Target×1.10 = ${target}×1.10 = ${upper}\nขอบล่าง = Target×0.90 = ${target}×0.90 = ${lower}\nEnergy In = ${inn} → อยู่ใน[${lower}, ${upper}]? → สถานะ: ${status}`);
+  },
+
+  // ---------- [C3] BMI recap ----------
+  calcBmiRecap(){
+    const bmi = num('c3_bmi');
+    document.querySelectorAll('#c3_table tbody tr').forEach(tr=>{
+      const lo = parseFloat(tr.dataset.lo), hi = parseFloat(tr.dataset.hi);
+      tr.classList.toggle('match', bmi>=lo && bmi<hi);
+    });
+  },
+
+  // ---------- reset ----------
+  resetAll(){
+    if (!confirm('รีเซ็ตค่าทั้งหมดกลับเป็นค่าตัวอย่างเริ่มต้น?')) return;
+    location.reload();
+  },
+
+  // ---------- glossary (แบ่งกลุ่มตามหมวด — พื้นฐาน/พลังงานเข้า/พลังงานออก/สรุป — อ่านง่ายขึ้น) ----------
+  glossary: [
+    { cat:'base', label:'🧍 พื้นฐานร่างกาย', terms:[
+      ['BMI (ดัชนีมวลกาย)','น้ำหนัก(กก.)/ส่วนสูง(ม.)² บอกความสมส่วนของร่างกาย'],
+      ['BMR (Basal Metabolic Rate)','พลังงานขั้นต่ำที่ร่างกายใช้ขณะพักนิ่งสนิทตลอด 24 ชม.'],
+      ['Activity Factor (AF)','ตัวคูณระดับกิจกรรม 1.2–1.9 ใช้แปลง BMR → TDEE'],
+      ['TDEE','พลังงานที่ใช้จริงทั้งวัน ถ้ากิจกรรมคงที่ตามระดับที่เลือก'],
+    ]},
+    { cat:'in', label:'🍽️ พลังงานเข้า (Energy In)', terms:[
+      ['Target Calories','พลังงานเป้าหมายที่ควรกินต่อวัน ตามเป้าหมาย (ลด/เพิ่ม/รักษาน้ำหนัก)'],
+      ['จำนวนหน่วย (dntt_quantity)','กินกี่ที่/กี่หน่วย ปรับทีละ 0.5 — ระบบคูณกับค่าสารอาหารต่อ 1 หน่วยให้เอง ไม่ต้องคูณมือ'],
+    ]},
+    { cat:'out', label:'🔥 พลังงานออก (Energy Out)', terms:[
+      ['Baseline Expenditure','พลังงานพักนิ่งที่ใช้เป็นฐานรายงาน = BMR×1.2 คงที่เสมอ (ไม่ใช่ AF จริง)'],
+      ['METs (Metabolic Equivalents)','หน่วยวัดความหนักกิจกรรม เทียบกับพลังงานขณะนั่งเฉยๆ (1 MET)'],
+      ['NET calories','พลังงานที่หัก 1 MET (พลังงานพักนิ่ง) ออกแล้ว กันนับซ้ำกับ Baseline'],
+      ['1RM (Estimated One-Rep Max)','น้ำหนักหนักสุดที่ยกไหวแค่ครั้งเดียว — ไม่ได้ให้ทดสอบยกจริง แต่ประมาณจากประวัติ น้ำหนัก×(1+ครั้ง/30)'],
+      ['Training Volume','งานรวมที่ยกทั้งวัน = น้ำหนัก×ครั้ง สะสมทุกเซต (แสดงผลเท่านั้น ไม่เก็บ DB)'],
+      ['RI (%1RM)','วันนี้ยกกี่ % ของ 1RM ตัวเอง — ไม้บรรทัดวัดว่า "หนักไหม" เทียบกับตัวเอง ไม่เทียบกับคนอื่น'],
+      ['Dynamic METs Logic Matrix','MET ต่อเซต เลือกจากหมวดท่า (แรงต้าน/น้ำหนักตัว) + ประเภทท่า (Compound/Isolation) + เวลาพักหลังเซตนั้น + Reps ไล่เงื่อนไขบนลงล่าง เจอข้อแรกที่ตรงแล้วหยุด — ค่า 3.5/5.0/6.0 (แรงต้าน) · 2.8/3.5/3.8/8.0 (น้ำหนักตัว) ตรงรหัส Compendium 2011'],
+      ['Session MET','ค่าเฉลี่ยของ MET ทุกเซตในเซสชันนี้'],
+      ['%1RM (ระดับความหนัก)','ยกหนักเทียบตัวเองแค่ไหน → เบา/กลาง/หนัก — เป็น label แสดงผลเท่านั้น ไม่ใช้เลือก MET และไม่คูณเข้า Final MET'],
+      ['Final MET','ความเหนื่อยจริงของเซสชันนี้ = Session MET ตรงๆ ไม่มีตัวคูณต่อ (บีบให้อยู่ 1.5–9.5)'],
+      ['Smart Auto Calorie','ระบบเดา MET เวทเทรนนิ่งเองจากหมวดท่า+ประเภทท่า+เวลาพัก+Reps ต่อเซต (Logic Matrix) แทนให้ผู้ใช้เลือกความหนักเอง'],
+    ]},
+    { cat:'bal', label:'⚖️ สรุป/สมดุลพลังงาน', terms:[
+      ['Energy Balance','พลังงานเข้า − พลังงานออกทั้งวัน (ติดลบ = ขาดดุล)'],
+    ]},
+  ],
+  renderGlossary(){
+    document.getElementById('glContent').innerHTML = this.glossary.map(group => `
+      <div class="gcat gcat-${group.cat}"><span class="gcat-dot"></span>${group.label}</div>
+      ${group.terms.map(([t,d])=>`<div class="gterm g-${group.cat}"><b>${t}</b><span>${d}</span></div>`).join('')}
+    `).join('');
+  },
+
+  init(){
+    this.renderGlossary();
+    this.calcFoundation();
+    this.calcTarget();
+    this.calcMacros();
+    this.renderFood();
+    this.calcBaseline();
+    this.renderCardio();
+    this.renderWeight();
+    this.calcTotalOutput();
+    this.calcBalance();
+    this.calcStatus();
+    this.calcBmiRecap();
+    this.updateHeadHeight();
+    this.watchZoom();
+    window.addEventListener('resize', () => this.updateHeadHeight());
+  }
+};
+
+window.App = App;
+document.addEventListener('DOMContentLoaded', ()=>App.init());
+</script>
+
+</body>
+</html>
