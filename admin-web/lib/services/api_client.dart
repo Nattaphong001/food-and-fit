@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get/get.dart' hide Response;
-import 'package:get_storage/get_storage.dart';
 import '../core/constants/api_config.dart';
 import '../views/login_view.dart';
 import 'admin_auth_service.dart';
@@ -19,7 +19,7 @@ class ApiClient {
   static String get baseUrl => '$serverUrl/api';
 
   late Dio dio;
-  final storage = GetStorage();
+  static const _secureStorage = FlutterSecureStorage();
   static bool _handling401 = false;
 
   ApiClient() {
@@ -35,9 +35,11 @@ class ApiClient {
     ));
 
     // --- Interceptor: ใส่ Token อัตโนมัติก่อนส่ง Request ---
+    // token ย้ายไปเก็บ flutter_secure_storage แล้ว — อ่านเป็น async ต้องรอผลก่อนค่อย
+    // handler.next() ไม่งั้น request หลุดออกไปแบบไม่มี Authorization header
     dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) {
-        final token = storage.read('auth_token');
+      onRequest: (options, handler) async {
+        final token = await _secureStorage.read(key: 'auth_token');
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';
         }
