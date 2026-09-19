@@ -467,10 +467,10 @@ table.crud td.unit-cell input{background:#fcfcfd}
         <div style="margin-top:7px">
           ✍️ <b>ท่าที่ฝึก</b> (ผู้ใช้เลือก — ระบบอ่านหมวด/ประเภทท่าจากตารางท่าฝึกเอง)
           · ✍️ <b>น้ำหนักที่ยก + จำนวนครั้ง (Reps)</b> (กรอกตอนฝึกแต่ละเซต — Reps ใช้เลือก MET เฉพาะหมวดแรงต้าน)
-          · ✍️ <b>เวลาพักหลังเซตนั้น</b> (นาฬิกาพักในแอปจับเอง ไม่ทราบ → ใช้ความหนาแน่นเฉลี่ยเซสชันแทน)
+          · ✍️ <b>เวลาพักหลังเซตนั้น</b> (นาฬิกาพักในแอปจับเอง — เซตสุดท้ายไม่มีการพักจริงจึงไม่ทราบ → ใช้ค่าเฉลี่ยเวลาพักของเซตอื่น ไม่มีเลยจึงใช้ความหนาแน่นเฉลี่ยเซสชัน)
           · ✍️ <b>เวลารวม</b> (นาฬิกาในแอปจับเอง ไม่ต้องกด) · ✍️ <b>น้ำหนักตัว</b> (จากโปรไฟล์)
           · 🤖 <b>1RM เดิมของท่านี้</b> (ระบบค้นจากประวัติเอง — ใช้ทำ label ความหนักเท่านั้น)
-          · 🔒 <b>Logic Matrix เลือก MET/เพดาน/clamp ทั้งหมด</b> (ดูค่าคงที่ด้านล่าง)
+          · 🔒 <b>Logic Matrix เลือก MET/clamp ทั้งหมด</b> (ดูค่าคงที่ด้านล่าง)
         </div>
       </div>
 
@@ -536,8 +536,8 @@ table.crud td.unit-cell input{background:#fcfcfd}
         <tbody id="b3_tbody"></tbody>
       </table>
       <button class="add-btn" onclick="App.addSet()">+ เพิ่มเซต</button>
-      <div class="crud-note">ช่อง "พักหลังเซตนี้" เว้นว่างได้ (เหมือนแถวเก่าก่อน 2026-09-18 ที่ <code>wtrs_rest_seconds</code> เป็น NULL) —
-        ระบบ fallback ไปใช้ความหนาแน่นเฉลี่ยทั้งเซสชันแทนเฉพาะเซตที่ไม่ทราบเวลาพักจริง</div>
+      <div class="crud-note">ช่อง "พักหลังเซตนี้" เว้นว่างได้ — แอปส่งเซตสุดท้ายของเซสชันเป็นว่างเสมอ (ไม่มีการพักจริงหลังเซตสุดท้าย) และแถวเก่าก่อน 2026-09-18 ที่ <code>wtrs_rest_seconds</code> เป็น NULL —
+        เซตที่ว่างใช้ <b>ค่าเฉลี่ยเวลาพักของเซตอื่นในเซสชัน</b> ถ้าทั้งเซสชันไม่มีเวลาพักเลยจึงใช้ความหนาแน่นเฉลี่ยทั้งเซสชันแทน</div>
 
       <div class="result-grid" style="margin-top:14px">
         <div class="result-box hl"><div class="lbl">พลังงานรวมเซสชัน (NET)</div><div class="val" id="rb3_kcal">-</div><div class="sub">kcal — ค่านี้คือที่เก็บลง DB</div></div>
@@ -577,7 +577,6 @@ table.crud td.unit-cell input{background:#fcfcfd}
             <thead><tr><th>ค่า</th><th>ตั้งไว้เท่าไร</th><th>ทำไมต้องมี</th></tr></thead>
             <tbody>
               <tr><td class="k">Final MET</td><td class="k">= Session MET ตรงๆ</td><td>ไม่มีตัวคูณต่อ — MET มาจาก Logic Matrix ล้วนๆ (บทที่ 2 ข้อ 2.1.4.12)</td></tr>
-              <tr><td class="k">เพดานเวลา</td><td class="k">4 นาที/เซต</td><td>กันลืมกดจบเวิร์กเอาท์แล้วนาฬิกาเดินยาว → ได้พลังงานฟรีไม่จำกัด</td></tr>
               <tr><td class="k">clamp Final MET</td><td class="k">1.5 – 9.5</td><td>กันค่าสุดโต่งหลุดขอบจากอินพุตประหลาด (ในทางปฏิบัติ Logic Matrix ด้านบน 2.8-8.0 ไม่ชนขอบอยู่แล้ว)</td></tr>
               <tr><td class="k">หัก 1 MET</td><td class="k">NET</td><td>1 MET = พลังงานตอนนั่งเฉยๆ ซึ่ง Baseline (BMR×1.2) นับไปแล้ว ไม่หักออกจะนับซ้ำ</td></tr>
               <tr><td class="k">%1RM → ระดับความหนัก</td><td class="k">&lt;50% เบา · 50-70% กลาง · ≥70% หนัก</td><td>label แสดงผลเท่านั้น (<code>wtrs_intensity_level</code>) ไม่ใช้เลือก MET และไม่คูณเข้ากับ Final MET</td></tr>
@@ -700,7 +699,7 @@ const App = {
   cardioItems: [
     {name:'จ๊อกกิ้ง (Jogging)', mets:8.3, minutes:30},
   ],
-  // rest = เวลาพักหลังเซตนี้ (วินาที) — null = ไม่ทราบ (แถวเก่าก่อน wtrs_rest_seconds, ใช้ proxy ความหนาแน่นเฉลี่ยแทน)
+  // rest = เวลาพักหลังเซตนี้ (วินาที) — null = ไม่ทราบ (เซตสุดท้ายของเซสชัน หรือแถวเก่าก่อน wtrs_rest_seconds) ใช้ค่าเฉลี่ยของเซตอื่น ไม่มีเลยใช้ proxy ความหนาแน่นเฉลี่ยแทน
   weightSets: [
     {weight:60, reps:10, rest:null},
     {weight:60, reps:10, rest:null},
@@ -1067,18 +1066,19 @@ const App = {
       return;
     }
 
-    // ── Step 1: เพดานเวลา + ความหนาแน่น (คำนวณก่อน Step 2 เพราะใช้เป็น proxy แทนเวลาพักรายเซตที่ไม่ทราบ)
-    const actualMinutes = durationSec/60;
-    const cap = totalSets*4.0;
-    const cappedMinutes = Math.min(actualMinutes, cap);
-    const capHit = actualMinutes > cap;
-    const density = cappedMinutes/totalSets;
+    // ── Step 1: เวลารวมทั้งเซสชัน (ไม่มีเพดาน) + ความหนาแน่น (คำนวณก่อน Step 2 เพราะใช้เป็น proxy แทนเวลาพักรายเซตที่ไม่ทราบ)
+    const minutes = durationSec/60;
+    const density = minutes/totalSets;
     const densityProxySeconds = density*60;
+    // เวลาพักที่ใช้แทนเซตที่ไม่ทราบ = ค่าเฉลี่ยของเซตที่ทราบ ไม่มีเซตไหนทราบเลยจึงใช้ proxy ความหนาแน่น
+    const knownRests = validSets.filter(s=>s.rest!==null && s.rest!==undefined).map(s=>s.rest);
+    const unknownFromOthers = knownRests.length>0;
+    const unknownRestSeconds = unknownFromOthers ? knownRests.reduce((a,r)=>a+r,0)/knownRests.length : densityProxySeconds;
 
     // ── Step 2: Logic Matrix ต่อเซต (หมวดท่า + ประเภทท่า + เวลาพัก + Reps) → เฉลี่ยเป็น Session MET
     const perSetCalc = validSets.map(s=>{
       const usedProxy = (s.rest===null || s.rest===undefined);
-      const restUsed = usedProxy ? densityProxySeconds : s.rest;
+      const restUsed = usedProxy ? unknownRestSeconds : s.rest;
       const r = this.resolveSetBaseMET(equipment, exType, s.reps, restUsed);
       return { ...s, restUsed, usedProxy, met: r.met, rule: r.rule };
     });
@@ -1111,7 +1111,7 @@ const App = {
     if (finalMET>9.5){ finalMET=9.5; clamped=true; }
 
     // ── Step 5: NET kcal + หารต่อเซต
-    let totalKcal = (finalMET-1)*3.5*bw/200*cappedMinutes;
+    let totalKcal = (finalMET-1)*3.5*bw/200*minutes;
     if (totalKcal<0) totalKcal=0;
     const perSet = totalKcal/totalSets;
 
@@ -1120,20 +1120,18 @@ const App = {
     document.getElementById('b3_warn').classList.toggle('show', clamped);
 
     const perSetLines = perSetCalc.map((s,i)=>
-      `เซต #${i+1}: Reps=${s.reps}, พัก=${s.restUsed.toFixed(0)}วิ${s.usedProxy?' (proxy — ไม่ทราบค่าจริง)':''} → MET=${s.met.toFixed(1)}  [${s.rule}]`
+      `เซต #${i+1}: Reps=${s.reps}, พัก=${s.restUsed.toFixed(0)}วิ${s.usedProxy?(unknownFromOthers?' (ไม่ทราบ — ใช้ค่าเฉลี่ยพักของเซตอื่น)':' (proxy — ไม่ทราบค่าจริง)'):''} → MET=${s.met.toFixed(1)}  [${s.rule}]`
     ).join('\n');
 
     document.getElementById('b3_flow').innerHTML = [
-      this.flowStep(1, 'เวลาที่เอามานับจริง', 'Effective Minutes',
-        'นาฬิกาจับเวลารวมพักด้วย แต่ถ้าลืมกดจบเวิร์กเอาท์จะได้พลังงานฟรี จึงมีเพดาน 4 นาทีต่อเซต',
-        `เวลาที่จับได้จริง = ${durationSec} วินาที = ${actualMinutes.toFixed(2)} นาที
-เพดาน = ${totalSets} เซต × 4 นาที = ${cap.toFixed(0)} นาที
-เอาค่าที่น้อยกว่า → <u>${cappedMinutes.toFixed(2)} นาที</u>${capHit ? '  ⚠️ ชนเพดาน (เวลาจริงยาวเกิน ระบบตัดให้)' : '  (ไม่ชนเพดาน ใช้เวลาจริง)'}
-ความหนาแน่นเฉลี่ย (proxy ใช้แทนเซตที่ไม่ทราบเวลาพักจริง) = ${cappedMinutes.toFixed(2)} ÷ ${totalSets} = ${density.toFixed(2)} นาที/เซต = ${densityProxySeconds.toFixed(0)} วินาที`,
-        cappedMinutes.toFixed(2), 'นาที'),
+      this.flowStep(1, 'เวลาที่เอามานับจริง', 'Duration Minutes',
+        'นาฬิกาจับเวลารวมพักด้วย ใช้เวลารวมตรงๆ เหมือนคาร์ดิโอ ไม่มีเพดานเวลา',
+        `เวลาที่จับได้จริง = ${durationSec} วินาที = <u>${minutes.toFixed(2)} นาที</u>
+ความหนาแน่นเฉลี่ย (proxy ใช้เฉพาะเมื่อไม่มีเซตไหนทราบเวลาพักจริงเลย) = ${minutes.toFixed(2)} ÷ ${totalSets} = ${density.toFixed(2)} นาที/เซต = ${densityProxySeconds.toFixed(0)} วินาที`,
+        minutes.toFixed(2), 'นาที'),
 
       this.flowStep(2, 'ท่านี้เหนื่อยแค่ไหนต่อเซต', 'Dynamic METs Logic Matrix',
-        'ไล่เงื่อนไขต่อเซตตามหมวดท่า (แรงต้าน/น้ำหนักตัว) + ประเภทท่า + เวลาพักหลังเซตนั้น (ค่าจริงถ้ามี ไม่งั้นใช้ proxy ด้านบน) + Reps เจอข้อแรกที่ตรงแล้วหยุด แล้วเฉลี่ยรวมทั้งเซสชัน',
+        'ไล่เงื่อนไขต่อเซตตามหมวดท่า (แรงต้าน/น้ำหนักตัว) + ประเภทท่า + เวลาพักหลังเซตนั้น (ค่าจริงถ้ามี ไม่งั้นใช้ค่าเฉลี่ยเวลาพักของเซตอื่น หรือ proxy ด้านบนถ้าไม่มีเซตไหนทราบเลย) + Reps เจอข้อแรกที่ตรงแล้วหยุด แล้วเฉลี่ยรวมทั้งเซสชัน',
         `${perSetLines}\n\nSession MET = เฉลี่ย ${totalSets} เซต = <u>${sessionBaseMET.toFixed(3)}</u>`,
         sessionBaseMET.toFixed(2), 'MET เฉลี่ย'),
 
@@ -1150,7 +1148,7 @@ ${clamped ? `หลุดช่วงที่ยอมรับ [1.5–9.5] →
 
       this.flowStep(5, 'แปลงเป็นพลังงาน แล้วหารลงแต่ละเซต', 'kcal (NET)',
         'สูตร ACSM เดียวกับคาร์ดิโอเป๊ะ — หัก 1 MET ออกก่อน เพราะพลังงานตอนนั่งเฉยๆ ถูกนับไปแล้วใน Baseline',
-        `พลังงาน = (${finalMET.toFixed(2)} − 1) × 3.5 × ${bw} กก. ÷ 200 × ${cappedMinutes.toFixed(2)} นาที = <u>${totalKcal.toFixed(2)} kcal</u>
+        `พลังงาน = (${finalMET.toFixed(2)} − 1) × 3.5 × ${bw} กก. ÷ 200 × ${minutes.toFixed(2)} นาที = <u>${totalKcal.toFixed(2)} kcal</u>
 หารเท่ากันทุกเซต = ${totalKcal.toFixed(2)} ÷ ${totalSets} = ${perSet.toFixed(2)} kcal/เซต
 (เก็บลง wtrs_calories รายแถว — รวมกลับมาแล้วได้เท่าเดิมพอดี)`,
         round2(totalKcal).toFixed(2), 'kcal ทั้งเซสชัน', true),
