@@ -31,10 +31,11 @@ type WeightExercise struct {
 	WetDifficulty   int8                   `gorm:"type:tinyint;column:wet_difficulty" json:"wet_difficulty"`
 	WetEquipment    int8                   `gorm:"type:tinyint;column:wet_equipment" json:"wet_equipment"`
 	WetExerciseType int8                   `gorm:"type:tinyint;column:wet_exercise_type" json:"wet_exercise_type"` // 1=หลายกลุ่ม 2=เฉพาะส่วน
-	// MET พื้นฐานของท่านี้ ใช้เป็นจุดตั้งต้นของ Smart Auto Calorie (เพิ่มเข้ามา 2026-09-08) — ดู
-	// services.CalculateWeightTrainingCalories และ migrations/2026-09-08_add_weight_calorie_calc_columns.sql
-	WetBaseMet      float64                `gorm:"type:decimal(3,1);column:wet_base_met;not null" json:"wet_base_met"`
-	MuscleDetails   []ExerciseMuscleDetail `gorm:"foreignKey:WetID;references:WetID" json:"muscle_details"`
+	// WetBaseMet (wet_base_met) — ตัดออกจาก struct แล้ว (2026-09-19) เพราะเป็น dead input มาตั้งแต่
+	// Dynamic Base MET (2026-09-08): services.CalculateWeightTrainingCalories ไม่เคยอ่านค่านี้เลย
+	// คอลัมน์ถูก DROP ออกจาก DB จริงแล้วด้วย (migrations/2026-09-19_drop_wet_base_met.sql) ไม่ใช่แค่
+	// เลิกใช้ในโค้ดเฉยๆ เหมือนที่เคยตัดสินใจไว้ก่อนหน้า (ดู ../../CLAUDE.md ข้อ 7[B-1])
+	MuscleDetails []ExerciseMuscleDetail `gorm:"foreignKey:WetID;references:WetID" json:"muscle_details"`
 }
 
 func (WeightExercise) TableName() string {
@@ -186,7 +187,7 @@ type WeightTrainingResult struct {
 	WtrsDuration *int `gorm:"type:smallint unsigned;column:wtrs_duration" json:"wtrs_duration"`
 	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป (เพิ่มเข้ามา 2026-09-18, migrations/2026-09-18_
 	// add_weight_training_rest_seconds.sql) — NULL = ไม่ทราบ (แถวเก่า/มือถือยังไม่ส่งมา) ใช้กับ
-	// Dynamic Base MET ของ Step 1, services.CalculateWeightTrainingCalories (fallback เป็นความ
+	// Dynamic METs Logic Matrix, services.CalculateWeightTrainingCalories (fallback เป็นความ
 	// หนาแน่นเฉลี่ยทั้งเซสชันเมื่อ NULL)
 	WtrsRestSeconds    *int           `gorm:"type:smallint unsigned;column:wtrs_rest_seconds" json:"wtrs_rest_seconds"`
 	WtrsIntensityLevel int8           `gorm:"type:tinyint;column:wtrs_intensity_level" json:"wtrs_intensity_level"` // 1=เบา, 2=กลาง, 3=หนัก — ตั้งแต่ 2026-09-08 ระบบอนุมานเองจาก %1RM ไม่ใช่ผู้ใช้เลือก
