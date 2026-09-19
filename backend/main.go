@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -14,6 +14,12 @@ import (
 )
 
 func main() {
+	// structured logging (log/slog, stdlib — ไม่ต้องเพิ่ม dependency ใหม่) เป็น default logger
+	// ของทั้งแอป ตั้งครั้งเดียวตรงนี้ก่อนอย่างอื่นทั้งหมด — JSON ต่อบรรทัด ให้ search/grep ใน log
+	// centralized ได้ง่ายกว่า fmt.Println/log.Printf ข้อความไทยเดิม (banner ตอนบูตยังคง
+	// fmt.Println ไว้เหมือนเดิม อ่านง่ายกว่าตอน dev บนเครื่อง ไม่ใช่ log event ที่ต้อง query)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	// โหลด .env file
 	_ = godotenv.Load(".env")
 
@@ -49,7 +55,8 @@ func main() {
 	if certFile != "" && keyFile != "" {
 		fmt.Println("🔒 TLS enabled")
 		if err := r.RunTLS(serverAddr, certFile, keyFile); err != nil {
-			log.Fatalf("❌ Server failed to start (TLS): %v", err)
+			slog.Error("server failed to start (TLS)", "err", err)
+			os.Exit(1)
 		}
 		return
 	}
@@ -58,6 +65,7 @@ func main() {
 		fmt.Println("⚠️  กำลังรันแบบ HTTP ธรรมดา (ไม่มี TLS) — บน production ควรวางไว้หลัง reverse proxy ที่ทำ HTTPS หรือกำหนด TLS_CERT_FILE/TLS_KEY_FILE")
 	}
 	if err := r.Run(serverAddr); err != nil {
-		log.Fatalf("❌ Server failed to start: %v", err)
+		slog.Error("server failed to start", "err", err)
+		os.Exit(1)
 	}
 }

@@ -84,7 +84,7 @@ func GetAdminDashboardSummary(c *gin.Context) {
 		newMembersTimeline = []RegPoint{}
 	}
 
-	// 6. สัดส่วนเป้าหมายสุขภาพ (1=ลดน้ำหนัก, 2=เพิ่มกล้ามเนื้อ, 3=รักษาน้ำหนัก) — นับจากค่าล่าสุดต่อสมาชิก
+	// 6. สัดส่วนเป้าหมายสุขภาพ (1=ลดน้ำหนัก, 2=เพิ่มน้ำหนัก, 3=รักษาน้ำหนัก) — นับจากค่าล่าสุดต่อสมาชิก
 	type TargetCount struct {
 		Target int `gorm:"column:mbs_target" json:"target"`
 		Count  int `gorm:"column:count"      json:"count"`

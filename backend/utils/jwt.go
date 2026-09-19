@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"log"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -23,7 +23,8 @@ func getJWTSecret() []byte {
 	jwtSecretOnce.Do(func() {
 		s := os.Getenv("JWT_SECRET")
 		if s == "" {
-			log.Fatal("❌ JWT_SECRET is not set. กรุณาตั้งค่า JWT_SECRET ในไฟล์ .env ก่อนรันเซิร์ฟเวอร์ (ห้ามปล่อยว่างหรือใช้ค่า default)")
+			slog.Error("JWT_SECRET is not set — กรุณาตั้งค่า JWT_SECRET ในไฟล์ .env ก่อนรันเซิร์ฟเวอร์ (ห้ามปล่อยว่างหรือใช้ค่า default)")
+			os.Exit(1)
 		}
 		jwtSecretValue = []byte(s)
 	})

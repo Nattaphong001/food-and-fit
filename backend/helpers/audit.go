@@ -3,7 +3,7 @@ package helpers
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"food_and_fit_api/config"
 	"food_and_fit_api/models"
@@ -22,7 +22,7 @@ func LogAudit(c *gin.Context, actorType string, actorID int, action, detail stri
 		IPAddress: c.ClientIP(),
 	}
 	if err := config.DB.Create(&entry).Error; err != nil {
-		log.Printf("⚠️  audit log บันทึกไม่สำเร็จ: %v", err)
+		slog.Warn("audit log write failed", "err", err, "action", action, "actor_type", actorType)
 	}
 }
 
@@ -34,7 +34,7 @@ func jsonPtrOrNil(v interface{}) *string {
 	}
 	b, err := json.Marshal(v)
 	if err != nil {
-		log.Printf("⚠️  audit log: marshal ค่าไม่สำเร็จ: %v", err)
+		slog.Warn("audit log marshal failed", "err", err)
 		return nil
 	}
 	s := string(b)
@@ -65,6 +65,6 @@ func LogAdminMutation(c *gin.Context, action, table string, recordID interface{}
 		IPAddress:   c.ClientIP(),
 	}
 	if err := config.DB.Create(&entry).Error; err != nil {
-		log.Printf("⚠️  audit log บันทึกไม่สำเร็จ: %v", err)
+		slog.Warn("audit log write failed", "err", err, "action", action, "table", table)
 	}
 }
