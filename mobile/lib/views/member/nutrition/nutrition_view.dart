@@ -4,6 +4,8 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/health_calculations.dart' as calc;
+import '../../../core/utils/dashboard_insights.dart' as di;
 import '../../../core/utils/nutrition_format.dart';
 import '../../../core/widgets/cached_image.dart';
 import '../../../core/widgets/weekly_calendar_component.dart';
@@ -96,14 +98,7 @@ class NutritionViewState extends State<NutritionView> with RouteAware {
   // goalType ที่ไม่ใช่ 1/2/3 (ค่าเพี้ยน/ไม่รู้จัก) ห้ามเดาสัดส่วนมาโครแทนผู้ใช้ — ดู _macroTargetPct
   bool get _hasValidGoalType => _goalType == 1 || _goalType == 2 || _goalType == 3;
 
-  Map<String, double> get _macroTargetPct {
-    switch (_goalType) {
-      case 1: return {'protein': 0.40, 'carb': 0.35, 'fat': 0.25}; // ลดน้ำหนัก
-      case 2: return {'protein': 0.30, 'carb': 0.50, 'fat': 0.20}; // เพิ่มน้ำหนัก
-      case 3: return {'protein': 0.20, 'carb': 0.50, 'fat': 0.30}; // รักษาน้ำหนัก
-      default: return {'protein': 0.0, 'carb': 0.0, 'fat': 0.0}; // ไม่รู้จักเป้าหมาย — ดู _hasValidGoalType
-    }
-  }
+  Map<String, double> get _macroTargetPct => di.macroTargetPct(_goalType);
 
   double get _targetCalories => (_analytics?.targetTdee ?? 0) > 0 ? _analytics!.targetTdee : 2000;
   double get _targetProtein => _targetCalories * _macroTargetPct['protein']! / 4;
@@ -324,13 +319,13 @@ class NutritionViewState extends State<NutritionView> with RouteAware {
     final consumed = _totalCalories;
     final progress = (consumed / _targetCalories).clamp(0.0, 1.0);
     final remaining = (_targetCalories - consumed).clamp(0.0, double.infinity);
-    // สถานะเทียบเป้า ±10% → Over/On/Under Target — ของเดิมเช็คแค่
-    // เกิน/ไม่เกิน ไม่มี "ต่ำกว่าเป้า" เลย ไม่ตรงสูตร
+    // สถานะเทียบเป้า ±10% (บทที่ 2 หัวข้อ 2.1.4.7) — ใช้ calc.energyBalanceStatus() เดียวกับ
+    // dashboard_view.dart แทนการคำนวณเอง (เดิมคนละสี/คนละข้อความกับหน้า dashboard ทั้งที่เกณฑ์
+    // เดียวกัน — รวมมาไว้จุดเดียวกันแล้ว)
+    final (statusLabel, statusColor) = calc.energyBalanceStatus(consumed, _targetCalories);
     final pctOfTarget = _targetCalories > 0 ? consumed / _targetCalories : 0.0;
-    final isOver = pctOfTarget > 1.10;
-    final isUnder = pctOfTarget < 0.90;
-    final statusLabel = isOver ? 'เกินเป้า' : (isUnder ? 'ต่ำกว่าเป้า' : 'ตามแผน');
-    final statusColor = isOver ? Colors.orange : (isUnder ? AppColors.alertInfo : AppColors.primaryGreen);
+    final isOver = pctOfTarget > 1 + calc.kEnergyBalanceTolerance;
+    final isUnder = pctOfTarget < 1 - calc.kEnergyBalanceTolerance;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/health_calculations.dart' as calc;
 import '../../../core/widgets/app_back_button.dart';
 import '../../../core/widgets/app_confirm_dialog.dart';
 import '../../../core/widgets/cached_image.dart';
@@ -299,7 +300,7 @@ class _WeightTrainingExerciseViewState
           'active_seconds': _activeSetSeconds.clamp(5, 600),
           // เวลาพักหลังเซตนี้ (วินาที) — คือ _restSeconds ที่นับมาตั้งแต่กดปุ่มพักหลังจบเซตนี้
           // จนถึงตอนนี้ที่กด "จบการพัก" ส่งขึ้น API เป็น wtrs_rest_seconds ให้ Dynamic Base MET
-          // (Step 1, ดู backend calculator.go) ใช้แทน proxy ความหนาแน่นเฉลี่ยทั้งเซสชัน
+          // (Logic Matrix, ดู backend calculator.go) ใช้แทน proxy ความหนาแน่นเฉลี่ยทั้งเซสชัน
           'rest_seconds': _restSeconds,
         });
       });
@@ -653,7 +654,7 @@ class _WeightTrainingExerciseViewState
           // เวลาออกแรงจริงต่อเซต จับไว้แล้วตอน _finishRest (ดู _activeSetSeconds) ส่งขึ้นไปด้วย
           // ครั้งแรก — ก่อนหน้านี้จับไว้เฉยๆ ไม่เคยส่งขึ้น API เลย
           'active_seconds': s['active_seconds'] ?? 0,
-          // เวลาพักหลังเซตนี้ (วินาที) — ใช้กับ Dynamic Base MET (Step 1, ดู backend
+          // เวลาพักหลังเซตนี้ (วินาที) — ใช้กับ Dynamic METs Logic Matrix (ดู backend
           // services.CalculateWeightTrainingCalories) เพิ่งเริ่มส่งขึ้น API ตอนนี้ (2026-09-18)
           'wtrs_rest_seconds': s['rest_seconds'] ?? 0,
         };
@@ -667,16 +668,17 @@ class _WeightTrainingExerciseViewState
     final AppAlertType type;
     if (result['success'] == true) {
       // Volume/Estimated 1RM คำนวณแสดงผลอย่างเดียวตามสูตรบทที่ 2 — ไม่บันทึกลง DB
-      double volume = 0;
+      final parsedSets = <({double weight, int reps})>[];
       double best1RM = 0;
       for (final s in _completedSets) {
         final reps = int.tryParse(s['reps'].toString()) ?? 0;
         if (reps <= 0) continue;
         final weight = double.tryParse(s['weight'].toString()) ?? 0.0;
-        volume += weight * reps;
-        final e1RM = weight * (1 + reps / 30);
+        parsedSets.add((weight: weight, reps: reps));
+        final e1RM = calc.estimateOneRepMax(weight, reps);
         if (e1RM > best1RM) best1RM = e1RM;
       }
+      final volume = calc.trainingVolume(parsedSets);
       final caloriesBurned = (result['calories_burned'] as num?)?.round();
       final caloriesPart = caloriesBurned != null ? ' • เผาผลาญ $caloriesBurned kcal' : '';
       message = 'บันทึกแล้ว • Volume ${volume.round()} กก. • 1RM โดยประมาณ ${best1RM.round()} กก.$caloriesPart';
