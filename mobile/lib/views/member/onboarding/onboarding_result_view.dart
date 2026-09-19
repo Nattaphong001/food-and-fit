@@ -48,21 +48,12 @@ class _OnboardingResultViewState extends State<OnboardingResultView> {
 
   double get _bmiProgress => calc.bmiProgress(_bmi);
 
-  Color get _bmiColor {
-    if (_bmi < 18.5) return const Color(0xFFAB7FE8);
-    if (_bmi < 23.0) return const Color(0xFF3CC446);
-    if (_bmi < 25.0) return const Color(0xFFE67A40);
-    return const Color(0xFFDE3E3E);
-  }
+  Color get _bmiColor => calc.bmiColor(_bmi);
 
   String get _bmiLabel => calc.bmiLabel(_bmi);
 
-  double get _targetCalories {
-    if ((_stats?.targetCal ?? 0) > 0) return _stats!.targetCal;
-    final tdee = _stats?.tdee ?? 0;
-    final bmr = _stats?.bmr ?? 0;
-    return calc.calcTargetCalories(tdee: tdee, bmr: bmr, target: _target);
-  }
+  // เป้าหมายพลังงานมาจาก API (backend services.CalculateGoals) เท่านั้น — ไม่คำนวณซ้ำฝั่ง Dart (ไม่มีค่า → "-")
+  double get _targetCalories => _stats?.targetCal ?? 0;
 
   String get _targetLabel {
     if (_target == 1) return 'ลดน้ำหนัก';

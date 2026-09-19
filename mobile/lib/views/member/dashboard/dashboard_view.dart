@@ -13,6 +13,7 @@ import '../../../services/workout_service.dart';
 import '../../../services/nutrition_service.dart';
 import '../../../services/api_client.dart';
 import '../../../core/utils/health_calculations.dart' as calc;
+import '../../../core/utils/dashboard_insights.dart' as di;
 
 enum _ViewMode { graph, table }
 
@@ -73,45 +74,6 @@ class _DashboardViewState extends State<DashboardView>
     super.dispose();
   }
 
-  static Map<String, dynamic> _asFailure(Object e) =>
-      {'success': false, 'message': e.toString()};
-
-  static String _isoDate(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  /// เติมวันที่ที่ไม่มีข้อมูลให้เป็นจุดค่า 0 เพื่อให้ชุดข้อมูลมีจำนวนวันครบตามช่วงเวลา
-  /// จำเป็นเพราะ date_list ฝั่ง SQL (dailySumRangeSQL/dailySumBetweenSQL) เป็น UNION ของวันที่
-  /// ที่มีบันทึกจริงอย่างน้อย 1 รายการ (nutrition/cardio/weight) เท่านั้น — วันที่ไม่มีกิจกรรม
-  /// เลยจะหายไปทั้งแถว ไม่ได้คืนมาเป็น 0 ทุกจุดที่สมมติว่าจำนวนแถว = จำนวนวันในช่วงจะพัง
-  /// ถ้าไม่เติมช่องว่างนี้ก่อน (คำสั่งที่ 17)
-  ///
-  /// ⚠️ ห้ามเอาผลลัพธ์จากฟังก์ชันนี้ไปหาร "ค่าเฉลี่ยปริมาณ" (เช่น weeklyAvgCalories) เพราะ
-  /// densify เติม 0 ให้วันที่ไม่มีบันทึก ซึ่ง "ไม่มีข้อมูล" ไม่เท่ากับ "ศูนย์" — การหารด้วย
-  /// ความยาวชุด dense จะเป็นการยืนยันว่าวันนั้นกิน/เผา 0 kcal จริง ทั้งที่ความจริงคือไม่รู้
-  /// (ดูคำสั่งที่ 19) ใช้ผลลัพธ์นี้ได้เฉพาะกับสองประเภทงาน:
-  ///   1. กราฟที่ต้องมีจุดครบทุกวันเพื่อไม่ให้เส้น/แท่งบิดเบือน (เว้นช่องว่างให้ถูกวัน)
-  ///   2. เมตริกที่ "วัดการปฏิบัติ" ไม่ใช่ "วัดปริมาณ" เช่น เป้าหมายรายสัปดาห์/ความสม่ำเสมอ/
-  ///      Adherence/streak ซึ่งวันที่ไม่บันทึก = ไม่ได้ทำตามเป้าจริง ตัวหาร 7 วันปฏิทินถูกต้อง
-  ///      (ดู _weeklyGoalDays ด้านล่างเทียบ)
-  /// ส่วนค่าเฉลี่ยปริมาณ (weeklyAvgCalories/monthlyAvgCalories/cmp.avgCal) ต้องหารด้วย
-  /// "จำนวนวันที่บันทึกจริง" เท่านั้น — คำนวณจากชุดข้อมูลดิบก่อน densify (ดู recordedDays
-  /// ใน _buildWeeklyMacroAverages / MonthStat.recordedDays)
-  static List<T> _densify<T>({
-    required List<T> raw,
-    required DateTime start,
-    required DateTime end,
-    required String Function(T) dateOf,
-    required T Function(String date) emptyOf,
-  }) {
-    final byDate = {for (final item in raw) dateOf(item).split('T').first: item};
-    final out = <T>[];
-    for (var d = start; !d.isAfter(end); d = d.add(const Duration(days: 1))) {
-      final key = _isoDate(d);
-      out.add(byDate[key] ?? emptyOf(key));
-    }
-    return out;
-  }
-
   Future<void> _loadData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
@@ -132,11 +94,11 @@ class _DashboardViewState extends State<DashboardView>
     if (!mounted) return;
     if (showLoading) setState(() => _isLoading = true);
     final r = await Future.wait([
-      AnalyticsService.to.getDailyAnalytics(date: _selectedDate).catchError(_asFailure),
-      AnalyticsService.to.getDailyMealBreakdown(date: _selectedDate).catchError(_asFailure),
-      WorkoutService.to.getWorkoutResults(date: _selectedDate).catchError(_asFailure),
-      WorkoutService.to.getCardioResults(date: _selectedDate).catchError(_asFailure),
-      NutritionService.to.getDailyNutrition(date: _selectedDate).catchError(_asFailure),
+      AnalyticsService.to.getDailyAnalytics(date: _selectedDate).catchError(di.asApiFailure),
+      AnalyticsService.to.getDailyMealBreakdown(date: _selectedDate).catchError(di.asApiFailure),
+      WorkoutService.to.getWorkoutResults(date: _selectedDate).catchError(di.asApiFailure),
+      WorkoutService.to.getCardioResults(date: _selectedDate).catchError(di.asApiFailure),
+      NutritionService.to.getDailyNutrition(date: _selectedDate).catchError(di.asApiFailure),
     ]);
     if (!mounted) return;
     const labels = ['พลังงานรายวัน', 'มื้ออาหาร', 'ผลเวทเทรนนิ่ง', 'ผลคาร์ดิโอ', 'โภชนาการรายวัน'];
@@ -173,12 +135,12 @@ class _DashboardViewState extends State<DashboardView>
     final progressMonthStart = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
     final progressDays = DateTime.now().difference(progressMonthStart).inDays + 1;
     final r = await Future.wait([
-      AnalyticsService.to.getWeeklyAnalytics(date: _selectedWeekEnd).catchError(_asFailure),
-      AnalyticsService.to.getMonthlyAnalytics(month: monthParam).catchError(_asFailure),
-      AnalyticsService.to.getMonthlyAnalytics(month: prevMonthParam).catchError(_asFailure),
-      AnalyticsService.to.getMonthlyComparison(month: monthParam).catchError(_asFailure),
-      AnalyticsService.to.getProgressReport(days: math.max(30, math.min(366, progressDays))).catchError(_asFailure),
-      AnalyticsService.to.getMuscleGroupCoverage(days: 7).catchError(_asFailure),
+      AnalyticsService.to.getWeeklyAnalytics(date: _selectedWeekEnd).catchError(di.asApiFailure),
+      AnalyticsService.to.getMonthlyAnalytics(month: monthParam).catchError(di.asApiFailure),
+      AnalyticsService.to.getMonthlyAnalytics(month: prevMonthParam).catchError(di.asApiFailure),
+      AnalyticsService.to.getMonthlyComparison(month: monthParam).catchError(di.asApiFailure),
+      AnalyticsService.to.getProgressReport(days: math.max(30, math.min(366, progressDays))).catchError(di.asApiFailure),
+      AnalyticsService.to.getMuscleGroupCoverage(days: 7).catchError(di.asApiFailure),
     ]);
     if (!mounted) return;
     const labels = [
@@ -201,7 +163,7 @@ class _DashboardViewState extends State<DashboardView>
       if (r[0]['success'] == true) {
         final wa = r[0]['data'] as WeeklyAnalytics;
         _weekly = WeeklyAnalytics(
-          weekData: _densify(
+          weekData: di.densify(
             raw: wa.weekData, start: weekStart, end: _selectedWeekEnd,
             dateOf: (e) => e.date,
             emptyOf: (date) => WeeklyDataPoint(date: date, calories: 0, caloriesOut: 0),
@@ -213,7 +175,7 @@ class _DashboardViewState extends State<DashboardView>
       if (r[1]['success'] == true) {
         final ma = r[1]['data'] as MonthlyAnalytics;
         _monthly = MonthlyAnalytics(
-          monthData: _densify(
+          monthData: di.densify(
             raw: ma.monthData, start: monthStart, end: monthEnd,
             dateOf: (e) => e.date,
             emptyOf: (date) => MonthlyDataPoint(date: date, calories: 0, caloriesOut: 0),
@@ -226,7 +188,7 @@ class _DashboardViewState extends State<DashboardView>
       if (r[2]['success'] == true) {
         final pma = r[2]['data'] as MonthlyAnalytics;
         _prevMonthly = MonthlyAnalytics(
-          monthData: _densify(
+          monthData: di.densify(
             raw: pma.monthData, start: prevMonthStart, end: prevMonthLastDay,
             dateOf: (e) => e.date,
             emptyOf: (date) => MonthlyDataPoint(date: date, calories: 0, caloriesOut: 0),
@@ -246,35 +208,17 @@ class _DashboardViewState extends State<DashboardView>
   }
 
   void _computeInsight() {
-    if (_daily == null) { _insightMsg = null; return; }
-    final d = _daily!;
-
-    // ยังไม่มีข้อมูลนำเข้า — ไม่ประเมินผล เพื่อไม่ให้แนะนำจากค่า 0
-    if (d.totalCaloriesIn <= 0) {
-      _insightMsg   = 'ยังไม่ได้บันทึกอาหารวันนี้ — บันทึกเพื่อดูผลวิเคราะห์สมดุลพลังงาน';
-      _insightColor = AppColors.textMuted;
-      _insightIcon  = Icons.edit_note_rounded;
-      return;
-    }
-    if (d.totalProtein < _targetProtein * 0.6) {
-      _insightMsg   = 'โปรตีนน้อยไป — เพิ่มอีก ${(_targetProtein - d.totalProtein).round()}g ช่วยรักษากล้ามเนื้อ';
-      _insightColor = const Color(0xFF5B8CFF);
-      _insightIcon  = Icons.fitness_center_rounded;
-    } else if (d.totalCaloriesIn > _targetCalories * (1 + _kTargetTolerance)) {
-      _insightMsg   = 'พลังงานเกินเป้า +${(d.totalCaloriesIn - _targetCalories).round()}kcal — ลองเดิน 30 นาทีเพิ่ม';
-      _insightColor = Colors.orange;
-      _insightIcon  = Icons.directions_walk_rounded;
-    } else if (_workoutDaysThisWeek == 0 && (_weekly?.weekData.isNotEmpty ?? false)) {
-      _insightMsg   = 'สัปดาห์นี้ยังไม่ได้ออกกำลังกายเลย — เริ่มเบาๆ วันนี้เลย!';
-      _insightColor = Colors.orange;
-      _insightIcon  = Icons.emoji_events_rounded;
-    } else if (d.exerciseBurn > 300) {
-      _insightMsg   = 'เผาผลาญจากการออกกำลังกาย ${d.exerciseBurn.round()}kcal — ยอดเยี่ยม! 🔥';
-      _insightColor = AppColors.primaryGreen;
-      _insightIcon  = Icons.local_fire_department_rounded;
-    } else {
-      _insightMsg = null;
-    }
+    final result = di.computeInsight(
+      daily: _daily,
+      targetProtein: _targetProtein,
+      targetCalories: _targetCalories,
+      tolerance: _kTargetTolerance,
+      workoutDaysThisWeek: _workoutDaysThisWeek,
+      weeklyDataAvailable: _weekly?.weekData.isNotEmpty ?? false,
+    );
+    _insightMsg   = result.$1;
+    _insightColor = result.$2;
+    _insightIcon  = result.$3;
   }
 
   // ── Getters ────────────────────────────────────────────────────────────────
@@ -293,84 +237,32 @@ class _DashboardViewState extends State<DashboardView>
   int get _workoutDaysThisWeek =>
       _weekly?.weekData.where((e) => e.cardioOut > 0 || e.weightOut > 0).length ?? 0;
 
-  int get _activeStreak {
-    // badge นี้โชว์ที่ header เสมอไม่ขึ้นกับ tab/period — ต้องเป็น streak ของ "วันนี้" จริงๆ
-    // เท่านั้น ถ้า user เลื่อนดู _monthly ของเดือนอื่นอยู่ (ผ่านโหมดรายเดือน) ต้องไม่เอา
-    // monthData ของเดือนที่กำลังดูมาคำนวณ ไม่งั้น badge จะโชว์ streak ของเดือนเก่าแทน
-    final now = DateTime.now();
-    if (_selectedMonth.year != now.year || _selectedMonth.month != now.month) return 0;
-    final pts = _monthly?.monthData ?? [];
-    if (pts.isEmpty) return 0;
-    bool active(MonthlyDataPoint p) => p.calories > 0 || p.weightOut > 0 || p.cardioOut > 0;
-
-    // pts เป็นชุด densify แล้ว (คำสั่งที่ 17) จึงมีครบทุกวันแบบไม่มีช่องว่าง — pts.last คือ
-    // "วันนี้" เสมอ (densify ตัดจบที่วันนี้สำหรับเดือนปัจจุบัน) เดินถอยหลังทีละวันแล้วเจอวันว่าง
-    // (ไม่มีบันทึกจริง) เมื่อไหร่ = ขาดตอนจริง หยุดนับทันที (เดิมนับข้ามช่องว่างเพราะ backend
-    // ไม่คืนวันว่างมาเลย ตอนนี้ densify เติมให้แล้วลูปเดิมทำงานถูกต้องเอง)
-    //
-    // ข้อยกเว้น: ถ้า "วันนี้" ยังไม่มีบันทึก ยังไม่ถือว่าขาดตอน (วันนี้ยังไม่จบ) ให้เริ่มนับจาก
-    // เมื่อวานแทน ตามมาตรฐานแอปนับ streak ทั่วไป (เช่น Duolingo) — ถือว่าขาดตอนจริงก็ต่อเมื่อ
-    // เมื่อวานก็ไม่มีข้อมูลด้วย (ตัดสินใจตามคำสั่งที่ 18 ข้อ 4: เคส "ฝึกล่าสุดคือเมื่อวาน" ยังนับ
-    // streak ต่อ ไม่รีเซ็ตเป็น 0)
-    int start = pts.length - 1;
-    if (!active(pts[start])) start--;
-
-    int s = 0;
-    bool continuedFromDay1 = start >= 0;
-    for (int i = start; i >= 0; i--) {
-      if (active(pts[i])) {
-        s++;
-      } else {
-        continuedFromDay1 = false;
-        break;
-      }
-    }
-    // ถ้าฝึกต่อเนื่องตั้งแต่วันที่ 1 ของเดือนนี้ (หรือเมื่อวาน กรณีวันนี้ยังไม่บันทึก) ไม่มีวันขาด
-    // เลย ให้นับต่อจาก monthData ของเดือนก่อนหน้า (_prevMonthly) กันไม่ให้ streak รีเซ็ตทุกครั้ง
-    // ที่ข้ามเดือน (คำสั่งที่ 14)
-    if (continuedFromDay1) {
-      final prevPts = _prevMonthly?.monthData ?? [];
-      for (int i = prevPts.length - 1; i >= 0; i--) {
-        if (active(prevPts[i])) {
-          s++;
-        } else {
-          break;
-        }
-      }
-    }
-    return s;
-  }
+  // badge นี้โชว์ที่ header เสมอไม่ขึ้นกับ tab/period — ต้องเป็น streak ของ "วันนี้" จริงๆ เท่านั้น
+  // (คำนวณจริงอยู่ที่ core/utils/dashboard_insights.dart activeStreak — ดูคอมเมนต์เต็มที่นั่น)
+  int get _activeStreak => di.activeStreak(
+        selectedMonth: _selectedMonth,
+        currentMonthPts: _monthly?.monthData ?? [],
+        prevMonthPts: _prevMonthly?.monthData ?? [],
+      );
 
   // ตัวหาร 7 วันปฏิทินที่ใช้ในนี้ถูกต้องแล้ว — คนละนิยามกับค่าเฉลี่ยปริมาณ (weeklyAvgCalories
-  // เป็นต้น) ที่ต้องหารด้วยจำนวนวันที่บันทึกจริงเท่านั้น (ดูหมายเหตุเหนือ _densify) เพราะตรงนี้
-  // "วัดการปฏิบัติตามเป้า" ไม่ใช่ "วัดปริมาณ" — วันที่ไม่บันทึก = ไม่ได้ทำตามเป้าจริง ไม่ใช่
-  // ไม่มีข้อมูล ห้ามแก้ให้ไปหารด้วยจำนวนวันที่บันทึกเพื่อให้ "สอดคล้องกัน" กับตัวหารฝั่งค่าเฉลี่ย
-  int get _weeklyGoalDays {
-    final pts = _weekly?.weekData ?? [];
-    return pts.where((e) {
-      final t = _targetCalories;
-      return t > 0 &&
-          e.calories >= t * (1 - _kTargetTolerance) &&
-          e.calories <= t * (1 + _kTargetTolerance);
-    }).length;
-  }
+  // เป็นต้น) ที่ต้องหารด้วยจำนวนวันที่บันทึกจริงเท่านั้น (ดูหมายเหตุเหนือ densify ใน
+  // dashboard_insights.dart) เพราะตรงนี้ "วัดการปฏิบัติตามเป้า" ไม่ใช่ "วัดปริมาณ"
+  int get _weeklyGoalDays => di.weeklyGoalDays(
+        weekPts: _weekly?.weekData ?? [],
+        targetCalories: _targetCalories,
+        tolerance: _kTargetTolerance,
+      );
 
-  double get _adherenceRate {
-    final target = math.max(1, WorkoutService.to.activePlanDays);
-    return (_workoutDaysThisWeek / target).clamp(0.0, 1.0);
-  }
+  double get _adherenceRate => di.adherenceRate(
+        workoutDaysThisWeek: _workoutDaysThisWeek,
+        activePlanDays: WorkoutService.to.activePlanDays,
+      );
 
   // goalType ที่ไม่ใช่ 1/2/3 (ค่าเพี้ยน/ไม่รู้จัก) ห้ามเดาสัดส่วนมาโครแทนผู้ใช้ — ดู _macroTargetPct
   bool get _hasValidGoalType => _goalType == 1 || _goalType == 2 || _goalType == 3;
 
-  Map<String, double> get _macroTargetPct {
-    switch (_goalType) {
-      case 1:  return {'protein': 0.40, 'carb': 0.35, 'fat': 0.25};
-      case 2:  return {'protein': 0.30, 'carb': 0.50, 'fat': 0.20};
-      case 3:  return {'protein': 0.20, 'carb': 0.50, 'fat': 0.30};
-      default: return {'protein': 0.0,  'carb': 0.0,  'fat': 0.0}; // ไม่รู้จักเป้าหมาย — ดู _hasValidGoalType
-    }
-  }
+  Map<String, double> get _macroTargetPct => di.macroTargetPct(_goalType);
 
   double get _targetProtein => _targetCalories * _macroTargetPct['protein']! / 4;
   double get _targetCarbs   => _targetCalories * _macroTargetPct['carb']!    / 4;
@@ -381,13 +273,7 @@ class _DashboardViewState extends State<DashboardView>
   // เดียวกัน แก้ให้เรียกจากจุดเดียวกันตามบทที่ 2 (ผอมเกินไป/สมส่วน/น้ำหนักเกิน/โรคอ้วน)
   String get _bmiCategory => calc.bmiLabel(_bmi);
 
-  Color get _bmiColor {
-    if (_bmi <= 0)   return AppColors.textMuted;
-    if (_bmi < 18.5) return Colors.blueAccent;
-    if (_bmi < 23.0) return AppColors.primaryGreen;
-    if (_bmi < 25.0) return Colors.orange;
-    return Colors.redAccent;
-  }
+  Color get _bmiColor => calc.bmiColor(_bmi);
 
   String get _goalLabel {
     switch (_goalType) {
@@ -418,8 +304,7 @@ class _DashboardViewState extends State<DashboardView>
     return '${n.day} ${_moShort[n.month - 1]} ${n.year + 543}';
   }
 
-  bool _isSameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
+  bool _isSameDay(DateTime a, DateTime b) => di.isSameDay(a, b);
 
   String get _selectedDateLabel {
     if (_isSameDay(_selectedDate, DateTime.now())) return 'วันนี้';
@@ -440,17 +325,13 @@ class _DashboardViewState extends State<DashboardView>
     return '$startLabel – ${_selectedWeekEnd.day} ${_moShort[_selectedWeekEnd.month - 1]} ${_selectedWeekEnd.year + 543}';
   }
 
-  /// เกณฑ์ประเมินสถานะสมดุลพลังงาน ±10% ตามบทที่ 2 หัวข้อ 2.1.4.7
-  static const double _kTargetTolerance = 0.10;
+  /// ค่า tolerance ย้ายไปรวมที่ core/utils/health_calculations.dart แล้ว (ใช้ร่วมกับ
+  /// nutrition_view.dart) — alias ชื่อเดิมไว้กันต้องแก้ทุกจุดที่ยังอ้าง _kTargetTolerance อยู่
+  static const double _kTargetTolerance = calc.kEnergyBalanceTolerance;
 
-  /// สถานะ Energy Balance เทียบเป้าหมาย ±10%
-  (String, Color) _energyStatus(double caloriesIn, double target) {
-    if (target <= 0) return ('-', AppColors.textMuted);
-    final ratio = caloriesIn / target;
-    if (ratio > 1.1) return ('เกินเป้า', Colors.redAccent);
-    if (ratio < 0.9) return ('ต่ำกว่าเป้า', Colors.orange);
-    return ('ตามเป้า', AppColors.primaryGreen);
-  }
+  /// สถานะ Energy Balance เทียบเป้าหมาย ±10% (บทที่ 2 หัวข้อ 2.1.4.7) — ย้ายไปรวมที่
+  /// core/utils/health_calculations.dart แล้ว (ใช้ร่วมกับ nutrition_view.dart)
+  (String, Color) _energyStatus(double caloriesIn, double target) => calc.energyBalanceStatus(caloriesIn, target);
 
   String _intensityLabel(int? lvl) {
     switch (lvl) {
@@ -1063,20 +944,7 @@ class _DashboardViewState extends State<DashboardView>
   /// เติมช่องว่างของเป้าหมายในวันที่ไม่มีบันทึกอาหาร/ออกกำลังกาย (target_tdee จาก backend = 0
   /// เพราะวันนั้นไม่มีแถวใน date_list เลย) ด้วยค่าจากวันก่อนหน้าที่รู้ค่าจริงล่าสุด (forward-fill)
   /// แทนการปล่อยเป็น 0 ซึ่งจะทำให้เส้น target ตกลงมาที่ 0 ผิดๆ ในวันที่ไม่มีข้อมูล
-  List<double> _fillTargetGaps(List<double> raw) {
-    final out = List<double>.filled(raw.length, 0);
-    double last = 0;
-    for (int i = 0; i < raw.length; i++) {
-      if (raw[i] > 0) last = raw[i];
-      out[i] = last;
-    }
-    // วันแรกๆ ที่ยังไม่เจอค่าจริงเลย (last ยังเป็น 0) ให้ backfill จากค่าแรกที่เจอแทน
-    final firstKnown = out.firstWhere((v) => v > 0, orElse: () => 0);
-    for (int i = 0; i < out.length; i++) {
-      if (out[i] == 0) out[i] = firstKnown;
-    }
-    return out;
-  }
+  List<double> _fillTargetGaps(List<double> raw) => di.fillTargetGaps(raw);
 
   Widget _buildWeeklyBarChart() {
     final pts = _weekly?.weekData ?? [];
@@ -1847,17 +1715,13 @@ class _DashboardViewState extends State<DashboardView>
     }
     return Column(children: byExercise.entries.map((entry) {
       final sets = entry.value..sort((a, b) => a.setNo.compareTo(b.setNo));
-      final volume = sets.fold(0.0, (s, w) => s + w.weight * w.reps);
-      // สูตร Epley คลาดเคลื่อนมากเมื่อ reps > 12 — คิดเฉพาะเซตที่อยู่ในช่วงที่แม่นยำ
-      // 1RM = weight × (1 + reps/30) — ไม่จำกัด reps
-      // (เดิมกรองเฉพาะ reps<=12 จุดนี้จุดเดียว ทำให้ไม่ตรงกับ backend และอีก 3 จุดใน
-      // frontend ที่ไม่จำกัด reps — เอา cap ออกให้สูตรตรงกันทั้งระบบ แม้สูตรจะคลาดเคลื่อน
-      // มากขึ้นตาม comment เดิมด้านบนก็ตาม เพื่อให้ตรงกับ backend เป็น single source of truth)
-      // เป็นค่าคำนวณแสดงผลเท่านั้น ไม่บันทึกลงฐานข้อมูล (คำสั่งที่ 16)
+      final volume = calc.trainingVolume(sets.map((w) => (weight: w.weight, reps: w.reps)));
+      // สูตร 1RM อยู่ที่ core/utils/health_calculations.dart แล้ว (ใช้ร่วมกับอีก 4 จุดใน
+      // frontend + backend) — ไม่จำกัด reps เป็นค่าคำนวณแสดงผลเท่านั้น ไม่บันทึกลงฐานข้อมูล
       final validRepSets = sets.where((w) => w.reps > 0);
       final est1rm = validRepSets.isEmpty
           ? null
-          : validRepSets.fold(0.0, (m, w) => math.max(m, w.weight * (1 + w.reps / 30)));
+          : validRepSets.fold(0.0, (m, w) => math.max(m, calc.estimateOneRepMax(w.weight, w.reps)));
       final calories = sets.fold(0.0, (s, w) => s + w.calories);
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),

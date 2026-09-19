@@ -2,6 +2,7 @@
 // ทำหน้าที่: แสดงข้อมูลท่าฝึก วิดีโอสาธิต กลุ่มกล้ามเนื้อที่ใช้ ประวัติการฝึก และกราฟพัฒนาการน้ำหนัก
 
 import 'dart:math' as math;
+import '../../../core/utils/health_calculations.dart' as calc;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
@@ -715,7 +716,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
   }
 
   double _sessionVolume(String date) =>
-      (_grouped[date] ?? []).fold(0.0, (sum, s) => sum + s.weight * s.reps);
+      calc.trainingVolume((_grouped[date] ?? []).map((s) => (weight: s.weight, reps: s.reps)));
 
   double _sessionCalories(String date) =>
       (_grouped[date] ?? []).fold(0.0, (sum, s) => sum + s.calories);
@@ -723,7 +724,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
   double _session1RM(String date) {
     final valid = (_grouped[date] ?? []).where((s) => s.weight > 0 && s.reps > 0);
     if (valid.isEmpty) return 0;
-    return valid.map((s) => s.weight * (1 + s.reps / 30.0)).reduce(math.max);
+    return valid.map((s) => calc.estimateOneRepMax(s.weight, s.reps)).reduce(math.max);
   }
 
   double get _overallMax {
@@ -731,12 +732,12 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
     return _filtered.map((r) => r.weight).reduce(math.max);
   }
 
-  // 1RM = weight × (1 + reps/30) — ใช้ค่าสูงสุดจากประวัติในช่วงที่กรอง
+  // 1RM — ใช้ค่าสูงสุดจากประวัติในช่วงที่กรอง (สูตรอยู่ที่ core/utils/health_calculations.dart)
   double get _best1RM {
     if (_filtered.isEmpty) return 0;
     return _filtered
         .where((r) => r.weight > 0 && r.reps > 0)
-        .map((r) => r.weight * (1 + r.reps / 30.0))
+        .map((r) => calc.estimateOneRepMax(r.weight, r.reps))
         .fold(0.0, math.max);
   }
 
@@ -1261,7 +1262,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
               ),
               const SizedBox(height: 8),
               ...sets.map((s) {
-                final oneRM = (s.weight > 0 && s.reps > 0) ? s.weight * (1 + s.reps / 30.0) : 0.0;
+                final oneRM = (s.weight > 0 && s.reps > 0) ? calc.estimateOneRepMax(s.weight, s.reps) : 0.0;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Row(children: [

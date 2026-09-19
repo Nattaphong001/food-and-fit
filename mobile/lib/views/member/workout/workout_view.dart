@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/health_calculations.dart' as calc;
 import '../../../core/widgets/cached_image.dart';
 import '../../../core/widgets/app_date_picker_sheet.dart';
 import '../../../core/widgets/weekly_calendar_component.dart';
@@ -1738,7 +1739,7 @@ class _WorkoutViewState extends State<WorkoutView> with RouteAware {
       ),
       builder: (ctx) {
         final totalCalories = sets.fold(0.0, (sum, r) => sum + r.calories);
-        final totalVolume = sets.fold(0.0, (sum, r) => sum + r.weight * r.reps);
+        final totalVolume = calc.trainingVolume(sets.map((r) => (weight: r.weight, reps: r.reps)));
         final maxSheetHeight = MediaQuery.of(ctx).size.height * 0.85;
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxSheetHeight),

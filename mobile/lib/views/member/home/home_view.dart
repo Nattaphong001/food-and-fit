@@ -85,41 +85,22 @@ class _HomeViewState extends State<HomeView> {
     return age;
   }
 
+  // BMI/BMR/TDEE/เป้าหมายพลังงาน มาจาก API (backend services.CalculateGoals) เท่านั้น — ไม่คำนวณซ้ำฝั่ง
+  // Dart (ยังไม่มีค่า → แสดง "-") · BMI นอกช่วง 10–70 ถือว่าใช้ไม่ได้
   double get _bmi {
-    if (_stats == null) return 0;
-    final api = _stats!.bmi;
-    if (api >= 10 && api <= 70) return api;
-    final h = _stats!.height / 100;
-    return h > 0 ? _stats!.weight / (h * h) : 0;
+    final api = _stats?.bmi ?? 0;
+    return (api >= 10 && api <= 70) ? api : 0;
   }
 
   String get _bmiLabel => calc.bmiLabel(_bmi);
 
-  Color get _bmiColor {
-    if (_bmi < 18.5) return const Color(0xFFAB7FE8);
-    if (_bmi < 23) return const Color(0xFF3CC446);
-    if (_bmi < 25) return const Color(0xFFE67A40);
-    return const Color(0xFFDE3E3E);
-  }
+  Color get _bmiColor => calc.bmiColor(_bmi);
 
   double get _bmiProgress => calc.bmiProgress(_bmi);
 
-  double get _bmr {
-    if (_stats != null && _stats!.bmr > 0) return _stats!.bmr;
-    if (_stats == null || _user == null || _age == 0) return 0;
-    final g = _user!.gender;
-    return calc.calcBmr(
-      weightKg: _stats!.weight,
-      heightCm: _stats!.height,
-      age: _age.toDouble(),
-      isMale: g == 'male' || g == '1',
-    );
-  }
+  double get _bmr => _stats?.bmr ?? 0;
 
-  double get _tdee {
-    if (_stats != null && _stats!.tdee > 0) return _stats!.tdee;
-    return calc.calcTdee(bmr: _bmr, activityLevel: _stats?.activityLevel ?? 0);
-  }
+  double get _tdee => _stats?.tdee ?? 0;
 
   String get _targetLabel {
     if (_target == 1) return 'ลดน้ำหนัก';
@@ -127,10 +108,7 @@ class _HomeViewState extends State<HomeView> {
     return 'รักษาน้ำหนัก';
   }
 
-  double get _calorieGoal {
-    if ((_stats?.targetCal ?? 0) > 0) return _stats!.targetCal;
-    return calc.calcTargetCalories(tdee: _tdee, bmr: _bmr, target: _target);
-  }
+  double get _calorieGoal => _stats?.targetCal ?? 0;
 
   String _fmtKcal(double v) => v > 0
       ? v.round().toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',')

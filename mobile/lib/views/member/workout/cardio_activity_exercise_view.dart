@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/health_calculations.dart' as calc;
 import '../../../core/widgets/app_back_button.dart';
 import '../../../core/widgets/app_confirm_dialog.dart';
 import '../../../core/widgets/cached_image.dart';
@@ -291,16 +292,18 @@ class _CardioActivityExerciseViewState extends State<CardioActivityExerciseView>
   // Calculated Values
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // ต้องตรงสูตรกับ backend (SaveCardioResult, workout_controller.go) เป๊ะ — (METs−1)×kg×ชม.
-  // เดิมไม่ได้หัก 1 MET (สูตร gross) ตัวเลขที่วิ่งบนจอระหว่างฝึกจึงสูงกว่าค่าที่บันทึกจริงเสมอ
-  // (เช่น 30 นาที เดินชันบนสายพาน MET 7.0: จอเก่าโชว์ 238 แต่ DB เก็บ 204) เป็น preview
+  // ต้องตรงสูตรกับ backend (SaveCardioResult, workout_controller.go) เป๊ะ — สูตร ACSM
+  // (METs−1)×3.5×kg/200×นาที (ดู root CLAUDE.md ข้อ 7[B] — แก้ 2026-09-19 จาก
+  // (METs−1)×kg×ชม. เดิม ต่างกัน ~5% เพราะ 3.5/200×60 = 1.05 ไม่ใช่ 1.0) เป็น preview
   // สดก่อนบันทึกเท่านั้น ไม่ได้เก็บ DB เอง จึงยังไม่เข้าข่ายผิดกฎ "ห้ามคำนวณสูตรซ้ำ" แต่ต้องได้
   // ผลลัพธ์ตรงกับที่ backend คำนวณเป๊ะ ไม่ใช่ตรงแค่สูตรฐาน — ตัด fallback mets=6.0 ทิ้งด้วย เพราะ
   // METs ต้องมาจาก DB (cardio.cdo_mets) เท่านั้น ห้าม hardcode ค่าเดา
   double _getCalculatedCalories() {
-    if (widget.mets <= 1) return 0;
-    final double netMets = widget.mets - 1;
-    return netMets * _memberWeightKg * (_globalSeconds / 3600.0);
+    return calc.cardioNetKcal(
+      mets: widget.mets,
+      weightKg: _memberWeightKg,
+      minutes: _globalSeconds / 60.0,
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
