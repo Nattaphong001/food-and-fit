@@ -1287,7 +1287,8 @@ func SaveCardioResult(c *gin.Context) {
 	// กับ Baseline (BMR×1.2) เป็น Total Daily Energy Output ที่ analytics_controller.go SUM(cdors_calories)
 	// ตรงๆ เข้า exerciseBurn เหมือนกับฝั่งเวท (2026-08-22)
 	// clamp กัน METs ติดลบ/ศูนย์ ถ้าวันหน้ามีกิจกรรมคาร์ดิโอ METs ≤ 1.0 ถูกเพิ่มเข้าระบบ (ปัจจุบัน
-	// คาร์ดิโอทุกท่าใน DB METs ต่ำสุด 7.0 ไม่ชนขอบนี้ แต่กันไว้ก่อนเผื่ออนาคต)
+	// คาร์ดิโอทุกท่าใน DB METs ต่ำสุด 6.0 (ว่ายน้ำ ตรงรหัส Compendium 18310) ไม่ชนขอบนี้ แต่กันไว้ก่อน
+	// เผื่ออนาคต)
 	netMets := cardio.CdoMets - 1
 	if netMets < 0 {
 		netMets = 0
