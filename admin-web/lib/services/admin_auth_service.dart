@@ -16,6 +16,7 @@
 // token) — ถ้า role ที่ได้กลับมาไม่ใช่ 'admin' ต้อง "ไม่เก็บ token นั้นไว้เลย" ไม่ใช่เก็บแล้วค่อยเคลียร์
 // ทีหลัง กันกรณีมี error ระหว่างทางแล้ว token ของสมาชิกค้างอยู่ใน storage ของเว็บแอดมิน
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'api_client.dart';
@@ -25,6 +26,10 @@ class AdminAuthService extends GetxService {
 
   final ApiClient _api = ApiClient();
   final _storage = GetStorage();
+  // token เก็บแยกด้วย flutter_secure_storage แทน GetStorage ธรรมดา — บน Flutter Web ยังลง
+  // ที่ localStorage เหมือนเดิม แต่ค่าถูกเข้ารหัสผ่าน Web Crypto ก่อนเก็บ (ไม่ใช่ plaintext
+  // อ่านตรงๆ จาก devtools แบบ GetStorage เดิม) user_data (ไม่อ่อนไหวเท่า) ยังอยู่ GetStorage ต่อ
+  static const _secureStorage = FlutterSecureStorage();
 
   static const String _tokenKey = 'auth_token';
   static const String _userDataKey = 'user_data';
@@ -42,7 +47,7 @@ class AdminAuthService extends GetxService {
   }
 
   Future<void> checkLoginStatus() async {
-    final token = _storage.read<String>(_tokenKey);
+    final token = await _secureStorage.read(key: _tokenKey);
     if (token == null) {
       isCheckingSession.value = false;
       return;
@@ -94,7 +99,11 @@ class AdminAuthService extends GetxService {
         }
 
         final userData = data['user'];
-        await _storage.write(_tokenKey, token);
+        // delete() ก่อน write() เสมอ — flutter_secure_storage เจอปัญหา write() ทับค่าเดิม
+        // ของ key เดียวกันไม่ติดในบางแพลตฟอร์ม (ดูเหตุผลเดียวกันฝั่งมือถือ
+        // remembered_credentials_service.dart)
+        await _secureStorage.delete(key: _tokenKey);
+        await _secureStorage.write(key: _tokenKey, value: token);
         await _storage.write(_userDataKey, userData);
 
         if (userData is Map) {
@@ -131,7 +140,7 @@ class AdminAuthService extends GetxService {
   Future<void> clearSessionLocally() => _clearSession();
 
   Future<void> _clearSession() async {
-    await _storage.remove(_tokenKey);
+    await _secureStorage.delete(key: _tokenKey);
     await _storage.remove(_userDataKey);
     isLoggedIn.value = false;
     adminName.value = '';
