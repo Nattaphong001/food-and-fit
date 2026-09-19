@@ -2,9 +2,9 @@ package controllers
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +13,7 @@ import (
 	"food_and_fit_api/config"
 	"food_and_fit_api/helpers"
 	"food_and_fit_api/models"
+	"food_and_fit_api/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -104,25 +105,20 @@ func UpdateNutritionCategoryImage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาแนบไฟล์รูปภาพ (nttc_image)"})
 		return
 	}
-	if verr := helpers.ValidateImageUpload(file); verr != nil {
+	newPath, verr := helpers.SaveUploadedImage(c, file, "./uploads/nutrition_categories", "uploads/nutrition_categories")
+	if verr != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 		return
 	}
-
-	uploadDir := "./uploads/nutrition_categories"
-	os.MkdirAll(uploadDir, os.ModePerm)
-	extension := filepath.Ext(file.Filename)
-	newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), extension)
-	savePath := filepath.Join(uploadDir, newFileName)
-
-	if err := c.SaveUploadedFile(file, savePath); err != nil {
+	if newPath == "" {
+		// validate ผ่านแต่บันทึกไฟล์จริงล้มเหลว — เอนด์พอยต์นี้บังคับต้องมีไฟล์เสมอ
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "อัปโหลดรูปไม่สำเร็จ"})
 		return
 	}
 	if category.NttcImage != "" {
 		os.Remove("./" + category.NttcImage)
 	}
-	category.NttcImage = "uploads/nutrition_categories/" + newFileName
+	category.NttcImage = newPath
 
 	if err := config.DB.Save(&category).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกไม่สำเร็จ"})
@@ -205,25 +201,14 @@ func CreateFood(c *gin.Context) {
 
 	// 2. รับและบันทึกไฟล์รูปภาพ
 	imagePath := ""
-	file, err := c.FormFile("ntt_food_image")
-	if err == nil {
-		if verr := helpers.ValidateImageUpload(file); verr != nil {
+	if file, ferr := c.FormFile("ntt_food_image"); ferr == nil {
+		newPath, verr := helpers.SaveUploadedImage(c, file, "./uploads/foods", "uploads/foods")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		// สร้างโฟลเดอร์ถ้ายังไม่มี
-		uploadDir := "./uploads/foods"
-		os.MkdirAll(uploadDir, os.ModePerm)
-
-		// สร้างชื่อไฟล์ใหม่กันซ้ำ (ใช้ Timestamp)
-		extension := filepath.Ext(file.Filename)
-		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), extension)
-		savePath := filepath.Join(uploadDir, newFileName)
-
-		// บันทึกไฟล์ลงเซิร์ฟเวอร์
-		if err := c.SaveUploadedFile(file, savePath); err == nil {
-			// เก็บ Path สำหรับลง Database
-			imagePath = "uploads/foods/" + newFileName
+		if newPath != "" {
+			imagePath = newPath
 		}
 	}
 
@@ -302,28 +287,19 @@ func UpdateFood(c *gin.Context) {
 	}
 
 	// จัดการรูปภาพใหม่ (ถ้ามีการส่งไฟล์ใหม่มา)
-	file, err := c.FormFile("ntt_food_image")
-	if err == nil {
-		if verr := helpers.ValidateImageUpload(file); verr != nil {
+	if file, ferr := c.FormFile("ntt_food_image"); ferr == nil {
+		newPath, verr := helpers.SaveUploadedImage(c, file, "./uploads/foods", "uploads/foods")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		// สร้างโฟลเดอร์ถ้ายังไม่มี
-		uploadDir := "./uploads/foods"
-		os.MkdirAll(uploadDir, os.ModePerm)
-
-		// สร้างชื่อไฟล์ใหม่กันซ้ำ (ใช้ Timestamp)
-		extension := filepath.Ext(file.Filename)
-		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), extension)
-		savePath := filepath.Join(uploadDir, newFileName)
-
-		if err := c.SaveUploadedFile(file, savePath); err == nil {
+		if newPath != "" {
 			// ลบรูปเก่าทิ้งเพื่อประหยัดพื้นที่
 			if food.NttFoodImage != "" {
 				os.Remove("./" + food.NttFoodImage)
 			}
 			// อัปเดต Path เป็นรูปใหม่
-			food.NttFoodImage = "uploads/foods/" + newFileName
+			food.NttFoodImage = newPath
 		}
 	}
 
@@ -417,7 +393,7 @@ func CreateDailyNutrition(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		fmt.Println("Binding Error:", err.Error())
+		slog.Warn("binding error", "err", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบข้อมูลที่กรอก"})
 		return
 	}
@@ -458,10 +434,11 @@ func CreateDailyNutrition(c *gin.Context) {
 		}
 
 		// คำนวณสารอาหารโดย: (ค่าพื้นฐานในตาราง nutrition * จำนวนที่ผู้ใช้กรอก)
-		log.DnttTotalCalories = food.NttCalories * req.DnttQuantity
-		log.DnttTotalProtein = food.NttProtein * req.DnttQuantity
-		log.DnttTotalCarb = food.NttCarbs * req.DnttQuantity
-		log.DnttTotalFat = food.NttFat * req.DnttQuantity
+		totals := services.CalculateNutrientTotals(food, req.DnttQuantity)
+		log.DnttTotalCalories = totals.Calories
+		log.DnttTotalProtein = totals.Protein
+		log.DnttTotalCarb = totals.Carb
+		log.DnttTotalFat = totals.Fat
 
 		// ถ้าไม่ได้กรอกชื่ออาหารมา ให้ใช้ชื่อจากระบบ
 		if log.DnttFoodName == "" {
@@ -558,10 +535,11 @@ func UpdateDailyNutrition(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบข้อมูลอาหารในระบบ"})
 			return
 		}
-		updates["dntt_total_calories"] = food.NttCalories * req.DnttQuantity
-		updates["dntt_total_protein"] = food.NttProtein * req.DnttQuantity
-		updates["dntt_total_carb"] = food.NttCarbs * req.DnttQuantity
-		updates["dntt_total_fat"] = food.NttFat * req.DnttQuantity
+		totals := services.CalculateNutrientTotals(food, req.DnttQuantity)
+		updates["dntt_total_calories"] = totals.Calories
+		updates["dntt_total_protein"] = totals.Protein
+		updates["dntt_total_carb"] = totals.Carb
+		updates["dntt_total_fat"] = totals.Fat
 	} else if log.DnttQuantity > 0 {
 		// อาหารกรอกเอง (custom, ntt_id เป็น NULL) — ไม่มีค่าต่อหน่วยเก็บแยก คิดสัดส่วนย้อนจากยอดเดิม/จำนวนเดิม
 		ratio := req.DnttQuantity / log.DnttQuantity

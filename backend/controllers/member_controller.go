@@ -6,7 +6,7 @@ import (
 	"food_and_fit_api/helpers"
 	"food_and_fit_api/models"
 	"food_and_fit_api/services"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,7 +31,7 @@ type UpdateBodyStatsRequest struct {
 	Weight        float64 `json:"weight" binding:"required"`
 	Height        float64 `json:"height" binding:"required"`
 	ActivityLevel float64 `json:"activity_level" binding:"required"`
-	Target        int     `json:"target" binding:"required"` // 1=ลดน้ำหนัก, 2=เพิ่มกล้ามเนื้อ, 3=รักษาน้ำหนัก
+	Target        int     `json:"target" binding:"required"` // 1=ลดน้ำหนัก, 2=เพิ่มน้ำหนัก, 3=รักษาน้ำหนัก
 	// optional — ให้หน้าแก้ไขข้อมูลร่างกาย (มือถือ) อัปเดต gender/birth_date พร้อมกันได้ในคำขอเดียว
 	// กันไม่ให้ต้องยิง PUT /member/profile แยกก่อน ซึ่งเดิมทำให้เกิดแถว member_bmr_history ซ้ำซ้อน
 	Gender    *int    `json:"gender,omitempty"`
@@ -51,15 +51,6 @@ type UpdateProfileRequest struct {
 // ==========================================
 // Handlers
 // ==========================================
-
-// ageFromBirthDate คำนวณอายุเต็มปี ณ เวลาปัจจุบัน จากวันเกิดที่กำหนด
-func ageFromBirthDate(birthDate time.Time) int {
-	age := time.Now().Year() - birthDate.Year()
-	if time.Now().YearDay() < birthDate.YearDay() {
-		age--
-	}
-	return age
-}
 
 // UpdateProfile - บันทึกข้อมูลสุขภาพครั้งแรก (หลังจากสมัครสมาชิกและยืนยันตัวตน)
 // upsert รายวันเหมือน UpdateBodyStats (D10) — กดย้อนกลับมาแก้ขั้นตอน personalize ในวันเดียวกัน
@@ -107,7 +98,7 @@ func UpdateProfile(c *gin.Context) {
 	}
 
 	// 2. คำนวณอายุ
-	age := ageFromBirthDate(parsedDate)
+	age := services.AgeFromBirthDate(parsedDate)
 
 	// 3. คำนวณเป้าหมาย (BMI, BMR, TDEE)
 	bmi, bmr, tdee, targetCal := services.CalculateGoals(
@@ -120,10 +111,6 @@ func UpdateProfile(c *gin.Context) {
 	)
 
 	// 4. บันทึกข้อมูลด้วย Transaction (เพื่อให้มั่นใจว่าบันทึกครบทุกตาราง) — upsert รายวัน
-	now := time.Now()
-	todayStr := now.Format("2006-01-02")
-	todayDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-
 	err = config.DB.Transaction(func(tx *gorm.DB) error {
 		// อัปเดตข้อมูลพื้นฐานในตาราง Member
 		if err := tx.Model(&models.Member{}).Where("mb_id = ?", userID).Updates(map[string]interface{}{
@@ -133,75 +120,22 @@ func UpdateProfile(c *gin.Context) {
 			return err
 		}
 
-		// Body Stats — upsert รายวัน (ORDER BY mbs_id desc + LIMIT 1 จำเป็นจริง ดูเหตุผลเต็ม
-		// ที่คอมเมนต์เดียวกันใน UpdateBodyStats ด้านล่าง)
-		var bodyStat models.MemberBodyStat
-		var existingStat models.MemberBodyStat
-		tx.Where("mb_id = ? AND DATE(mbs_recorded_date) = ?", userID, todayStr).
-			Order("mbs_id desc").Limit(1).Find(&existingStat)
-
-		if existingStat.MbsID != 0 {
-			bodyStat = existingStat
-			bodyStat.MbsWeight = req.Weight
-			bodyStat.MbsHeight = req.Height
-			bodyStat.MbsActivityLevel = req.ActivityLevel
-			bodyStat.MbsTarget = req.Target
-			bodyStat.MbsRecordedDate = now
-			if err := tx.Model(&models.MemberBodyStat{}).Where("mbs_id = ?", bodyStat.MbsID).Updates(map[string]interface{}{
-				"mbs_weight":         bodyStat.MbsWeight,
-				"mbs_height":         bodyStat.MbsHeight,
-				"mbs_activity_level": bodyStat.MbsActivityLevel,
-				"mbs_target":         bodyStat.MbsTarget,
-				"mbs_recorded_date":  bodyStat.MbsRecordedDate,
-			}).Error; err != nil {
-				return err
-			}
-		} else {
-			bodyStat = models.MemberBodyStat{
-				MbID:             userID.(int),
-				MbsWeight:        req.Weight,
-				MbsHeight:        req.Height,
-				MbsActivityLevel: req.ActivityLevel,
-				MbsTarget:        req.Target,
-				MbsRecordedDate:  now,
-			}
-			if err := tx.Create(&bodyStat).Error; err != nil {
-				return err
-			}
+		// Body Stats + BMR History — upsert รายวัน (D10) ผ่าน services เดียวกับ EditProfile/
+		// UpdateBodyStats กันบั๊กแก้จุดเดียวไม่ครบ (ดูรายละเอียดกติกาเต็มที่คอมเมนต์ใน services/member_service.go)
+		bodyStat, err := services.UpsertBodyStatToday(tx, userID.(int), req.Weight, req.Height, req.ActivityLevel, req.Target)
+		if err != nil {
+			return err
 		}
-
-		// BMR History — upsert รายวันเช่นกัน
-		var existingHistory models.MemberBmrHistory
-		tx.Where("mb_id = ? AND mbh_record_date = ?", userID, todayStr).
-			Order("mbh_id desc").Limit(1).Find(&existingHistory)
-
-		if existingHistory.MbhID != 0 {
-			return tx.Model(&models.MemberBmrHistory{}).Where("mbh_id = ?", existingHistory.MbhID).Updates(map[string]interface{}{
-				"mbs_id":          bodyStat.MbsID,
-				"mbh_bmi":         bmi,
-				"mbh_bmr":         bmr,
-				"mbh_tdee":        tdee,
-				"mbh_tdee_target": targetCal,
-			}).Error
-		}
-
-		bmrHistory := models.MemberBmrHistory{
-			MbID:          userID.(int),
-			MbsID:         &bodyStat.MbsID,
-			MbhBmi:        bmi,
-			MbhBmr:        bmr,
-			MbhTdee:       tdee,
-			MbhTdeeTarget: targetCal,
-			MbhRecordDate: todayDate,
-		}
-		return tx.Create(&bmrHistory).Error
+		return services.UpsertBmrHistoryToday(tx, userID.(int), bodyStat.MbsID, bmi, bmr, tdee, targetCal)
 	})
 
 	if err != nil {
-		log.Printf("UpdateProfile: transaction failed: %v", err)
+		slog.Error("UpdateProfile: transaction failed", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่"})
 		return
 	}
+
+	helpers.LogAudit(c, "member", userID.(int), "update_profile", fmt.Sprintf("target=%d weight=%.1f height=%.1f", req.Target, req.Weight, req.Height))
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "บันทึกข้อมูลสุขภาพสำเร็จ",
@@ -304,7 +238,7 @@ func EditProfile(c *gin.Context) {
 		}
 
 		genderChanged := req.Gender != oldMember.MbGender
-		ageChanged := ageFromBirthDate(parsedDate) != ageFromBirthDate(oldMember.MbBirthDate)
+		ageChanged := services.AgeFromBirthDate(parsedDate) != services.AgeFromBirthDate(oldMember.MbBirthDate)
 		if !genderChanged && !ageChanged {
 			return nil // เพศ/อายุเต็มปีไม่เปลี่ยน ไม่กระทบสูตร ไม่ต้อง recompute/insert ประวัติซ้ำ
 		}
@@ -316,39 +250,12 @@ func EditProfile(c *gin.Context) {
 		}
 
 		bmi, bmr, tdee, targetCal := services.CalculateGoals(
-			bodyStat.MbsWeight, bodyStat.MbsHeight, ageFromBirthDate(parsedDate), req.Gender, bodyStat.MbsActivityLevel, bodyStat.MbsTarget,
+			bodyStat.MbsWeight, bodyStat.MbsHeight, services.AgeFromBirthDate(parsedDate), req.Gender, bodyStat.MbsActivityLevel, bodyStat.MbsTarget,
 		)
 
 		// upsert รายวันเหมือน UpdateBodyStats/UpdateProfile (ดู D10) — เดิม Create() ดิบไม่เช็คแถวเดิม
 		// ของวันนี้ก่อน ทำให้เพศ/วันเกิดที่แก้ 2 ครั้งในวันเดียวกันได้ประวัติซ้ำ 2 แถว (2026-09-12)
-		now := time.Now()
-		todayStr := now.Format("2006-01-02")
-		todayDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-
-		var existingHistory models.MemberBmrHistory
-		tx.Where("mb_id = ? AND mbh_record_date = ?", userID, todayStr).
-			Order("mbh_id desc").Limit(1).Find(&existingHistory)
-
-		if existingHistory.MbhID != 0 {
-			return tx.Model(&models.MemberBmrHistory{}).Where("mbh_id = ?", existingHistory.MbhID).Updates(map[string]interface{}{
-				"mbs_id":          bodyStat.MbsID,
-				"mbh_bmi":         bmi,
-				"mbh_bmr":         bmr,
-				"mbh_tdee":        tdee,
-				"mbh_tdee_target": targetCal,
-			}).Error
-		}
-
-		newHistory := models.MemberBmrHistory{
-			MbID:          userID.(int),
-			MbsID:         &bodyStat.MbsID,
-			MbhBmi:        bmi,
-			MbhBmr:        bmr,
-			MbhTdee:       tdee,
-			MbhTdeeTarget: targetCal,
-			MbhRecordDate: todayDate,
-		}
-		return tx.Create(&newHistory).Error
+		return services.UpsertBmrHistoryToday(tx, userID.(int), bodyStat.MbsID, bmi, bmr, tdee, targetCal)
 	})
 
 	if err != nil {
@@ -356,6 +263,7 @@ func EditProfile(c *gin.Context) {
 		return
 	}
 
+	helpers.LogAudit(c, "member", userID.(int), "edit_profile", fmt.Sprintf("full_name=%s gender=%d", req.FullName, req.Gender))
 	helpers.RespondSuccess(c, "อัปเดตข้อมูลส่วนตัวสำเร็จ", nil)
 }
 
@@ -404,6 +312,7 @@ func UploadProfileImage(c *gin.Context) {
 		return
 	}
 
+	helpers.LogAudit(c, "member", userID.(int), "upload_profile_image", imageUrl)
 	helpers.RespondSuccess(c, "อัปโหลดรูปโปรไฟล์สำเร็จ", gin.H{
 		"profile_pic": imageUrl,
 	})
@@ -473,7 +382,6 @@ func UpdateBodyStats(c *gin.Context) {
 		finalBirthDate = *parsedBirthDate
 	}
 
-	var newStat models.MemberBodyStat
 	var bmi, bmr, tdee, targetCal float64
 	warnings := make([]string, 0)
 
@@ -505,85 +413,23 @@ func UpdateBodyStats(c *gin.Context) {
 			}
 		}
 
-		now := time.Now()
-		todayStr := now.Format("2006-01-02")
-		todayDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-
-		// upsert รายวัน — mbh_record_date เป็น DATE อยู่แล้ว (สคีมาตั้งใจ 1 วัน = 1 จุดข้อมูล)
-		// กดบันทึกรัวๆ ในวันเดียวกันจึงทับแถวเดิมของวันนั้น แทนที่จะสร้างแถว noise ใหม่ทุกครั้ง
-		// .Order().Limit(1) จำเป็นจริง ไม่ใช่แค่กันไว้เฉยๆ — GORM Find() บน struct เดี่ยว (ไม่ใช่ slice)
-		// เรียก rows.Next() แค่ครั้งเดียวแล้วทิ้งแถวที่เหลือ (ดู gorm scan.go: case reflect.Struct
-		// ใช้ if ไม่ใช่ for) ถ้าไม่ระบุ ORDER BY แถวที่ได้ขึ้นกับลำดับที่ MySQL คืนมาเฉยๆ (ปกติเป็น
-		// ลำดับ PK ต่ำไปสูงถ้าไม่ใช้ index อื่น) ซึ่งตรงข้ามกับที่ต้องการถ้ามีแถวผีเก่าซ้ำวันเดียวกัน
-		// ค้างอยู่ (ก่อนรัน cleanup script) — ต้องบังคับเอาแถว mbs_id สูงสุดของวันนั้นเสมอ
-		var existingStat models.MemberBodyStat
-		tx.Where("mb_id = ? AND DATE(mbs_recorded_date) = ?", userID, todayStr).
-			Order("mbs_id desc").Limit(1).Find(&existingStat)
-
-		if existingStat.MbsID != 0 {
-			newStat = existingStat
-			newStat.MbsWeight = req.Weight
-			newStat.MbsHeight = req.Height
-			newStat.MbsActivityLevel = req.ActivityLevel
-			newStat.MbsTarget = req.Target
-			newStat.MbsRecordedDate = now
-			if err := tx.Model(&models.MemberBodyStat{}).Where("mbs_id = ?", newStat.MbsID).Updates(map[string]interface{}{
-				"mbs_weight":         newStat.MbsWeight,
-				"mbs_height":         newStat.MbsHeight,
-				"mbs_activity_level": newStat.MbsActivityLevel,
-				"mbs_target":         newStat.MbsTarget,
-				"mbs_recorded_date":  newStat.MbsRecordedDate,
-			}).Error; err != nil {
-				return err
-			}
-		} else {
-			newStat = models.MemberBodyStat{
-				MbID:             userID.(int),
-				MbsWeight:        req.Weight,
-				MbsHeight:        req.Height,
-				MbsActivityLevel: req.ActivityLevel,
-				MbsTarget:        req.Target,
-				MbsRecordedDate:  now,
-			}
-			if err := tx.Create(&newStat).Error; err != nil {
-				return err
-			}
+		// Body Stats + BMR History — upsert รายวัน (D10) ผ่าน services เดียวกับ UpdateProfile/
+		// EditProfile กันบั๊กแก้จุดเดียวไม่ครบ (ดูรายละเอียดกติกาเต็มที่คอมเมนต์ใน services/member_service.go)
+		bodyStat, err := services.UpsertBodyStatToday(tx, userID.(int), req.Weight, req.Height, req.ActivityLevel, req.Target)
+		if err != nil {
+			return err
 		}
 
 		bmi, bmr, tdee, targetCal = services.CalculateGoals(
 			req.Weight,
 			req.Height,
-			ageFromBirthDate(finalBirthDate),
+			services.AgeFromBirthDate(finalBirthDate),
 			finalGender,
 			req.ActivityLevel,
 			req.Target,
 		)
 
-		// ORDER BY mbh_id desc + LIMIT 1 เหตุผลเดียวกับ existingStat ด้านบน
-		var existingHistory models.MemberBmrHistory
-		tx.Where("mb_id = ? AND mbh_record_date = ?", userID, todayStr).
-			Order("mbh_id desc").Limit(1).Find(&existingHistory)
-
-		if existingHistory.MbhID != 0 {
-			return tx.Model(&models.MemberBmrHistory{}).Where("mbh_id = ?", existingHistory.MbhID).Updates(map[string]interface{}{
-				"mbs_id":          newStat.MbsID,
-				"mbh_bmi":         bmi,
-				"mbh_bmr":         bmr,
-				"mbh_tdee":        tdee,
-				"mbh_tdee_target": targetCal,
-			}).Error
-		}
-
-		newHistory := models.MemberBmrHistory{
-			MbID:          userID.(int),
-			MbsID:         &newStat.MbsID,
-			MbhBmi:        bmi,
-			MbhBmr:        bmr,
-			MbhTdee:       tdee,
-			MbhTdeeTarget: targetCal,
-			MbhRecordDate: todayDate,
-		}
-		return tx.Create(&newHistory).Error
+		return services.UpsertBmrHistoryToday(tx, userID.(int), bodyStat.MbsID, bmi, bmr, tdee, targetCal)
 	})
 
 	if err != nil {
@@ -591,6 +437,7 @@ func UpdateBodyStats(c *gin.Context) {
 		return
 	}
 
+	helpers.LogAudit(c, "member", userID.(int), "update_body_stats", fmt.Sprintf("target=%d weight=%.1f height=%.1f", req.Target, req.Weight, req.Height))
 	helpers.RespondSuccess(c, "อัปเดตน้ำหนักและคำนวณเป้าหมายใหม่เรียบร้อยแล้ว", gin.H{
 		"bmi":        bmi,
 		"bmr":        bmr,

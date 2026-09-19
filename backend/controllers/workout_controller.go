@@ -7,11 +7,9 @@ import (
 	"food_and_fit_api/helpers"
 	"food_and_fit_api/models"
 	"food_and_fit_api/services"
-	"log"
-	"math"
+	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -28,121 +26,13 @@ var (
 	errDuplicateExercise = errors.New("duplicate_exercise")
 )
 
-// isSystemPlanModified เทียบท่าฝึกจริงของ user (workout_schedules ของสมาชิกคนนั้น กรองเฉพาะแถวที่
-// เป็นท่าฝึกจริง wet_id IS NOT NULL ตัดแถวหัวแผน/placeholder ออก — ดูคอมเมนต์ WorkoutSchedule
-// ใน models/exercise.go) กับแม่แบบระบบ (plan_template_detail) ทีละท่า/วัน/เซ็ต/ครั้ง — ไม่ใช่แค่
-// นับจำนวนแถวเหมือนเดิม เพราะนับจำนวนอย่างเดียวพลาด 2 เคส:
-// 1) แก้ sets/reps ของท่าเดิมเฉยๆ (UpdateWorkoutSchedule ไม่เพิ่ม/ลดแถว นับจำนวนไม่เปลี่ยน)
-// 2) ลบท่า A แล้วเพิ่มท่า B แทนวันเดียวกัน (จำนวนรวมเท่าเดิมพอดี นับจำนวนตรวจไม่เจอว่าสลับท่าไปแล้ว)
-// mbID = สมาชิกที่กำลังเช็ค, wptID = แม่แบบต้นทาง (workout_schedules.wpt_id ของแผนนั้น)
-// daysPerWeek: wpt_days_per_week ของแผนต้นทาง — ต้องแปลง ptd_day_number (1..N วันในแผน) เป็น
-// weekday (1-7) ก่อนเทียบกับ wsch_day_number เสมอ เพราะ copySystemPlanToSchedule เขียน weekday
-// ลง DB ไม่ใช่วันในแผนดิบๆ (บั๊กเดิม: เทียบกันตรงๆ โดยไม่แปลง ทำให้ is_modified ขึ้น true เท็จ
-// สำหรับทุกแผนที่ daysPerWeek != 7)
-func isSystemPlanModified(db *gorm.DB, mbID uint, wptID uint, daysPerWeek int) bool {
-	type scheduleRow struct {
-		DayNumber int
-		WetID     uint
-		Sets      int
-		Reps      string
-	}
-
-	var actual []scheduleRow
-	db.Model(&models.WorkoutSchedule{}).
-		Select("wsch_day_number as day_number, wet_id, wsch_sets as sets, wsch_reps as reps").
-		Where("mb_id = ? AND wet_id IS NOT NULL", mbID).
-		Scan(&actual)
-
-	var template []scheduleRow
-	db.Model(&models.PlanTemplateDetail{}).
-		Select("ptd_day_number as day_number, wet_id, ptd_sets as sets, ptd_reps as reps").
-		Where("wpt_id = ?", wptID).
-		Scan(&template)
-
-	if len(actual) != len(template) {
-		return true
-	}
-
-	type key struct {
-		Day   int
-		WetID uint
-	}
-	templateMap := make(map[key]scheduleRow, len(template))
-	for _, t := range template {
-		t.DayNumber = toWeekday(daysPerWeek, t.DayNumber)
-		templateMap[key{t.DayNumber, t.WetID}] = t
-	}
-	for _, a := range actual {
-		t, ok := templateMap[key{a.DayNumber, a.WetID}]
-		if !ok || t.Sets != a.Sets || t.Reps != a.Reps {
-			return true
-		}
-	}
-	return false
-}
-
-// planDayWeekday แปลง plan day number (1..N) → weekday number (1=จันทร์...7=อาทิตย์)
-// ตรงกับ _workoutDayMap ใน Flutter: 2:[0,3], 3:[0,2,4], 4:[0,1,3,4], 5:[0,1,2,3,4], 6:[0,1,2,3,4,5]
-var planDayWeekday = map[int][]int{
-	2: {1, 4},
-	3: {1, 3, 5},
-	4: {1, 2, 4, 5},
-	5: {1, 2, 3, 4, 5},
-	6: {1, 2, 3, 4, 5, 6},
-}
-
-func toWeekday(daysPerWeek, planDayNum int) int {
-	wds, ok := planDayWeekday[daysPerWeek]
-	if !ok {
-		return planDayNum
-	}
-	idx := planDayNum - 1
-	if idx < 0 || idx >= len(wds) {
-		return planDayNum
-	}
-	return wds[idx]
-}
-
-// validateTemplateComplete - เช็ก V1-V3 ก่อน copy แผนแม่แบบไปให้สมาชิก:
-// ต้องมีวันฝึกอย่างน้อย 1 วัน (V1), แต่ละวันต้องมีท่าฝึกอย่างน้อย 1 ท่า (V2),
-// และจำนวนวันที่ตั้งค่าไว้จริงใน plan_template_detail ต้องครบตาม wpt_days_per_week ที่ประกาศไว้ (V3)
-// เรียกก่อน copy ทุกจุด (SelectWorkoutPlan / ActivatePlan / ResetWorkoutPlan) กันสำเนาแผนที่แอดมินตั้งค่าไม่ครบไปให้สมาชิก
-func validateTemplateComplete(wptID uint, daysPerWeek int) error {
-	if daysPerWeek < 1 {
-		return fmt.Errorf("แผนนี้ยังไม่ได้กำหนดจำนวนวันฝึกต่อสัปดาห์ กรุณาติดต่อผู้ดูแลระบบ")
-	}
-
-	type dayCount struct {
-		Day   int
-		Total int64
-	}
-	var counts []dayCount
-	config.DB.Model(&models.PlanTemplateDetail{}).
-		Select("ptd_day_number as day, COUNT(*) as total").
-		Where("wpt_id = ? AND wet_id IS NOT NULL", wptID).
-		Group("ptd_day_number").
-		Scan(&counts)
-
-	byDay := make(map[int]int64, len(counts))
-	for _, dc := range counts {
-		byDay[dc.Day] = dc.Total
-	}
-
-	for day := 1; day <= daysPerWeek; day++ {
-		if byDay[day] == 0 {
-			return fmt.Errorf("แผนนี้ยังตั้งค่าไม่ครบ: วันฝึกที่ %d ยังไม่มีท่าฝึก กรุณาติดต่อผู้ดูแลระบบ", day)
-		}
-	}
-	return nil
-}
-
 // GetWorkoutTemplates - ดึงรายการแผนต้นแบบ (2-6 วัน) เพื่อให้ผู้ใช้เลือก
 func GetWorkoutTemplates(c *gin.Context) {
 	var templates []models.WorkoutPlanTemplate
 
 	// ดึงเฉพาะแผนระบบ (wpt_difficulty > 0) เรียงตามจำนวนวัน
 	if err := config.DB.Where("wpt_difficulty > 0").Order("wpt_days_per_week asc").Find(&templates).Error; err != nil {
-		log.Printf("GetWorkoutTemplates: query failed: %v", err)
+		slog.Error("GetWorkoutTemplates: query failed", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"message": "ไม่สามารถดึงข้อมูลต้นแบบได้",
@@ -169,16 +59,14 @@ func CreateWorkoutPlan(c *gin.Context) {
 	wptDiff, _ := strconv.Atoi(c.PostForm("wpt_difficulty"))
 
 	imagePath := ""
-	if file, err := c.FormFile("wpt_image"); err == nil {
-		if verr := helpers.ValidateImageUpload(file); verr != nil {
+	if file, ferr := c.FormFile("wpt_image"); ferr == nil {
+		newPath, verr := helpers.SaveUploadedImage(c, file, "./uploads/workout_plans", "uploads/workout_plans")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		uploadDir := "./uploads/workout_plans"
-		os.MkdirAll(uploadDir, os.ModePerm)
-		newName := fmt.Sprintf("%d%s", time.Now().UnixNano(), filepath.Ext(file.Filename))
-		if err := c.SaveUploadedFile(file, filepath.Join(uploadDir, newName)); err == nil {
-			imagePath = "uploads/workout_plans/" + newName
+		if newPath != "" {
+			imagePath = newPath
 		}
 	}
 
@@ -269,7 +157,7 @@ func AddPlanDetail(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "ลำดับท่าซ้ำ กรุณาลองใหม่อีกครั้ง"})
 			return
 		}
-		log.Printf("AddPlanDetail: create failed: %v", err)
+		slog.Error("AddPlanDetail: create failed", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "เพิ่มรายละเอียดแผนไม่สำเร็จ"})
 		return
 	}
@@ -325,7 +213,7 @@ func SelectWorkoutPlan(c *gin.Context) {
 	}
 
 	// เช็ก V1-V3 ก่อน copy: แผนต้องมีวันฝึกครบ ท่าฝึกครบทุกวันตาม wpt_days_per_week ที่ประกาศไว้
-	if err := validateTemplateComplete(plan.WptID, plan.WptDaysPerWeek); err != nil {
+	if err := services.ValidateTemplateComplete(plan.WptID, plan.WptDaysPerWeek); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -333,11 +221,11 @@ func SelectWorkoutPlan(c *gin.Context) {
 	inserted := 0
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 		var txErr error
-		inserted, txErr = copySystemPlanToSchedule(tx, uid, plan)
+		inserted, txErr = services.CopySystemPlanToSchedule(tx, uid, plan)
 		return txErr
 	})
 	if err != nil {
-		if err == errPlanHasNoDetails {
+		if err == services.ErrPlanHasNoDetails {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "แผนนี้ยังไม่มีท่าฝึก กรุณาติดต่อผู้ดูแลระบบ"})
 			return
 		}
@@ -353,86 +241,6 @@ func SelectWorkoutPlan(c *gin.Context) {
 		"days_per_week": plan.WptDaysPerWeek,
 		"inserted":      inserted,
 	})
-}
-
-// clearWorkoutSchedules - ลบ workout_schedules ของ user ทั้งหมด (รวมแถวหัวแผน/placeholder ถ้ามี)
-// ใช้ตอนสลับแผน — user มีแผน active ได้แค่ 1 แผนเสมอ ไม่เก็บ history แผนเดิมไว้เลย
-// weight_training_result ไม่หายตาม เพราะ wtrs.wsch_id เป็น FK แบบ SET NULL ไม่ใช่ CASCADE
-// (2026-09-04 รอบ 2: workout_schedules มีคอลัมน์ mb_id ตรงๆ แล้ว หลังยุบ member_workout_plans เข้ามา
-// ไม่ต้องอ้อมผ่านตารางแยกอีกต่อไป)
-func clearWorkoutSchedules(tx *gorm.DB, uid uint) error {
-	return tx.Where("mb_id = ?", uid).Delete(&models.WorkoutSchedule{}).Error
-}
-
-// startNewPlan - ล้างแผน+ท่าฝึกเดิมของสมาชิกทั้งหมดทิ้ง แล้วสร้าง "แถวหัวแผน" ใหม่ 1 แถว (wet_id
-// เป็น NULL, wsch_day_number = 0) ไว้เก็บชื่อแผน/จำนวนวันต่อสัปดาห์/แม่แบบต้นทาง — จำเป็นต้องมีแถวนี้
-// เสมอแม้ยังไม่มีท่าฝึกสักท่า (เช่นตอนเพิ่งสร้างแผนส่วนตัวใหม่) ไม่งั้นไม่มีที่เก็บชื่อแผนเลย
-// (workout_schedules ยุบรวม member_workout_plans เข้ามาแล้ว 2026-09-04 รอบ 2 — ดู models/exercise.go)
-// คืนค่าแถวหัวแผนนี้ให้ caller ใช้ 1 สมาชิกมีแผนได้แค่ 1 แผนเสมอ จึงไม่ต้องมี "รหัสแผน" แยกจริงๆ
-// อีกต่อไป (ตัวตอบ JSON ยังคง key "mwp_id" ไว้เพื่อความเข้ากันได้กับ Flutter เดิม แต่ค่าที่ส่งกลับ
-// คือ mb_id ของสมาชิกเอง ไม่ใช่รหัสแถวจริง)
-// sourceWptID = nil คือแผนสร้างเอง, ไม่ nil คือ copy จากแม่แบบ
-func startNewPlan(tx *gorm.DB, uid uint, name string, daysPerWeek int, sourceWptID *uint) (models.WorkoutSchedule, error) {
-	if err := clearWorkoutSchedules(tx, uid); err != nil {
-		return models.WorkoutSchedule{}, err
-	}
-	header := models.WorkoutSchedule{
-		WschPlanName:    name,
-		WschDaysPerWeek: daysPerWeek,
-		WschDayNumber:   0,
-		WschOrder:       1,
-		MbID:            uid,
-		WptID:           sourceWptID,
-	}
-	if err := tx.Create(&header).Error; err != nil {
-		return models.WorkoutSchedule{}, err
-	}
-	return header, nil
-}
-
-var errPlanHasNoDetails = fmt.Errorf("แผนนี้ยังไม่มีท่าฝึก")
-
-// copySystemPlanToSchedule - ก็อปท่าฝึกจาก plan_template_detail ของแม่แบบ wptID ไปเป็น
-// workout_schedules ของสมาชิก แทนที่แผนเดิมทั้งหมด (ล้าง + สร้างแถวหัวแผนใหม่ผูก wpt_id ไว้ — ดู
-// startNewPlan) ใช้ร่วมกันทั้ง SelectWorkoutPlan / ActivatePlan (สาขา wpt_id) / ResetWorkoutPlan
-// (สาขาระบบ) เพราะทั้ง 3 จุดทำสิ่งเดียวกัน — ต้องเรียกใน transaction เสมอ (caller เป็นคนครอบ)
-func copySystemPlanToSchedule(tx *gorm.DB, uid uint, plan models.WorkoutPlanTemplate) (int, error) {
-	var details []models.PlanTemplateDetail
-	if err := tx.Where("wpt_id = ?", plan.WptID).Find(&details).Error; err != nil {
-		return 0, err
-	}
-	if len(details) == 0 {
-		return 0, errPlanHasNoDetails
-	}
-
-	if _, err := startNewPlan(tx, uid, plan.WptName, int(plan.WptDaysPerWeek), &plan.WptID); err != nil {
-		return 0, err
-	}
-
-	inserted := 0
-	for _, d := range details {
-		if d.WetID == nil {
-			continue
-		}
-		ws := models.WorkoutSchedule{
-			WschPlanName:    plan.WptName,
-			WschDaysPerWeek: int(plan.WptDaysPerWeek),
-			WschDayNumber:   toWeekday(int(plan.WptDaysPerWeek), int(d.PtdDayNumber)),
-			WschDayName:     d.PtdDayName,
-			WschOrder:       d.PtdOrder,
-			WschSets:        d.PtdSets,
-			WschReps:        d.PtdReps,
-			WschRestSeconds: d.PtdRestSeconds,
-			MbID:            uid,
-			WptID:           &plan.WptID,
-			WetID:           d.WetID,
-		}
-		if err := tx.Create(&ws).Error; err != nil {
-			return inserted, err
-		}
-		inserted++
-	}
-	return inserted, nil
 }
 
 // ResetWorkoutPlan - รีเซ็ตแผน: ระบบ=copy ใหม่จากต้นฉบับ, custom=ล้างว่างเปล่า
@@ -458,7 +266,7 @@ func ResetWorkoutPlan(c *gin.Context) {
 			return
 		}
 		err := config.DB.Transaction(func(tx *gorm.DB) error {
-			_, txErr := startNewPlan(tx, uid, existing.WschPlanName, existing.WschDaysPerWeek, existing.WptID)
+			_, txErr := services.StartNewPlan(tx, uid, existing.WschPlanName, existing.WschDaysPerWeek, existing.WptID)
 			return txErr
 		})
 		if err != nil {
@@ -482,12 +290,12 @@ func ResetWorkoutPlan(c *gin.Context) {
 
 	// เช็ก V1-V3 ก่อนลบของเดิม กันข้อมูลหายเปล่าถ้าแผนแม่แบบตั้งค่าไม่ครบ
 	if plan.WptDifficulty > 0 {
-		if err := validateTemplateComplete(plan.WptID, plan.WptDaysPerWeek); err != nil {
+		if err := services.ValidateTemplateComplete(plan.WptID, plan.WptDaysPerWeek); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		err := config.DB.Transaction(func(tx *gorm.DB) error {
-			_, txErr := copySystemPlanToSchedule(tx, uid, plan)
+			_, txErr := services.CopySystemPlanToSchedule(tx, uid, plan)
 			return txErr
 		})
 		if err != nil {
@@ -496,7 +304,7 @@ func ResetWorkoutPlan(c *gin.Context) {
 		}
 		c.JSON(200, gin.H{"success": true, "message": "รีเซ็ตแผนระบบสำเร็จ", "is_system": true})
 	} else {
-		if err := clearWorkoutSchedules(config.DB, uid); err != nil {
+		if err := services.ClearWorkoutSchedules(config.DB, uid); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "ล้างแผนไม่สำเร็จ"})
 			return
 		}
@@ -562,7 +370,7 @@ func GetMemberActivePlan(c *gin.Context) {
 		realDays = template.WptDaysPerWeek // กันกรณีข้อมูลว่างผิดปกติ ไม่ให้โชว์ 0 วัน
 	}
 
-	isModified := isSystemPlanModified(config.DB, uid, template.WptID, template.WptDaysPerWeek)
+	isModified := services.IsSystemPlanModified(config.DB, uid, template.WptID, template.WptDaysPerWeek)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":  true,
@@ -597,7 +405,7 @@ func CreatePersonalPlan(c *gin.Context) {
 	}
 
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
-		_, txErr := startNewPlan(tx, uid, name, 7, nil)
+		_, txErr := services.StartNewPlan(tx, uid, name, 7, nil)
 		return txErr
 	})
 	if err != nil {
@@ -724,17 +532,17 @@ func ActivatePlan(c *gin.Context) {
 	}
 
 	// เช็ก V1-V3 ก่อน copy
-	if err := validateTemplateComplete(plan.WptID, plan.WptDaysPerWeek); err != nil {
+	if err := services.ValidateTemplateComplete(plan.WptID, plan.WptDaysPerWeek); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
-		_, txErr := copySystemPlanToSchedule(tx, uid, plan)
+		_, txErr := services.CopySystemPlanToSchedule(tx, uid, plan)
 		return txErr
 	})
 	if err != nil {
-		if err == errPlanHasNoDetails {
+		if err == services.ErrPlanHasNoDetails {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "แผนนี้ยังไม่มีท่าฝึก กรุณาติดต่อผู้ดูแลระบบ"})
 			return
 		}
@@ -768,7 +576,7 @@ func ForkWorkoutPlan(c *gin.Context) {
 	}
 
 	// เช็ก V1-V3 ก่อน copy เหมือนจุดอื่นทุกจุด
-	if err := validateTemplateComplete(plan.WptID, plan.WptDaysPerWeek); err != nil {
+	if err := services.ValidateTemplateComplete(plan.WptID, plan.WptDaysPerWeek); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -781,7 +589,7 @@ func ForkWorkoutPlan(c *gin.Context) {
 
 	inserted := 0
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
-		if _, txErr := startNewPlan(tx, uid, newName, int(plan.WptDaysPerWeek), &sourceWptID); txErr != nil {
+		if _, txErr := services.StartNewPlan(tx, uid, newName, int(plan.WptDaysPerWeek), &sourceWptID); txErr != nil {
 			return txErr
 		}
 
@@ -793,7 +601,7 @@ func ForkWorkoutPlan(c *gin.Context) {
 				WschPlanName:    newName,
 				WschDaysPerWeek: int(plan.WptDaysPerWeek),
 				WschDayName:     d.PtdDayName,
-				WschDayNumber:   toWeekday(int(plan.WptDaysPerWeek), int(d.PtdDayNumber)),
+				WschDayNumber:   services.ToWeekday(int(plan.WptDaysPerWeek), int(d.PtdDayNumber)),
 				WschOrder:       d.PtdOrder,
 				WschSets:        d.PtdSets,
 				WschReps:        d.PtdReps,
@@ -960,7 +768,7 @@ func CreateWorkoutSchedule(c *gin.Context) {
 	case errDuplicateExercise:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ท่านี้มีอยู่ในวันนี้แล้ว"})
 	default:
-		log.Printf("CreateWorkoutSchedule: create failed: %v", txErr)
+		slog.Error("CreateWorkoutSchedule: create failed", "err", txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "เพิ่มท่าไม่สำเร็จ"})
 	}
 }
@@ -1044,7 +852,7 @@ type WeightSessionSetInput struct {
 	WtrsWeight    float64 `json:"wtrs_weight"`
 	ActiveSeconds int     `json:"active_seconds"`
 	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป — optional, nil เมื่อมือถือยังไม่ส่งมา (เพิ่มคอลัมน์
-	// 2026-09-18 ใช้กับ Dynamic Base MET ของ Step 1, services.CalculateWeightTrainingCalories) —
+	// 2026-09-18 ใช้กับ Dynamic METs Logic Matrix, services.CalculateWeightTrainingCalories) —
 	// nil ให้ fallback เป็นความหนาแน่นเฉลี่ยทั้งเซสชันแทนเวลาพักจริง
 	WtrsRestSeconds *int `json:"wtrs_rest_seconds"`
 }
@@ -1071,30 +879,6 @@ type CardioResultRequest struct {
 	CdorsDistance float64 `json:"cdors_distance"`
 }
 
-// getBestOneRepMax ดึง Estimated 1RM ที่ดีที่สุดของสมาชิกคนนี้ในท่านี้ จากประวัติที่มีอยู่แล้ว
-// เท่านั้น (query ก่อนบันทึกเซสชันใหม่เสมอ จึงไม่รวมเซตที่กำลังจะบันทึก) — ใช้ร่วมกันระหว่าง
-// GetBest1RM (แสดงผลอย่างเดียว) และ SaveWorkoutResult (หา %1RM ไปคำนวณ kLoad ของ Smart Auto
-// Calorie, ดู services.CalculateWeightTrainingCalories) แยกออกมาเพื่อไม่ให้ 2 endpoint สูตรตัน
-func getBestOneRepMax(mbID, wetID uint) (best1RM, bestWeight float64, bestReps int, bestDate string, hasData bool) {
-	var row struct {
-		BestWeight float64 `gorm:"column:best_weight"`
-		BestReps   int     `gorm:"column:best_reps"`
-		Date       string  `gorm:"column:date"`
-	}
-	config.DB.Raw(`
-		SELECT wtrs_weight AS best_weight, wtrs_reps AS best_reps, wtrs_date AS date
-		FROM weight_training_result
-		WHERE mb_id = ? AND wet_id = ? AND wtrs_weight > 0 AND wtrs_reps > 0
-		ORDER BY (wtrs_weight * (1 + wtrs_reps / 30.0)) DESC
-		LIMIT 1
-	`, mbID, wetID).Scan(&row)
-
-	if row.BestWeight == 0 {
-		return 0, 0, 0, "", false
-	}
-	best1RM = math.Round(row.BestWeight*(1+float64(row.BestReps)/30.0)*100) / 100
-	return best1RM, row.BestWeight, row.BestReps, row.Date, true
-}
 
 // SaveWorkoutResult บันทึกผลเวทเทรนนิ่งทั้งเซสชัน (Smart Auto Calorie — ออกแบบ 2026-09-08)
 // แทนที่ระบบเดิมที่ผู้ใช้เลือกความหนัก 3 ระดับเอง (wtrs_intensity_level) ซึ่งตรวจแล้วพบว่าไม่เคย
@@ -1127,8 +911,9 @@ func SaveWorkoutResult(c *gin.Context) {
 		bodyWeight = bodyStat.MbsWeight
 	}
 
-	// %1RM เทียบกับประวัติเดิม (ไม่รวมเซสชันนี้) → kLoad — แทนที่การให้ผู้ใช้เลือกความหนักเอง
-	oneRepMax, _, _, _, _ := getBestOneRepMax(uid, req.WetID)
+	// 1RM ที่ดีที่สุดจากประวัติเดิม (ไม่รวมเซสชันนี้) → ใช้ทำ IntensityLevel (label แสดงผล) เท่านั้น
+	// ไม่ใช้เลือก MET (Dynamic METs Logic Matrix เลือกจากหมวดท่า/ประเภทท่า/เวลาพัก/Reps)
+	oneRepMax, _, _, _, _ := services.GetBestOneRepMax(uid, req.WetID)
 
 	setLogs := make([]services.SetLog, 0, len(req.Sets))
 	for _, s := range req.Sets {
@@ -1138,7 +923,11 @@ func SaveWorkoutResult(c *gin.Context) {
 			RestSeconds: s.WtrsRestSeconds,
 		})
 	}
-	calc := services.CalculateWeightTrainingCalories(bodyWeight, req.TotalDurationSeconds, oneRepMax, setLogs)
+	profile := services.ExerciseProfile{
+		Equipment:    exercise.WetEquipment,
+		ExerciseType: exercise.WetExerciseType,
+	}
+	calc := services.CalculateWeightTrainingCalories(bodyWeight, req.TotalDurationSeconds, oneRepMax, profile, setLogs)
 
 	// เลขเซ็ทนับต่อเนื่องทั้งวันจาก DB จริง ไม่ใช้เลขเซ็ทจาก client ตรงๆ — client (หน้าจอฝึก) นับ
 	// เซ็ทแบบรีเซ็ตเป็น 1 ใหม่ทุกครั้งที่เปิดหน้าจอ (ทุก "รอบ") ถ้าฝึกท่าเดียวกันซ้ำวันเดียวกัน
@@ -1178,9 +967,9 @@ func SaveWorkoutResult(c *gin.Context) {
 		})
 		nextSetNo++
 
-		// Estimated 1RM = weight × (1 + reps/30) — คำนวณแสดงผลอย่างเดียว ไม่บันทึก DB (กฎเหล็กข้อ 8.2)
+		// Estimated 1RM — คำนวณแสดงผลอย่างเดียว ไม่บันทึก DB (กฎเหล็กข้อ 8.2)
 		if s.WtrsWeight > 0 {
-			est := math.Round(s.WtrsWeight*(1+float64(s.WtrsReps)/30.0)*100) / 100
+			est := services.EstimateOneRepMax(s.WtrsWeight, s.WtrsReps)
 			if est > sessionBest1RM {
 				sessionBest1RM = est
 			}
@@ -1193,7 +982,7 @@ func SaveWorkoutResult(c *gin.Context) {
 	}
 
 	if err := config.DB.Create(&rows).Error; err != nil {
-		log.Printf("SaveWorkoutResult: create failed: %v", err)
+		slog.Error("SaveWorkoutResult: create failed", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกผลไม่สำเร็จ กรุณาลองใหม่"})
 		return
 	}
@@ -1206,8 +995,6 @@ func SaveWorkoutResult(c *gin.Context) {
 		// รายละเอียดที่มาของตัวเลข — ให้ debug/ตรวจสอบได้ว่าทำไมได้ค่านี้ ไม่ใช่กล่องดำ
 		"calculation": gin.H{
 			"session_base_met":  calc.SessionBaseMET,
-			"k_load":            calc.KLoad,
-			"k_density":         calc.KDensity,
 			"final_met":         calc.FinalMET,
 			"effective_minutes": calc.EffectiveMinutes,
 			"intensity_level":   calc.IntensityLevel,
@@ -1228,7 +1015,7 @@ func GetBest1RM(c *gin.Context) {
 		return
 	}
 
-	best1RM, bestWeight, bestReps, date, hasData := getBestOneRepMax(uid, uint(wetID64))
+	best1RM, bestWeight, bestReps, date, hasData := services.GetBestOneRepMax(uid, uint(wetID64))
 	if !hasData {
 		c.JSON(http.StatusOK, gin.H{
 			"wet_id":   wetIDStr,
@@ -1282,21 +1069,12 @@ func SaveCardioResult(c *gin.Context) {
 		bodyWeight = bodyStat.MbsWeight
 	}
 
-	// NET calories: หัก 1 MET (=ค่าเผาผลาญขณะพักนิ่ง/resting metabolic) ออกก่อนเก็บ DB — เหตุผลผลเดียวกับ
-	// เวทเทรนนิ่ง (ดู SaveWorkoutResult ด้านบน) นิยาม 1 MET ไม่ได้ขึ้นกับชนิดกิจกรรม กันนับซ้ำตอนเอาไปรวม
-	// กับ Baseline (BMR×1.2) เป็น Total Daily Energy Output ที่ analytics_controller.go SUM(cdors_calories)
-	// ตรงๆ เข้า exerciseBurn เหมือนกับฝั่งเวท (2026-08-22)
-	// clamp กัน METs ติดลบ/ศูนย์ ถ้าวันหน้ามีกิจกรรมคาร์ดิโอ METs ≤ 1.0 ถูกเพิ่มเข้าระบบ (ปัจจุบัน
-	// คาร์ดิโอทุกท่าใน DB METs ต่ำสุด 6.0 (ว่ายน้ำ ตรงรหัส Compendium 18310) ไม่ชนขอบนี้ แต่กันไว้ก่อน
-	// เผื่ออนาคต)
-	netMets := cardio.CdoMets - 1
-	if netMets < 0 {
-		netMets = 0
-	}
-	// Deprecated (2026-08-22): สูตรเดิม `cardio.CdoMets * bodyWeight * เวลา` (ไม่หัก 1 MET) นับพลังงาน
-	// พื้นฐานซ้ำกับ Baseline ใน TDEO เหมือนที่เจอฝั่งเวทเทรนนิ่ง — แถวข้อมูลเก่าก่อนวันนี้คำนวณด้วยสูตร
-	// gross แบบเดิม ไม่ตรงกับที่นี่ ถ้าต้องเทียบย้อนหลังให้เช็ควันที่ก่อนแก้
-	burnedCalories := netMets * bodyWeight * (float64(req.CdorsDuration) / 3600.0)
+	// NET calories (สูตร ACSM บทที่ 2 ข้อ 2.1.4.10) — สูตรจริงอยู่ที่ services.NetEnergyKcal (ใช้ร่วมกับ
+	// เวทเทรนนิ่ง) หัก 1 MET ก่อนเก็บ DB กันนับซ้ำกับ Baseline (BMR×1.2) ตอนรวมเป็น Total Daily Energy
+	// Output ที่ analytics SUM(cdors_calories) ตรงๆ เข้า exerciseBurn และ clamp กัน METs ≤ 1 ติดลบไว้ในนั้นแล้ว
+	// (ปัจจุบันคาร์ดิโอทุกท่าใน DB METs ต่ำสุด 6.0 = ว่ายน้ำ ตรงรหัส Compendium 18310 ไม่ชนขอบนี้)
+	// แถวก่อน 2026-09-19 คำนวณด้วย coefficient 1.0 (สูตรเดิม) เทียบย้อนหลังตรงๆ ไม่ได้ ต่างกัน ~5%
+	burnedCalories := services.CalculateCardioCalories(cardio.CdoMets, bodyWeight, req.CdorsDuration)
 
 	// cdors_distance เก็บ NULL เมื่อกิจกรรมนั้นไม่ได้วัดระยะทาง (cdo_has_distance = 0) — "ไม่มี
 	// ระยะทาง" กับ "ระยะทาง 0 กม." คนละความหมาย DEFAULT 0.00 เดิมถูกถอดออกจาก DB แล้ว
@@ -1317,7 +1095,7 @@ func SaveCardioResult(c *gin.Context) {
 	}
 
 	if err := config.DB.Create(&result).Error; err != nil {
-		log.Printf("SaveResult: create failed: %v", err)
+		slog.Error("SaveResult: create failed", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกผลไม่สำเร็จ กรุณาลองใหม่"})
 		return
 	}
@@ -1367,7 +1145,7 @@ func GetPlanDetails(c *gin.Context) {
 	}
 
 	if err := query.Find(&details).Error; err != nil {
-		log.Printf("GetPlanDetails: query failed: %v", err)
+		slog.Error("GetPlanDetails: query failed", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ดึงข้อมูลล้มเหลว กรุณาลองใหม่"})
 		return
 	}
@@ -1399,19 +1177,17 @@ func UpdateWorkoutPlan(c *gin.Context) {
 		plan.WptDifficulty = int8(d)
 	}
 
-	if file, err := c.FormFile("wpt_image"); err == nil {
-		if verr := helpers.ValidateImageUpload(file); verr != nil {
+	if file, ferr := c.FormFile("wpt_image"); ferr == nil {
+		newPath, verr := helpers.SaveUploadedImage(c, file, "./uploads/workout_plans", "uploads/workout_plans")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		uploadDir := "./uploads/workout_plans"
-		os.MkdirAll(uploadDir, os.ModePerm)
-		newName := fmt.Sprintf("%d%s", time.Now().UnixNano(), filepath.Ext(file.Filename))
-		if err := c.SaveUploadedFile(file, filepath.Join(uploadDir, newName)); err == nil {
+		if newPath != "" {
 			if plan.WptImage != "" {
 				os.Remove("./" + plan.WptImage)
 			}
-			plan.WptImage = "uploads/workout_plans/" + newName
+			plan.WptImage = newPath
 		}
 	}
 
@@ -1610,7 +1386,7 @@ func GetMemberPlanDetails(c *gin.Context) {
 	}
 
 	if err := config.DB.Preload("WeightExercise").Where("wpt_id = ?", planID).Find(&details).Error; err != nil {
-		log.Printf("GetMemberPlanDetails: query failed: %v", err)
+		slog.Error("GetMemberPlanDetails: query failed", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"message": "ดึงข้อมูลล้มเหลว กรุณาลองใหม่",

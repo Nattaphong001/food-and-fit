@@ -25,7 +25,7 @@ type MemberBodyStat struct {
 	MbsWeight        float64   `gorm:"column:mbs_weight;type:decimal(5,2)"`
 	MbsHeight        float64   `gorm:"column:mbs_height;type:decimal(4,1)"`
 	MbsActivityLevel float64   `gorm:"column:mbs_activity_level;type:decimal(4,3)"`
-	MbsTarget        int       `gorm:"column:mbs_target;type:tinyint"` // 1=ลดน้ำหนัก, 2=เพิ่มกล้ามเนื้อ, 3=รักษาน้ำหนัก
+	MbsTarget        int       `gorm:"column:mbs_target;type:tinyint"` // 1=ลดน้ำหนัก, 2=เพิ่มน้ำหนัก, 3=รักษาน้ำหนัก
 	MbsRecordedDate  time.Time `gorm:"column:mbs_recorded_date;type:datetime"`
 }
 

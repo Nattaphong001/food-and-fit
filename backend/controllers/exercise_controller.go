@@ -2,12 +2,10 @@ package controllers
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
-	"time"
 
 	"food_and_fit_api/config"
 	"food_and_fit_api/helpers"
@@ -43,25 +41,15 @@ func CreateMuscleGroup(c *gin.Context) {
 	imagePath := "images/default.png"
 
 	// 2. รับค่าที่เป็น File
-	file, err := c.FormFile("mug_image")
-	if err == nil {
-		if verr := helpers.ValidateImageUpload(file); verr != nil {
+	if file, ferr := c.FormFile("mug_image"); ferr == nil {
+		newPath, verr := helpers.SaveUploadedImage(c, file, "./uploads/muscle_groups", "uploads/muscle_groups")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		// สร้างโฟลเดอร์ถ้ายังไม่มี
-		uploadDir := "./uploads/muscle_groups"
-		os.MkdirAll(uploadDir, os.ModePerm)
-
-		// สร้างชื่อไฟล์ใหม่กันซ้ำ (ใช้ Timestamp)
-		extension := filepath.Ext(file.Filename)
-		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), extension)
-		savePath := filepath.Join(uploadDir, newFileName)
-
-		// บันทึกไฟล์ลงเซิร์ฟเวอร์
-		if err := c.SaveUploadedFile(file, savePath); err == nil {
+		if newPath != "" {
 			// เก็บ Path สำหรับลง Database
-			imagePath = "uploads/muscle_groups/" + newFileName
+			imagePath = newPath
 		}
 	}
 
@@ -112,26 +100,19 @@ func UpdateMuscleGroup(c *gin.Context) {
 	}
 
 	// จัดการรูปภาพ (ถ้ามีการส่งไฟล์ใหม่มา)
-	file, err := c.FormFile("mug_image")
-	if err == nil {
-		if verr := helpers.ValidateImageUpload(file); verr != nil {
+	if file, ferr := c.FormFile("mug_image"); ferr == nil {
+		newPath, verr := helpers.SaveUploadedImage(c, file, "./uploads/muscle_groups", "uploads/muscle_groups")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		uploadDir := "./uploads/muscle_groups"
-		os.MkdirAll(uploadDir, os.ModePerm)
-
-		extension := filepath.Ext(file.Filename)
-		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), extension)
-		savePath := filepath.Join(uploadDir, newFileName)
-
-		if err := c.SaveUploadedFile(file, savePath); err == nil {
+		if newPath != "" {
 			// ลบไฟล์เก่าทิ้งเพื่อประหยัดพื้นที่ (ถ้าไม่ใช่ไฟล์ default)
 			if muscle.MugImage != "" && muscle.MugImage != "images/default.png" {
 				os.Remove("./" + muscle.MugImage)
 			}
 			// อัปเดต Path เป็นรูปใหม่
-			muscle.MugImage = "uploads/muscle_groups/" + newFileName
+			muscle.MugImage = newPath
 		}
 	}
 
@@ -206,18 +187,6 @@ func CreateWeightExercise(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
-	// wet_base_met: MET พื้นฐานของท่านี้ ใช้ใน Smart Auto Calorie (services.CalculateWeightTrainingCalories)
-	// ไม่ส่งมา → default 4.5 (compound ช่วงบน — ตรงกับ DEFAULT ของคอลัมน์) ช่วงค่าที่ใช้จริงในระบบ:
-	// 3.0=isolation, 4.5=compound บน, 5.5=compound ล่าง, 7.0=full-body
-	wetBaseMet := 4.5
-	if baseMetStr := c.PostForm("wet_base_met"); baseMetStr != "" {
-		parsed, err := strconv.ParseFloat(baseMetStr, 64)
-		if err != nil || parsed < 1.0 || parsed > 12.0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "wet_base_met ต้องเป็นตัวเลขระหว่าง 1.0-12.0"})
-			return
-		}
-		wetBaseMet = parsed
-	}
 	// mug_id (ถ้า form ส่งมา) ไม่ใช้แล้ว — weight_exercises.mug_id ถูก DROP ออกจาก DB (2026-09-04)
 	// กำหนดกล้ามเนื้อของท่าฝึกผ่าน endpoint exercise_muscle_details แยกต่างหากเท่านั้น (รองรับ
 	// หลักหลายมัด/รองได้ ต่างจาก mug_id เดิมที่เก็บได้แค่มัดเดียว)
@@ -226,39 +195,27 @@ func CreateWeightExercise(c *gin.Context) {
 	imagePath := ""
 
 	// 2. รับค่าที่เป็น File
-	file, err := c.FormFile("wet_image")
-	if err == nil {
-		if verr := helpers.ValidateImageUpload(file); verr != nil {
+	if file, ferr := c.FormFile("wet_image"); ferr == nil {
+		newPath, verr := helpers.SaveUploadedImage(c, file, "./uploads/weight_exercises/image", "uploads/weight_exercises/image")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		uploadDir := "./uploads/weight_exercises/image"
-		os.MkdirAll(uploadDir, os.ModePerm)
-
-		extension := filepath.Ext(file.Filename)
-		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), extension)
-		savePath := filepath.Join(uploadDir, newFileName)
-
-		if err := c.SaveUploadedFile(file, savePath); err == nil {
-			imagePath = "uploads/weight_exercises/image/" + newFileName
+		if newPath != "" {
+			imagePath = newPath
 		}
 	}
 
 	// Loop video upload
 	loopVideoPath := ""
-	loopFile, loopErr := c.FormFile("wet_loop_video")
-	if loopErr == nil {
-		if verr := helpers.ValidateVideoUpload(loopFile); verr != nil {
+	if loopFile, lferr := c.FormFile("wet_loop_video"); lferr == nil {
+		newPath, verr := helpers.SaveUploadedVideo(c, loopFile, "./uploads/weight_exercises/videoloop", "uploads/weight_exercises/videoloop")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		loopDir := "./uploads/weight_exercises/videoloop"
-		os.MkdirAll(loopDir, os.ModePerm)
-		loopExt := filepath.Ext(loopFile.Filename)
-		loopName := fmt.Sprintf("%d_loop%s", time.Now().UnixNano(), loopExt)
-		loopPath := filepath.Join(loopDir, loopName)
-		if err := c.SaveUploadedFile(loopFile, loopPath); err == nil {
-			loopVideoPath = "uploads/weight_exercises/videoloop/" + loopName
+		if newPath != "" {
+			loopVideoPath = newPath
 		}
 	}
 
@@ -272,7 +229,6 @@ func CreateWeightExercise(c *gin.Context) {
 		WetDifficulty:   int8(wetDiff),
 		WetEquipment:    int8(wetEquip),
 		WetExerciseType: int8(wetExerciseType),
-		WetBaseMet:      wetBaseMet,
 		WetImage:        imagePath,
 	}
 
@@ -332,54 +288,33 @@ func UpdateWeightExercise(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
-	if baseMetStr := c.PostForm("wet_base_met"); baseMetStr != "" {
-		parsed, err := strconv.ParseFloat(baseMetStr, 64)
-		if err != nil || parsed < 1.0 || parsed > 12.0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "wet_base_met ต้องเป็นตัวเลขระหว่าง 1.0-12.0"})
-			return
-		}
-		exercise.WetBaseMet = parsed
-	}
-
 	// จัดการรูปภาพ (ถ้ามีการส่งไฟล์ใหม่มา)
-	file, err := c.FormFile("wet_image")
-	if err == nil {
-		if verr := helpers.ValidateImageUpload(file); verr != nil {
+	if file, ferr := c.FormFile("wet_image"); ferr == nil {
+		newPath, verr := helpers.SaveUploadedImage(c, file, "./uploads/weight_exercises/image", "uploads/weight_exercises/image")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		uploadDir := "./uploads/weight_exercises/image"
-		os.MkdirAll(uploadDir, os.ModePerm)
-
-		extension := filepath.Ext(file.Filename)
-		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), extension)
-		savePath := filepath.Join(uploadDir, newFileName)
-
-		if err := c.SaveUploadedFile(file, savePath); err == nil {
+		if newPath != "" {
 			if exercise.WetImage != "" {
 				os.Remove("./" + exercise.WetImage)
 			}
-			exercise.WetImage = "uploads/weight_exercises/image/" + newFileName
+			exercise.WetImage = newPath
 		}
 	}
 
 	// Loop video upload
-	loopVideoFile, loopVideoErr := c.FormFile("wet_loop_video")
-	if loopVideoErr == nil {
-		if verr := helpers.ValidateVideoUpload(loopVideoFile); verr != nil {
+	if loopVideoFile, lferr := c.FormFile("wet_loop_video"); lferr == nil {
+		newPath, verr := helpers.SaveUploadedVideo(c, loopVideoFile, "./uploads/weight_exercises/videoloop", "uploads/weight_exercises/videoloop")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		loopDir := "./uploads/weight_exercises/videoloop"
-		os.MkdirAll(loopDir, os.ModePerm)
-		loopExt := filepath.Ext(loopVideoFile.Filename)
-		loopName := fmt.Sprintf("%d_loop%s", time.Now().UnixNano(), loopExt)
-		loopPath := filepath.Join(loopDir, loopName)
-		if err := c.SaveUploadedFile(loopVideoFile, loopPath); err == nil {
+		if newPath != "" {
 			if exercise.WetLoopVideo != "" {
 				os.Remove("./" + exercise.WetLoopVideo)
 			}
-			exercise.WetLoopVideo = "uploads/weight_exercises/videoloop/" + loopName
+			exercise.WetLoopVideo = newPath
 		}
 	}
 
@@ -470,7 +405,7 @@ func GetExerciseMuscleDetails(c *gin.Context) {
 	query += " ORDER BY emd.exm_type ASC"
 
 	if err := config.DB.Raw(query, args...).Scan(&results).Error; err != nil {
-		log.Printf("GetExerciseMuscleDetails: query failed: %v", err)
+		slog.Error("GetExerciseMuscleDetails: query failed", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถดึงข้อมูลได้ กรุณาลองใหม่"})
 		return
 	}
@@ -595,39 +530,27 @@ func CreateCardioExercise(c *gin.Context) {
 
 	// 2. รับและบันทึกไฟล์รูปภาพ
 	imagePath := ""
-	file, err := c.FormFile("cdo_image")
-	if err == nil {
-		if verr := helpers.ValidateImageUpload(file); verr != nil {
+	if file, ferr := c.FormFile("cdo_image"); ferr == nil {
+		newPath, verr := helpers.SaveUploadedImage(c, file, "./uploads/cardio/images", "uploads/cardio/images")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		uploadDir := "./uploads/cardio/images"
-		os.MkdirAll(uploadDir, os.ModePerm)
-
-		extension := filepath.Ext(file.Filename)
-		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), extension)
-		savePath := filepath.Join(uploadDir, newFileName)
-
-		if err := c.SaveUploadedFile(file, savePath); err == nil {
-			imagePath = "uploads/cardio/images/" + newFileName
+		if newPath != "" {
+			imagePath = newPath
 		}
 	}
 
 	// Loop video upload
 	loopVideoPath := ""
-	loopFile, loopErr := c.FormFile("cdo_loop_video")
-	if loopErr == nil {
-		if verr := helpers.ValidateVideoUpload(loopFile); verr != nil {
+	if loopFile, lferr := c.FormFile("cdo_loop_video"); lferr == nil {
+		newPath, verr := helpers.SaveUploadedVideo(c, loopFile, "./uploads/cardio/videoloop", "uploads/cardio/videoloop")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		loopDir := "./uploads/cardio/videoloop"
-		os.MkdirAll(loopDir, os.ModePerm)
-		loopExt := filepath.Ext(loopFile.Filename)
-		loopName := fmt.Sprintf("%d_loop%s", time.Now().UnixNano(), loopExt)
-		loopPath := filepath.Join(loopDir, loopName)
-		if err := c.SaveUploadedFile(loopFile, loopPath); err == nil {
-			loopVideoPath = "uploads/cardio/videoloop/" + loopName
+		if newPath != "" {
+			loopVideoPath = newPath
 		}
 	}
 
@@ -710,44 +633,32 @@ func UpdateCardioExercise(c *gin.Context) {
 	}
 
 	// จัดการรูปภาพใหม่ (ถ้ามี)
-	file, err := c.FormFile("cdo_image")
-	if err == nil {
-		if verr := helpers.ValidateImageUpload(file); verr != nil {
+	if file, ferr := c.FormFile("cdo_image"); ferr == nil {
+		newPath, verr := helpers.SaveUploadedImage(c, file, "./uploads/cardio/images", "uploads/cardio/images")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		uploadDir := "./uploads/cardio/images"
-		os.MkdirAll(uploadDir, os.ModePerm)
-
-		extension := filepath.Ext(file.Filename)
-		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), extension)
-		savePath := filepath.Join(uploadDir, newFileName)
-
-		if err := c.SaveUploadedFile(file, savePath); err == nil {
+		if newPath != "" {
 			if cardio.CdoImage != "" {
 				os.Remove("./" + cardio.CdoImage)
 			}
-			cardio.CdoImage = "uploads/cardio/images/" + newFileName
+			cardio.CdoImage = newPath
 		}
 	}
 
 	// Loop video upload
-	loopFile, loopErr := c.FormFile("cdo_loop_video")
-	if loopErr == nil {
-		if verr := helpers.ValidateVideoUpload(loopFile); verr != nil {
+	if loopFile, lferr := c.FormFile("cdo_loop_video"); lferr == nil {
+		newPath, verr := helpers.SaveUploadedVideo(c, loopFile, "./uploads/cardio/videoloop", "uploads/cardio/videoloop")
+		if verr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 			return
 		}
-		loopDir := "./uploads/cardio/videoloop"
-		os.MkdirAll(loopDir, os.ModePerm)
-		loopExt := filepath.Ext(loopFile.Filename)
-		loopName := fmt.Sprintf("%d_loop%s", time.Now().UnixNano(), loopExt)
-		loopPath := filepath.Join(loopDir, loopName)
-		if err := c.SaveUploadedFile(loopFile, loopPath); err == nil {
+		if newPath != "" {
 			if cardio.CdoLoopVideo != "" {
 				os.Remove("./" + cardio.CdoLoopVideo)
 			}
-			cardio.CdoLoopVideo = "uploads/cardio/videoloop/" + loopName
+			cardio.CdoLoopVideo = newPath
 		}
 	}
 
@@ -863,25 +774,21 @@ func UpdateCardioCategoryImage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาแนบไฟล์รูปภาพ (cdc_image)"})
 		return
 	}
-	if verr := helpers.ValidateImageUpload(file); verr != nil {
+	newPath, verr := helpers.SaveUploadedImage(c, file, "./uploads/cardio_categories", "uploads/cardio_categories")
+	if verr != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
 		return
 	}
-
-	uploadDir := "./uploads/cardio_categories"
-	os.MkdirAll(uploadDir, os.ModePerm)
-	extension := filepath.Ext(file.Filename)
-	newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), extension)
-	savePath := filepath.Join(uploadDir, newFileName)
-
-	if err := c.SaveUploadedFile(file, savePath); err != nil {
+	if newPath == "" {
+		// validate ผ่านแต่บันทึกไฟล์จริงล้มเหลว — เอนด์พอยต์นี้บังคับต้องมีไฟล์เสมอ (ต่างจากจุดอื่น
+		// ที่ยอมให้เงียบๆ ได้เพราะไฟล์เป็น optional)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "อัปโหลดรูปไม่สำเร็จ"})
 		return
 	}
 	if category.CdcImage != "" {
 		os.Remove("./" + category.CdcImage)
 	}
-	category.CdcImage = "uploads/cardio_categories/" + newFileName
+	category.CdcImage = newPath
 
 	if err := config.DB.Save(&category).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกไม่สำเร็จ"})
