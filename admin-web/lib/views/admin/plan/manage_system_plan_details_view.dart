@@ -12,11 +12,9 @@
 // เปลี่ยนแค่ bottom sheet ฟอร์ม -> Dialog กึ่งกลางจอ (เข้ากับรูปแบบ desktop) และจำกัดความกว้าง
 // เนื้อหาให้ไม่ยืดเต็มจอกว้างเกินไป
 
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:convert';
-import 'package:get_storage/get_storage.dart';
-import 'package:http/http.dart' as http;
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/layout_breakpoints.dart';
 import '../../../core/utils/plan_day_labels.dart';
@@ -113,9 +111,6 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
   late int _planDifficulty;
   String? _planDescription;
 
-  String get baseUrl => '${ApiClient.serverUrl}/api';
-  String get _token => GetStorage().read('auth_token') ?? '';
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $_token'};
   final ApiClient _api = ApiClient();
 
   @override
@@ -154,12 +149,10 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
     });
 
     try {
-      final headers = {"Content-Type": "application/json", "Authorization": "Bearer $_token"};
       await Future.wait([
-        http.put(Uri.parse('$baseUrl/workouts/details/${a['ptd_id']}'), headers: headers, body: jsonEncode({'ptd_order': bOrder})),
-        http.put(Uri.parse('$baseUrl/workouts/details/${b['ptd_id']}'), headers: headers, body: jsonEncode({'ptd_order': aOrder})),
+        _api.put('/workouts/details/${a['ptd_id']}', {'ptd_order': bOrder}),
+        _api.put('/workouts/details/${b['ptd_id']}', {'ptd_order': aOrder}),
       ]);
-      ApiClient.clearCache();
     } catch (e) {
       if (mounted) _showSnackBar('เรียงลำดับไม่สำเร็จ: $e');
       await _fetchPlanDetails(); // sync กลับให้ตรงกับ server จริง
@@ -199,9 +192,9 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
 
   Future<void> _fetchPlanDetails() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/workouts/details?plan_id=${widget.planId}'), headers: _authHeaders);
+      final response = await _api.get('/workouts/details?plan_id=${widget.planId}');
       if (response.statusCode == 200) {
-        final data = json.decode(utf8.decode(response.bodyBytes));
+        final data = response.data;
         final list = data is Map ? (data['data'] ?? data['items'] ?? data['result'] ?? []) as List : data as List;
         if (mounted) setState(() => planDetails = list);
       }
@@ -258,15 +251,9 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
 
     _showLoadingDialog();
     try {
-      http.Response response;
-      final headers = {"Content-Type": "application/json", "Authorization": "Bearer $_token"};
-      final body = jsonEncode(formData);
-
-      if (oldItem == null) {
-        response = await http.post(Uri.parse('$baseUrl/workouts/details'), headers: headers, body: body);
-      } else {
-        response = await http.put(Uri.parse('$baseUrl/workouts/details/${oldItem['ptd_id']}'), headers: headers, body: body);
-      }
+      final response = oldItem == null
+          ? await _api.post('/workouts/details', formData)
+          : await _api.put('/workouts/details/${oldItem['ptd_id']}', formData);
 
       if (!mounted) return;
       Navigator.pop(context); // ปิด loading
@@ -275,7 +262,7 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
         await _fetchPlanDetails();
         _showSnackBar(oldItem == null ? 'เพิ่มท่าฝึกสำเร็จ' : 'แก้ไขท่าฝึกสำเร็จ', type: AppAlertType.success);
       } else {
-        _showSnackBar('ล้มเหลว: ${response.statusCode} ${response.body}');
+        _showSnackBar('ล้มเหลว: ${response.statusCode} ${response.data}');
       }
     } catch (e) {
       if (mounted) Navigator.pop(context);
@@ -296,7 +283,7 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
 
     _showLoadingDialog();
     try {
-      final response = await http.delete(Uri.parse('$baseUrl/workouts/details/$detId'), headers: _authHeaders);
+      final response = await _api.delete('/workouts/details/$detId');
       if (!mounted) return;
       Navigator.pop(context);
       if (response.statusCode == 200) {
@@ -320,9 +307,9 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
     // ล่าสุดจริงจาก server แทนใช้สำเนาในเครื่อง (เผื่อมีคนอื่นแก้ไว้ก่อนหน้านี้)
     Map<String, dynamic>? planItem;
     try {
-      final res = await http.get(Uri.parse('$baseUrl/workouts/plans'), headers: _authHeaders);
+      final res = await _api.get('/workouts/plans');
       if (res.statusCode == 200) {
-        final decoded = json.decode(utf8.decode(res.bodyBytes));
+        final decoded = res.data;
         final list = decoded is Map ? (decoded['data'] ?? decoded['items'] ?? decoded['result'] ?? []) as List : decoded as List;
         planItem = list.cast<Map<String, dynamic>>().firstWhere((p) => (p['wpt_id'] as num?)?.toInt() == widget.planId, orElse: () => {});
         if (planItem.isEmpty) planItem = null;
@@ -411,7 +398,7 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
                           const SizedBox(height: 16),
                           const Text('ชื่อแผนการฝึก *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
                           const SizedBox(height: 6),
-                          TextField(controller: nameCtrl, decoration: InputDecoration(hintText: 'เช่น แผนเพิ่มกล้ามเนื้อ, แผนลดน้ำหนัก', prefixIcon: const Icon(Icons.assignment_outlined, color: AppColors.primaryGreen, size: 18), contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12))),
+                          TextField(controller: nameCtrl, decoration: InputDecoration(hintText: 'เช่น แผนเพิ่มน้ำหนัก, แผนลดน้ำหนัก', prefixIcon: const Icon(Icons.assignment_outlined, color: AppColors.primaryGreen, size: 18), contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12))),
                           const SizedBox(height: 14),
                           const Text('คำอธิบาย', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
                           const SizedBox(height: 6),
@@ -488,7 +475,6 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
                                     planId: widget.planId,
                                     newDays: selectedDays,
                                     oldDays: oldDays,
-                                    authHeaders: _authHeaders,
                                   );
                                   if (!canProceed) return;
                                 }
@@ -515,23 +501,17 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
   Future<void> _savePlanInfo(String name, int daysPerWeek, int difficulty, String description, File? imageFile, Uint8List? imageBytes, String? imageFileName) async {
     _showLoadingDialog();
     try {
-      final request = http.MultipartRequest('PUT', Uri.parse('$baseUrl/workouts/plans/${widget.planId}'));
-      request.headers.addAll(_authHeaders);
-      request.fields['wpt_name'] = name;
-      request.fields['wpt_days_per_week'] = daysPerWeek.toString();
-      request.fields['wpt_difficulty'] = difficulty.toString();
-      request.fields['wpt_description'] = description;
-
-      if (kIsWeb) {
-        if (imageBytes != null && imageFileName != null) {
-          request.files.add(http.MultipartFile.fromBytes('wpt_image', imageBytes, filename: imageFileName));
-        }
-      } else if (imageFile != null) {
-        request.files.add(await http.MultipartFile.fromPath('wpt_image', imageFile.path));
-      }
-
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
+      final formData = dio.FormData.fromMap({
+        'wpt_name': name,
+        'wpt_days_per_week': daysPerWeek.toString(),
+        'wpt_difficulty': difficulty.toString(),
+        'wpt_description': description,
+        if (kIsWeb && imageBytes != null && imageFileName != null)
+          'wpt_image': dio.MultipartFile.fromBytes(imageBytes, filename: imageFileName)
+        else if (!kIsWeb && imageFile != null)
+          'wpt_image': await dio.MultipartFile.fromFile(imageFile.path),
+      });
+      final response = await _api.put('/workouts/plans/${widget.planId}', formData);
       if (!mounted) return;
       Navigator.pop(context); // ปิด loading
 
@@ -570,9 +550,9 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
 
   Future<void> _refreshPlanImage() async {
     try {
-      final res = await http.get(Uri.parse('$baseUrl/workouts/plans'), headers: _authHeaders);
+      final res = await _api.get('/workouts/plans');
       if (res.statusCode != 200) return;
-      final decoded = json.decode(utf8.decode(res.bodyBytes));
+      final decoded = res.data;
       final list = decoded is Map ? (decoded['data'] ?? decoded['items'] ?? decoded['result'] ?? []) as List : decoded as List;
       final match = list.cast<Map<String, dynamic>>().firstWhere((p) => (p['wpt_id'] as num?)?.toInt() == widget.planId, orElse: () => {});
       if (match.isNotEmpty && mounted) setState(() => _planImage = match['wpt_image']?.toString());
@@ -608,6 +588,13 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
     final setsCtrl = TextEditingController(text: item == null ? '' : (item['ptd_sets'] ?? '').toString());
     final repsCtrl = TextEditingController(text: item == null ? '' : (item['ptd_reps'] ?? '').toString());
     final restCtrl = TextEditingController(text: item == null ? '' : (item['ptd_rest_seconds'] ?? '').toString());
+    // error inline ต่อฟิลด์ ตั้งตอนกดบันทึกแล้วข้อมูลไม่ถูกต้อง — เคลียร์เองตอนผู้ใช้แก้ไขฟิลด์นั้น
+    // (เดิมเว้นว่างช่องเซต/พักแล้วกดบันทึก จะเงียบๆ ใช้ค่า default 3/90 แทนโดยไม่เตือนว่าไม่ได้กรอก
+    // จริง — ต้องกรอกเป็นตัวเลขจริงเสมอ ไม่ใช่ปล่อยให้ระบบเดาแทน)
+    String? setsError;
+    String? repsError;
+    String? restError;
+    final repsPattern = RegExp(r'^\d{1,3}(-\d{1,3})?$');
 
     // ค้นหา/กรองท่าฝึก — เดิมเป็น dropdown รายชื่อล้วนไม่มีทางค้นหา หาท่ายากเวลามีท่าเยอะ
     String exerciseSearchQuery = '';
@@ -779,8 +766,13 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
                                 controller: setsCtrl,
                                 keyboardType: TextInputType.number,
                                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                onChanged: (_) { if (setsError != null) setModalState(() => setsError = null); },
                                 decoration: InputDecoration(hintText: 'เช่น 3', contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12)),
                               ),
+                              if (setsError != null) ...[
+                                const SizedBox(height: 4),
+                                Text(setsError!, style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                              ],
                             ]),
                           ),
                           const SizedBox(width: 12),
@@ -796,8 +788,13 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
                                 // controller เสถียรเหมือนช่องเซต/พัก — ไม่งั้นค่าที่ set แบบ
                                 // programmatic (เช่น autofill) อาจ sync ไม่ครบ/เพี้ยน
                                 inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9-]'))],
+                                onChanged: (_) { if (repsError != null) setModalState(() => repsError = null); },
                                 decoration: InputDecoration(hintText: 'เช่น 12', contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12)),
                               ),
+                              if (repsError != null) ...[
+                                const SizedBox(height: 4),
+                                Text(repsError!, style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                              ],
                             ]),
                           ),
                         ]),
@@ -808,12 +805,17 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
                           controller: restCtrl,
                           keyboardType: TextInputType.number,
                           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          onChanged: (_) { if (restError != null) setModalState(() => restError = null); },
                           decoration: InputDecoration(
                             hintText: 'เช่น 90',
                             prefixIcon: const Icon(Icons.timer_outlined, color: AppColors.primaryGreen, size: 18),
                             contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                           ),
                         ),
+                        if (restError != null) ...[
+                          const SizedBox(height: 4),
+                          Text(restError!, style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                        ],
                         const SizedBox(height: 20),
                         SizedBox(
                           width: double.infinity, height: 48,
@@ -823,13 +825,54 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
                                 _showSnackBar('กรุณาเลือกท่าฝึก');
                                 return;
                               }
+                              // เช็คเซต/ครั้ง/เวลาพักว่าเป็นตัวเลขจำนวนจริงและอยู่ในช่วงที่ backend
+                              // ยอมรับก่อนกดบันทึกเสมอ (ตรงกับ helpers.ValidatePlanTemplateDetail)
+                              // — เดิมเว้นว่างแล้วกดบันทึกได้เลย ปัดเป็นค่า default 3/12/90 เงียบๆ
+                              final setsText = setsCtrl.text.trim();
+                              final repsText = repsCtrl.text.trim();
+                              final restText = restCtrl.text.trim();
+                              final sets = int.tryParse(setsText);
+                              final rest = int.tryParse(restText);
+
+                              String? sErr;
+                              if (setsText.isEmpty) {
+                                sErr = 'กรุณากรอกจำนวนเซต';
+                              } else if (sets == null || sets < 1 || sets > 20) {
+                                sErr = 'จำนวนเซตต้องอยู่ระหว่าง 1-20';
+                              }
+                              String? repErr;
+                              if (repsText.isNotEmpty && !repsPattern.hasMatch(repsText)) {
+                                repErr = 'รูปแบบจำนวนครั้งไม่ถูกต้อง (เช่น "12" หรือ "8-12")';
+                              }
+                              String? rErr;
+                              if (restText.isEmpty) {
+                                rErr = 'กรุณากรอกเวลาพัก';
+                              } else if (rest == null || rest < 0 || rest > 600) {
+                                rErr = 'เวลาพักต้องอยู่ระหว่าง 0-600 วินาที';
+                              }
+
+                              if (sErr != null || repErr != null || rErr != null) {
+                                setModalState(() {
+                                  setsError = sErr;
+                                  repsError = repErr;
+                                  restError = rErr;
+                                });
+                                return;
+                              }
+
                               _handleSave(item, {
                                 "wpt_id": widget.planId,
                                 "ptd_day_number": selectedDay,
+                                // เดิมไม่ส่งฟิลด์นี้เลย — backend (AddPlanDetail) bind JSON ตรงเข้า
+                                // models.PlanTemplateDetail แล้วเช็ค ValidatePlanTemplateDetail ที่
+                                // บังคับ ptd_day_name ห้ามว่าง ("กรุณาระบุชื่อวัน") ทำให้เพิ่มท่าฝึก
+                                // ไม่ได้เลยไม่ว่าแผนจะมีกี่วัน/สัปดาห์ — ใช้ label เดียวกับที่โชว์ใน
+                                // dropdown เลือกวัน (_dayLabel) กันหลุด sync
+                                "ptd_day_name": _dayLabel(selectedDay),
                                 "wet_id": selectedWetId,
-                                "ptd_sets": int.tryParse(setsCtrl.text) ?? 3,
-                                "ptd_reps": repsCtrl.text.trim().isEmpty ? '12' : repsCtrl.text.trim(),
-                                "ptd_rest_seconds": int.tryParse(restCtrl.text) ?? 90,
+                                "ptd_sets": sets,
+                                "ptd_reps": repsText.isEmpty ? '12' : repsText,
+                                "ptd_rest_seconds": rest,
                               });
                             },
                             child: const Text('บันทึกข้อมูล', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),

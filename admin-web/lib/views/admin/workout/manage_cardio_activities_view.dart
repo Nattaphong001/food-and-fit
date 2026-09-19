@@ -15,10 +15,9 @@
 
 import 'dart:io';
 
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:get_storage/get_storage.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:web/web.dart' as web;
 import '../../../core/constants/app_colors.dart';
@@ -73,8 +72,6 @@ class _ManageCardioActivitiesViewState extends State<ManageCardioActivitiesView>
   String get baseUrl => ApiClient.serverUrl;
   String get cardioApiUrl => '${ApiClient.serverUrl}/api/exercises/cardio';
   String get categoryApiUrl => '${ApiClient.serverUrl}/api/exercises/cardio-categories';
-  String get _token => GetStorage().read('auth_token') ?? '';
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $_token'};
   final ApiClient _api = ApiClient();
 
   String _buildImageUrl(String path) => ApiClient.prefixPath(path) ?? '';
@@ -126,7 +123,11 @@ class _ManageCardioActivitiesViewState extends State<ManageCardioActivitiesView>
       if (catA != catB) return catA.compareTo(catB);
       final va = (a['cdo_mets'] as num?) ?? 0;
       final vb = (b['cdo_mets'] as num?) ?? 0;
-      return _sortAscending ? va.compareTo(vb) : vb.compareTo(va);
+      final metCompare = _sortAscending ? va.compareTo(vb) : vb.compareTo(va);
+      if (metCompare != 0) return metCompare;
+      // METs ชนกันจริงในข้อมูลจริง (เช่นหมวดเวทเทรนนิ่งมี 4 กิจกรรม mets=8.00 พร้อมกัน) —
+      // List.sort ของ Dart ไม่ใช่ stable sort ถ้าไม่มี tiebreaker ลำดับจะสลับมั่วเวลา rebuild/refetch
+      return (a['cdo_name'] ?? '').toString().compareTo((b['cdo_name'] ?? '').toString());
     });
     return result;
   }
@@ -177,11 +178,10 @@ class _ManageCardioActivitiesViewState extends State<ManageCardioActivitiesView>
     if (!confirm) return;
     _showLoadingDialog();
     try {
-      final res = await http.delete(Uri.parse('$cardioApiUrl/$id'), headers: _authHeaders);
+      final res = await _api.delete('/exercises/cardio/$id');
       if (!mounted) return;
       Navigator.pop(context);
       if (res.statusCode == 200) {
-        ApiClient.clearCache();
         AdminDataBus.bumpCardioActivities();
         _fetchData();
         showAdminTopToast(context, 'ลบ "$name" เรียบร้อย');
@@ -235,45 +235,42 @@ class _ManageCardioActivitiesViewState extends State<ManageCardioActivitiesView>
     _showLoadingDialog();
     try {
       final isEdit = oldItem != null;
-      final url = isEdit ? '$cardioApiUrl/${oldItem['cdo_id']}' : cardioApiUrl;
-      var request = http.MultipartRequest(isEdit ? 'PUT' : 'POST', Uri.parse(url));
-      request.headers.addAll(_authHeaders);
-      request.fields['cdo_name'] = name.trim();
-      request.fields['cdo_mets'] = mets;
-      request.fields['cdo_description'] = desc;
-      request.fields['cdo_technique'] = technique;
-      request.fields['cdo_video'] = video;
-      request.fields['cdc_id'] = catId.toString();
-      request.fields['cdo_has_distance'] = hasDistance ? '1' : '0';
+      final path = isEdit ? '/exercises/cardio/${oldItem['cdo_id']}' : '/exercises/cardio';
+      final formData = dio.FormData.fromMap({
+        'cdo_name': name.trim(),
+        'cdo_mets': mets,
+        'cdo_description': desc,
+        'cdo_technique': technique,
+        'cdo_video': video,
+        'cdc_id': catId.toString(),
+        'cdo_has_distance': hasDistance ? '1' : '0',
+        if (kIsWeb && imageBytes != null && imageFileName != null)
+          'cdo_image': dio.MultipartFile.fromBytes(imageBytes, filename: imageFileName)
+        else if (!kIsWeb && imageFile != null)
+          'cdo_image': await dio.MultipartFile.fromFile(imageFile.path),
+        if (kIsWeb && loopVideoBytes != null && loopVideoFileName != null)
+          'cdo_loop_video': dio.MultipartFile.fromBytes(loopVideoBytes, filename: loopVideoFileName)
+        else if (!kIsWeb && loopVideoFile != null)
+          'cdo_loop_video': await dio.MultipartFile.fromFile(loopVideoFile.path),
+      });
 
-      if (kIsWeb) {
-        if (imageBytes != null && imageFileName != null) {
-          request.files.add(http.MultipartFile.fromBytes('cdo_image', imageBytes, filename: imageFileName));
-        }
-        if (loopVideoBytes != null && loopVideoFileName != null) {
-          request.files.add(http.MultipartFile.fromBytes('cdo_loop_video', loopVideoBytes, filename: loopVideoFileName));
-        }
-      } else {
-        if (imageFile != null) {
-          request.files.add(await http.MultipartFile.fromPath('cdo_image', imageFile.path));
-        }
-        if (loopVideoFile != null) {
-          request.files.add(await http.MultipartFile.fromPath('cdo_loop_video', loopVideoFile.path));
-        }
-      }
-
-      final response = await http.Response.fromStream(await request.send());
+      final response = isEdit ? await _api.put(path, formData) : await _api.post(path, formData);
       if (!mounted) return;
       Navigator.pop(context);
       if (response.statusCode == 200 || response.statusCode == 201) {
-        ApiClient.clearCache();
         AdminDataBus.bumpCardioActivities();
         await _fetchData();
         if (!mounted) return;
         Navigator.pop(context);
         _showSnackBar(isEdit ? 'แก้ไขข้อมูลสำเร็จ' : 'เพิ่มข้อมูลสำเร็จ', type: AppAlertType.success);
       } else {
-        _showSnackBar('บันทึกไม่สำเร็จ: ${response.statusCode}');
+        // backend แปล error เป็นข้อความไทยไว้แล้ว (เช่น "ค่า METs ต้องเป็นตัวเลขระหว่าง 0.9-25")
+        // เดิมทิ้งข้อความนั้นไปโชว์แค่ status code เฉยๆ — ดึง response.data มาใช้แทน เหมือนหน้า
+        // ท่าเวท/รายการอาหารที่แก้ไปแล้ว
+        String msg = 'บันทึกไม่สำเร็จ (${response.statusCode})';
+        final body = response.data;
+        if (body is Map && body['error'] != null) msg = body['error'].toString();
+        _showSnackBar(msg);
       }
     } catch (e) {
       if (mounted) Navigator.pop(context);
@@ -544,6 +541,13 @@ class _ManageCardioActivitiesViewState extends State<ManageCardioActivitiesView>
     final existingLoopVideo = (item?['cdo_loop_video'] ?? '').toString();
     final ImagePicker picker = ImagePicker();
     String? previewEmbedUrl = _getYouTubeEmbedUrl(item?['cdo_video']);
+    // error inline ต่อฟิลด์ ตั้งตอนกดบันทึกแล้วข้อมูลไม่ถูกต้อง — เคลียร์เองตอนผู้ใช้แก้ไขฟิลด์นั้น
+    // (เดิมเช็คแค่ name.isEmpty || mets.isEmpty || catId == null รวมกันเป็น snackbar เดียว
+    // "กรุณากรอกข้อมูลให้ครบถ้วน" ไม่บอกว่าผิดตรงไหน และค่า METs ที่พิมพ์ไม่ใช่ตัวเลขจริง เช่น "abc"
+    // จะไม่ถูกเช็คเลยตรงนี้ ปล่อยหลุดไปให้ backend ปฏิเสธแทน)
+    String? nameError;
+    String? catError;
+    String? metError;
 
     showAdminDialog(
       context,
@@ -640,26 +644,38 @@ class _ManageCardioActivitiesViewState extends State<ManageCardioActivitiesView>
                           const SizedBox(height: 6),
                           TextField(
                             controller: nameCtrl,
+                            onChanged: (_) { if (nameError != null) setDialogState(() => nameError = null); },
                             decoration: InputDecoration(
                               hintText: 'เช่น วิ่ง, ว่ายน้ำ...',
                               prefixIcon: const Icon(Icons.directions_run, color: AppColors.primaryGreen, size: 18),
                               contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                             ),
                           ),
+                          if (nameError != null) ...[
+                            const SizedBox(height: 4),
+                            Text(nameError!, style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                          ],
                           const SizedBox(height: 10),
                           const Text('ประเภท *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
                           const SizedBox(height: 6),
-                          if (showCatSelector)
+                          if (showCatSelector) ...[
                             DropdownButtonFormField<int>(
                               initialValue: selectedCatId,
                               items: categories.map<DropdownMenuItem<int>>((cat) => DropdownMenuItem<int>(value: cat['cdc_id'], child: Text(cat['cdc_name'] ?? '', style: const TextStyle(fontSize: 13)))).toList(),
-                              onChanged: (v) => setDialogState(() => selectedCatId = v),
+                              onChanged: (v) => setDialogState(() {
+                                selectedCatId = v;
+                                catError = null;
+                              }),
                               decoration: InputDecoration(
                                 prefixIcon: const Icon(Icons.category, color: AppColors.primaryGreen, size: 18),
                                 contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                               ),
-                            )
-                          else
+                            ),
+                            if (catError != null) ...[
+                              const SizedBox(height: 4),
+                              Text(catError!, style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                            ],
+                          ] else
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                               decoration: BoxDecoration(color: AppColors.primaryGreen.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.primaryGreen.withValues(alpha: 0.3))),
@@ -677,12 +693,17 @@ class _ManageCardioActivitiesViewState extends State<ManageCardioActivitiesView>
                           TextField(
                             controller: metCtrl,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            onChanged: (_) { if (metError != null) setDialogState(() => metError = null); },
                             decoration: InputDecoration(
                               hintText: 'เช่น 7.0',
                               prefixIcon: const Icon(Icons.local_fire_department, color: Colors.orange, size: 18),
                               contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                             ),
                           ),
+                          if (metError != null) ...[
+                            const SizedBox(height: 4),
+                            Text(metError!, style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                          ],
                           const SizedBox(height: 10),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -791,7 +812,34 @@ class _ManageCardioActivitiesViewState extends State<ManageCardioActivitiesView>
                           SizedBox(
                             width: double.infinity, height: 48,
                             child: ElevatedButton(
-                              onPressed: () => _handleSave(item, nameCtrl.text, metCtrl.text, descCtrl.text, techniqueItemCtrls.map((c) => c.text.trim()).where((t) => t.isNotEmpty).join('\n'), videoCtrl.text, selectedCatId, hasDistance, selectedImage, selectedImageBytes, selectedImageName, selectedLoopVideo, selectedLoopVideoBytes, selectedLoopVideoName),
+                              onPressed: () {
+                                // เช็ค METs ว่าเป็น "ตัวเลขจำนวนจริง" ก่อนกดบันทึกเสมอ — เดิมค่าที่
+                                // พาร์สไม่ได้ (เช่น "abc") จะหลุดผ่านไปให้ backend ปฏิเสธเงียบๆ แทน
+                                // (ช่วง 0.9-25 ตรงกับ helpers.ValidateWeightExerciseCodes ฝั่ง Go
+                                // ที่ exercise_controller.go UpdateCardio/CreateCardio เช็คอยู่แล้ว)
+                                final metText = metCtrl.text.trim();
+                                final parsedMet = double.tryParse(metText);
+                                final nErr = nameCtrl.text.trim().isEmpty ? 'กรุณากรอกชื่อกิจกรรม' : null;
+                                final cErr = selectedCatId == null ? 'กรุณาเลือกประเภท' : null;
+                                String? mErr;
+                                if (metText.isEmpty) {
+                                  mErr = 'กรุณากรอกค่า METs';
+                                } else if (parsedMet == null) {
+                                  mErr = 'METs ต้องเป็นตัวเลข';
+                                } else if (parsedMet < 0.9 || parsedMet > 25) {
+                                  mErr = 'METs ต้องอยู่ระหว่าง 0.9-25';
+                                }
+
+                                if (nErr != null || cErr != null || mErr != null) {
+                                  setDialogState(() {
+                                    nameError = nErr;
+                                    catError = cErr;
+                                    metError = mErr;
+                                  });
+                                  return;
+                                }
+                                _handleSave(item, nameCtrl.text, metCtrl.text, descCtrl.text, techniqueItemCtrls.map((c) => c.text.trim()).where((t) => t.isNotEmpty).join('\n'), videoCtrl.text, selectedCatId, hasDistance, selectedImage, selectedImageBytes, selectedImageName, selectedLoopVideo, selectedLoopVideoBytes, selectedLoopVideoName);
+                              },
                               child: const Text('บันทึกข้อมูล', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),
                             ),
                           ),

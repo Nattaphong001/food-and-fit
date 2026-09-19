@@ -9,12 +9,10 @@
 // Logic CRUD เหมือนเดิมทุกจุด (COPY) — layout เปลี่ยนเป็น AdminListHeader + DataTable
 
 import 'package:flutter/material.dart';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:get_storage/get_storage.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/admin_data_bus.dart';
@@ -89,10 +87,8 @@ class _ManageCardioTypesViewState extends State<ManageCardioTypesView> {
   // ไม่ว่างเมื่อคลิกการ์ดดูกิจกรรมในหมวดหมู่ — สลับแสดงเนื้อหาแทนที่ในสล็อตเดิมของ sidebar shell
   int? _drillCatId;
 
-  String get baseUrl => ApiClient.serverUrl;
-  String get apiUrl => '${ApiClient.serverUrl}/api/exercises/cardio-categories';
-  String get _token => GetStorage().read('auth_token') ?? '';
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $_token'};
+  static const _path = '/exercises/cardio-categories';
+  final ApiClient _api = ApiClient();
 
   @override
   void initState() {
@@ -120,9 +116,9 @@ class _ManageCardioTypesViewState extends State<ManageCardioTypesView> {
   // กล้ามเนื้อ) — ดึงกิจกรรมทั้งหมดมานับรวมในเครื่องครั้งเดียว แทนยิง API แยกทีละหมวด
   Future<void> _fetchActivityCounts() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/api/exercises/cardio'), headers: _authHeaders);
+      final response = await _api.get('/exercises/cardio');
       if (response.statusCode != 200) return;
-      final decoded = json.decode(response.body);
+      final decoded = response.data;
       final list = (decoded is Map ? (decoded['data'] ?? decoded['items'] ?? decoded['result'] ?? []) : decoded) as List;
       final counts = <int, int>{};
       for (final item in list) {
@@ -155,10 +151,10 @@ class _ManageCardioTypesViewState extends State<ManageCardioTypesView> {
   Future<void> _fetchCategories() async {
     setState(() => _hasError = false);
     try {
-      final response = await http.get(Uri.parse(apiUrl), headers: _authHeaders);
+      final response = await _api.get(_path);
       if (!mounted) return;
       if (response.statusCode == 200) {
-        final decoded = json.decode(response.body);
+        final decoded = response.data;
         List<dynamic> list = [];
         if (decoded is Map) {
           list = (decoded['data'] ?? decoded['items'] ?? decoded['result'] ?? []) as List;
@@ -183,9 +179,9 @@ class _ManageCardioTypesViewState extends State<ManageCardioTypesView> {
     _showLoadingDialog();
     int itemCount = 0;
     try {
-      final res = await http.get(Uri.parse('$baseUrl/api/exercises/cardio'), headers: _authHeaders);
+      final res = await _api.get('/exercises/cardio');
       if (res.statusCode == 200) {
-        final data = json.decode(res.body);
+        final data = res.data;
         final items = (data is Map ? (data['data'] ?? data['items'] ?? data['result'] ?? []) : data) as List;
         itemCount = items.where((f) {
           final catId = f['cdc_id'] ?? f['category']?['cdc_id'];
@@ -217,7 +213,7 @@ class _ManageCardioTypesViewState extends State<ManageCardioTypesView> {
     if (confirm) {
       _showLoadingDialog();
       try {
-        final response = await http.delete(Uri.parse('$apiUrl/$id'), headers: _authHeaders);
+        final response = await _api.delete('$_path/$id');
         if (!mounted) return;
         Navigator.pop(context);
         if (response.statusCode == 200) {
@@ -245,22 +241,15 @@ class _ManageCardioTypesViewState extends State<ManageCardioTypesView> {
     if (name.trim().isEmpty) return;
     _showLoadingDialog();
     try {
-      http.Response response;
-      final headers = {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer $_token",
-      };
-      final body = json.encode({"cdc_name": name.trim(), "cdc_description": description.trim()});
-      if (oldItem == null) {
-        response = await http.post(Uri.parse(apiUrl), headers: headers, body: body);
-      } else {
-        response = await http.put(Uri.parse('$apiUrl/${oldItem['cdc_id']}'), headers: headers, body: body);
-      }
+      final body = {"cdc_name": name.trim(), "cdc_description": description.trim()};
+      final response = oldItem == null
+          ? await _api.post(_path, body)
+          : await _api.put('$_path/${oldItem['cdc_id']}', body);
       if (!mounted) return;
       if (response.statusCode == 200 || response.statusCode == 201) {
         // อัปโหลดรูป (ถ้าเลือกไว้) เป็นขั้นถัดไปแยกต่างหาก — endpoint สร้าง/แก้ไขหลักยังเป็น
         // JSON เหมือนเดิม (แอปมือถือยังเรียกอยู่) รูปเลยแยกไป endpoint multipart คนละตัว
-        final int catId = oldItem?['cdc_id'] ?? json.decode(response.body)['data']['cdc_id'];
+        final int catId = oldItem?['cdc_id'] ?? response.data['data']['cdc_id'];
         if (imageBytes != null || imageFile != null) {
           await _uploadCategoryImage(catId, imageFile, imageBytes, imageFileName);
         }
@@ -281,18 +270,13 @@ class _ManageCardioTypesViewState extends State<ManageCardioTypesView> {
   }
 
   Future<void> _uploadCategoryImage(int catId, File? imageFile, Uint8List? imageBytes, String? imageFileName) async {
-    final request = http.MultipartRequest('PUT', Uri.parse('$apiUrl/$catId/image'));
-    request.headers.addAll(_authHeaders);
-    if (kIsWeb) {
-      if (imageBytes != null && imageFileName != null) {
-        request.files.add(http.MultipartFile.fromBytes('cdc_image', imageBytes, filename: imageFileName));
-      }
-    } else {
-      if (imageFile != null) {
-        request.files.add(await http.MultipartFile.fromPath('cdc_image', imageFile.path));
-      }
-    }
-    await http.Response.fromStream(await request.send());
+    final formData = dio.FormData.fromMap({
+      if (kIsWeb && imageBytes != null && imageFileName != null)
+        'cdc_image': dio.MultipartFile.fromBytes(imageBytes, filename: imageFileName)
+      else if (!kIsWeb && imageFile != null)
+        'cdc_image': await dio.MultipartFile.fromFile(imageFile.path),
+    });
+    await _api.put('$_path/$catId/image', formData);
   }
 
   void _showLoadingDialog() {

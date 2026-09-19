@@ -11,13 +11,11 @@
 // header/filter/pagination ใช้ AdminPageHeader + AdminFilterBar + AdminPaginationBar
 // (client-side pagination ตาม pattern เดียวกับหน้า manage อื่น — backend ยังไม่รองรับ page/limit)
 
-import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:get_storage/get_storage.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/admin_data_bus.dart';
@@ -39,11 +37,8 @@ class ManageMuscleGroupView extends StatefulWidget {
 }
 
 class _ManageMuscleGroupViewState extends State<ManageMuscleGroupView> {
-  String get baseUrl => '${ApiClient.serverUrl}/api/exercises/muscle-groups';
-  String get exerciseMusclesUrl => '${ApiClient.serverUrl}/api/exercise-muscles';
+  static const _path = '/exercises/muscle-groups';
 
-  String get _token => GetStorage().read('auth_token') ?? '';
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $_token'};
   final ApiClient _api = ApiClient();
 
   List<dynamic> items = [];
@@ -100,9 +95,9 @@ class _ManageMuscleGroupViewState extends State<ManageMuscleGroupView> {
   // ทั้งตาราง exercise-muscles มานับรวมในเครื่อง แทนยิง API แยกทีละกลุ่ม (endpoint เดิมอยู่แล้ว)
   Future<void> _fetchLinkedCounts() async {
     try {
-      final response = await http.get(Uri.parse(exerciseMusclesUrl), headers: _authHeaders);
+      final response = await _api.get('/exercise-muscles');
       if (response.statusCode != 200) return;
-      final decoded = json.decode(response.body);
+      final decoded = response.data;
       List<dynamic> list = [];
       if (decoded is Map) {
         list = (decoded['data'] ?? decoded['items'] ?? decoded['result'] ?? []) as List;
@@ -166,9 +161,9 @@ class _ManageMuscleGroupViewState extends State<ManageMuscleGroupView> {
 
   Future<int> _getLinkedCount(int mugId) async {
     try {
-      final response = await http.get(Uri.parse(exerciseMusclesUrl), headers: _authHeaders);
+      final response = await _api.get('/exercise-muscles');
       if (response.statusCode == 200) {
-        final decoded = json.decode(response.body);
+        final decoded = response.data;
         List<dynamic> list = [];
         if (decoded is Map) {
           list = (decoded['data'] ?? decoded['items'] ?? decoded['result'] ?? []) as List;
@@ -214,10 +209,9 @@ class _ManageMuscleGroupViewState extends State<ManageMuscleGroupView> {
     if (confirm) {
       _showLoading();
       try {
-        final response = await http.delete(Uri.parse('$baseUrl/$id'), headers: _authHeaders);
+        final response = await _api.delete('$_path/$id');
         Navigator.pop(context);
         if (response.statusCode == 200) {
-          ApiClient.clearCache();
           _fetchMuscleGroups();
           AdminDataBus.bumpMuscleGroups();
           showAdminTopToast(context, 'ลบ "$name" เรียบร้อย');
@@ -243,29 +237,20 @@ class _ManageMuscleGroupViewState extends State<ManageMuscleGroupView> {
     _showLoading();
 
     try {
-      final uri = oldItem == null ? Uri.parse(baseUrl) : Uri.parse('$baseUrl/${oldItem['mug_id'] ?? oldItem['MugID']}');
+      final path = oldItem == null ? _path : '$_path/${oldItem['mug_id'] ?? oldItem['MugID']}';
+      final formData = dio.FormData.fromMap({
+        'mug_name': name,
+        'mug_zone': zone.isEmpty ? '1' : zone,
+        if (kIsWeb && imageBytes != null && imageFileName != null)
+          'mug_image': dio.MultipartFile.fromBytes(imageBytes, filename: imageFileName)
+        else if (!kIsWeb && imageFile != null)
+          'mug_image': await dio.MultipartFile.fromFile(imageFile.path),
+      });
 
-      var request = http.MultipartRequest(oldItem == null ? 'POST' : 'PUT', uri);
-      request.headers.addAll(_authHeaders);
-      request.fields['mug_name'] = name;
-      request.fields['mug_zone'] = zone.isEmpty ? '1' : zone;
-
-      if (kIsWeb) {
-        if (imageBytes != null && imageFileName != null) {
-          request.files.add(http.MultipartFile.fromBytes('mug_image', imageBytes, filename: imageFileName));
-        }
-      } else {
-        if (imageFile != null) {
-          request.files.add(await http.MultipartFile.fromPath('mug_image', imageFile.path));
-        }
-      }
-
-      var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse);
+      final response = oldItem == null ? await _api.post(path, formData) : await _api.put(path, formData);
       Navigator.pop(context);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        ApiClient.clearCache();
         _fetchMuscleGroups();
         AdminDataBus.bumpMuscleGroups();
         Navigator.pop(context);

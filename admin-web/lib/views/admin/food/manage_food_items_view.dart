@@ -11,15 +11,12 @@
 // (ธรรมชาติของเว็บ ไม่ต้องเปิด sheet แยกเหมือนมือถือ) + แถบหมวดหมู่กรองด้านบนตาราง
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:get_storage/get_storage.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/admin_data_bus.dart';
@@ -139,9 +136,6 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
     super.dispose();
   }
 
-  String get baseUrl => ApiClient.serverUrl;
-  String get _token => GetStorage().read('auth_token') ?? '';
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $_token'};
   final ApiClient _api = ApiClient();
 
   String _buildImageUrl(String path) => ApiClient.prefixPath(path) ?? '';
@@ -612,13 +606,13 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
     );
 
     if (confirm) {
-      http.Response? res;
+      Response? res;
       Object? error;
       await runWithGuardedLoading(
         context: context,
         task: () async {
           try {
-            res = await http.delete(Uri.parse('$baseUrl/api/nutrition/foods/$id'), headers: _authHeaders);
+            res = await _api.delete('/nutrition/foods/$id');
           } catch (e) {
             error = e;
           }
@@ -630,7 +624,6 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
         return;
       }
       if (res!.statusCode == 200) {
-        ApiClient.clearCache();
         AdminDataBus.bumpFoodItems();
         await _fetchFoods();
         if (!mounted) return;
@@ -694,36 +687,29 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
     }
 
     final isEdit = oldItem != null;
-    http.Response? response;
+    Response? response;
     Object? error;
     await runWithGuardedLoading(
       context: context,
       task: () async {
         try {
-          final url = isEdit ? '$baseUrl/api/nutrition/foods/${oldItem['ntt_id']}' : '$baseUrl/api/nutrition/foods';
-          var request = http.MultipartRequest(isEdit ? 'PUT' : 'POST', Uri.parse(url));
-          request.headers.addAll(_authHeaders);
-          request.fields['ntt_food_name'] = name;
-          request.fields['nttc_id'] = catId.toString();
-          request.fields['ntt_calories'] = parsedCalories.toString();
-          request.fields['ntt_protein'] = parsedProtein.toString();
-          request.fields['ntt_carbs'] = parsedCarbs.toString();
-          request.fields['ntt_fat'] = parsedFat.toString();
-          request.fields['ntt_serving_weight'] = parsedServingWeight.toString();
-          request.fields['ntt_unit'] = unit.isEmpty ? 'กรัม' : unit;
+          final path = isEdit ? '/nutrition/foods/${oldItem['ntt_id']}' : '/nutrition/foods';
+          final formData = FormData.fromMap({
+            'ntt_food_name': name,
+            'nttc_id': catId.toString(),
+            'ntt_calories': parsedCalories.toString(),
+            'ntt_protein': parsedProtein.toString(),
+            'ntt_carbs': parsedCarbs.toString(),
+            'ntt_fat': parsedFat.toString(),
+            'ntt_serving_weight': parsedServingWeight.toString(),
+            'ntt_unit': unit.isEmpty ? 'กรัม' : unit,
+            if (kIsWeb && imageBytes != null && imageFileName != null)
+              'ntt_food_image': MultipartFile.fromBytes(imageBytes, filename: imageFileName)
+            else if (!kIsWeb && imageFile != null)
+              'ntt_food_image': await MultipartFile.fromFile(imageFile.path),
+          });
 
-          if (kIsWeb) {
-            if (imageBytes != null && imageFileName != null) {
-              request.files.add(http.MultipartFile.fromBytes('ntt_food_image', imageBytes, filename: imageFileName));
-            }
-          } else {
-            if (imageFile != null) {
-              request.files.add(await http.MultipartFile.fromPath('ntt_food_image', imageFile.path));
-            }
-          }
-
-          final streamedResponse = await request.send();
-          response = await http.Response.fromStream(streamedResponse);
+          response = isEdit ? await _api.put(path, formData) : await _api.post(path, formData);
         } catch (e) {
           error = e;
         }
@@ -735,7 +721,6 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
       return;
     }
     if (response!.statusCode == 200 || response!.statusCode == 201) {
-      ApiClient.clearCache();
       AdminDataBus.bumpFoodItems();
       await _fetchFoods();
       if (!mounted) return;
@@ -743,13 +728,11 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
       _showSnackBar(isEdit ? 'แก้ไขข้อมูลสำเร็จ' : 'เพิ่มข้อมูลสำเร็จ', type: AppAlertType.success);
     } else {
       // backend แปล unique constraint error เป็นข้อความไทยที่เข้าใจง่ายไว้แล้ว (เช่น "มีอาหารชื่อ
-      // นี้อยู่แล้ว" ตอน 409) เดิมโค้ดนี้ทิ้งข้อความนั้นไปโชว์แค่ status code แทน — ดึง response.body
-      // มาใช้ ถ้า parse ไม่ได้ค่อย fallback เป็นข้อความ status code เดิม
+      // นี้อยู่แล้ว" ตอน 409) เดิมโค้ดนี้ทิ้งข้อความนั้นไปโชว์แค่ status code แทน — ดึง response.data
+      // มาใช้ ถ้าไม่ใช่ Map ค่อย fallback เป็นข้อความ status code เดิม
       String msg = 'ไม่สามารถบันทึกได้ (${response!.statusCode})';
-      try {
-        final body = json.decode(response!.body);
-        if (body is Map && body['error'] != null) msg = body['error'].toString();
-      } catch (_) {}
+      final body = response!.data;
+      if (body is Map && body['error'] != null) msg = body['error'].toString();
       _showSnackBar(msg);
     }
   }
@@ -769,6 +752,17 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
     CancelToken? nameCheckToken;
     bool isDuplicateName = false;
     bool dialogClosed = false;
+    // error inline ต่อฟิลด์ ตั้งตอนกดบันทึกแล้วข้อมูลไม่ถูกต้อง — เคลียร์เองตอนผู้ใช้แก้ไขฟิลด์นั้น
+    // (เดิมค่าตัวเลขที่พิมพ์ไม่ใช่ตัวเลขจริง เช่น "abc" จะโดน double.tryParse(...) ?? 0 ปัดเป็น 0
+    // เงียบๆ ใน _handleSave โดยไม่มี error ให้เห็นเลยถ้าฟิลด์อื่นมีค่าไม่ใช่ 0 อยู่แล้ว — ต้องดักที่นี่
+    // ก่อนเรียก _handleSave)
+    String? nameError;
+    String? catError;
+    String? proteinError;
+    String? carbError;
+    String? fatError;
+    String? calError;
+    String? servingError;
 
     final bool isAdding = item == null;
     final int? lockedCatId = isAdding ? _selectedCategoryFilter : null;
@@ -888,13 +882,20 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
                           const SizedBox(height: 6),
                           TextField(
                             controller: nameCtrl,
-                            onChanged: checkNameDuplicate,
+                            onChanged: (v) {
+                              checkNameDuplicate(v);
+                              if (nameError != null) setModalState(() => nameError = null);
+                            },
                             decoration: InputDecoration(
                               hintText: 'เช่น ข้าวผัด, สลัดผัก...',
                               prefixIcon: const Icon(Icons.restaurant_menu, color: AppColors.primaryGreen, size: 18),
                               contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                             ),
                           ),
+                          if (nameError != null) ...[
+                            const SizedBox(height: 4),
+                            Text(nameError!, style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                          ],
                           if (isDuplicateName) ...[
                             const SizedBox(height: 4),
                             const Text('มีชื่ออาหารนี้ในระบบแล้ว กรุณาใช้ชื่ออื่น', style: TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
@@ -902,14 +903,21 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
                           const SizedBox(height: 10),
                           const Text('หมวดหมู่ *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
                           const SizedBox(height: 6),
-                          if (showCatSelector)
+                          if (showCatSelector) ...[
                             DropdownButtonFormField<int>(
                               initialValue: fs.selectedCatId,
                               items: categories.map<DropdownMenuItem<int>>((c) => DropdownMenuItem<int>(value: c['nttc_id'] as int, child: Text(c['nttc_name'] ?? '', style: const TextStyle(fontSize: 13)))).toList(),
-                              onChanged: (v) => setModalState(() => fs.selectedCatId = v),
+                              onChanged: (v) => setModalState(() {
+                                fs.selectedCatId = v;
+                                catError = null;
+                              }),
                               decoration: InputDecoration(prefixIcon: const Icon(Icons.category, color: AppColors.primaryGreen, size: 18), contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12)),
-                            )
-                          else
+                            ),
+                            if (catError != null) ...[
+                              const SizedBox(height: 4),
+                              Text(catError!, style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                            ],
+                          ] else
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                               decoration: BoxDecoration(color: AppColors.primaryGreen.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.primaryGreen.withValues(alpha: 0.3))),
@@ -921,22 +929,58 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
                             ),
                           const SizedBox(height: 16),
                           Row(children: [
-                            Expanded(child: _nutriField(ctrl: proteinCtrl, label: 'โปรตีน (g) *', color: Colors.blue, icon: Icons.fitness_center)),
+                            Expanded(
+                              child: _nutriField(
+                                ctrl: proteinCtrl, label: 'โปรตีน (g) *', color: Colors.blue, icon: Icons.fitness_center,
+                                error: proteinError,
+                                onChanged: (_) { if (proteinError != null) setModalState(() => proteinError = null); },
+                              ),
+                            ),
                             const SizedBox(width: 6),
-                            Expanded(child: _nutriField(ctrl: carbCtrl, label: 'คาร์โบไฮเดรต (g) *', color: Colors.purple, icon: Icons.grain)),
+                            Expanded(
+                              child: _nutriField(
+                                ctrl: carbCtrl, label: 'คาร์โบไฮเดรต (g) *', color: Colors.purple, icon: Icons.grain,
+                                error: carbError,
+                                onChanged: (_) { if (carbError != null) setModalState(() => carbError = null); },
+                              ),
+                            ),
                             const SizedBox(width: 6),
-                            Expanded(child: _nutriField(ctrl: fatCtrl, label: 'ไขมัน (g) *', color: Colors.orange, icon: Icons.water_drop)),
+                            Expanded(
+                              child: _nutriField(
+                                ctrl: fatCtrl, label: 'ไขมัน (g) *', color: Colors.orange, icon: Icons.water_drop,
+                                error: fatError,
+                                onChanged: (_) { if (fatError != null) setModalState(() => fatError = null); },
+                              ),
+                            ),
                           ]),
                           const SizedBox(height: 16),
                           const Text('พลังงาน (kcal) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
                           const SizedBox(height: 6),
-                          TextField(controller: calCtrl, keyboardType: TextInputType.number, decoration: InputDecoration(hintText: 'เช่น 200', prefixIcon: const Icon(Icons.local_fire_department, color: Colors.orange, size: 18), contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12))),
+                          TextField(
+                            controller: calCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            onChanged: (_) { if (calError != null) setModalState(() => calError = null); },
+                            decoration: InputDecoration(hintText: 'เช่น 200', prefixIcon: const Icon(Icons.local_fire_department, color: Colors.orange, size: 18), contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12)),
+                          ),
+                          if (calError != null) ...[
+                            const SizedBox(height: 4),
+                            Text(calError!, style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                          ],
                           const SizedBox(height: 10),
                           Row(children: [
                             Expanded(flex: 2, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               const Text('ขนาดต่อหน่วย', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
                               const SizedBox(height: 6),
-                              TextField(controller: servingCtrl, keyboardType: TextInputType.number, decoration: InputDecoration(hintText: 'เช่น 100', prefixIcon: const Icon(Icons.scale, color: Colors.teal, size: 18), contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12))),
+                              TextField(
+                                controller: servingCtrl,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: (_) { if (servingError != null) setModalState(() => servingError = null); },
+                                decoration: InputDecoration(hintText: 'เช่น 100', prefixIcon: const Icon(Icons.scale, color: Colors.teal, size: 18), contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12)),
+                              ),
+                              if (servingError != null) ...[
+                                const SizedBox(height: 4),
+                                Text(servingError!, style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                              ],
                             ])),
                             const SizedBox(width: 8),
                             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -955,7 +999,43 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
                           SizedBox(
                             width: double.infinity, height: 48,
                             child: ElevatedButton(
-                              onPressed: isDuplicateName ? null : () => _handleSave(item, nameCtrl.text, fs.selectedCatId, proteinCtrl.text, carbCtrl.text, fatCtrl.text, calCtrl.text, servingCtrl.text, fs.selectedUnit, fs.selectedImage, fs.selectedImageBytes, fs.selectedImageName),
+                              onPressed: isDuplicateName
+                                  ? null
+                                  : () {
+                                      // เช็คทุกฟิลด์ตัวเลขพร้อมกันว่าเป็น "จำนวนจริง" ก่อนกดบันทึก —
+                                      // เดิมปล่อยให้ _handleSave ปัดค่าที่พาร์สไม่ได้เป็น 0/100 เงียบๆ
+                                      String? numErr(String label, String raw, {bool allowZero = true}) {
+                                        final v = raw.trim();
+                                        if (v.isEmpty) return 'กรุณากรอก$label';
+                                        final n = double.tryParse(v);
+                                        if (n == null) return '$labelต้องเป็นตัวเลข';
+                                        if (n < 0) return '$labelต้องไม่ติดลบ';
+                                        if (!allowZero && n <= 0) return '$labelต้องมากกว่า 0';
+                                        return null;
+                                      }
+
+                                      final nErr = nameCtrl.text.trim().isEmpty ? 'กรุณากรอกชื่ออาหาร' : null;
+                                      final cErrCat = fs.selectedCatId == null ? 'กรุณาเลือกหมวดหมู่' : null;
+                                      final pErr = numErr('โปรตีน', proteinCtrl.text);
+                                      final cErr = numErr('คาร์โบไฮเดรต', carbCtrl.text);
+                                      final fErr = numErr('ไขมัน', fatCtrl.text);
+                                      final kErr = numErr('พลังงาน', calCtrl.text);
+                                      final sErr = numErr('ขนาดต่อหน่วย', servingCtrl.text, allowZero: false);
+
+                                      if (nErr != null || cErrCat != null || pErr != null || cErr != null || fErr != null || kErr != null || sErr != null) {
+                                        setModalState(() {
+                                          nameError = nErr;
+                                          catError = cErrCat;
+                                          proteinError = pErr;
+                                          carbError = cErr;
+                                          fatError = fErr;
+                                          calError = kErr;
+                                          servingError = sErr;
+                                        });
+                                        return;
+                                      }
+                                      _handleSave(item, nameCtrl.text, fs.selectedCatId, proteinCtrl.text, carbCtrl.text, fatCtrl.text, calCtrl.text, servingCtrl.text, fs.selectedUnit, fs.selectedImage, fs.selectedImageBytes, fs.selectedImageName);
+                                    },
                               child: const Text('บันทึกข้อมูล', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),
                             ),
                           ),
@@ -978,16 +1058,29 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
     });
   }
 
-  Widget _nutriField({required TextEditingController ctrl, required String label, required Color color, required IconData icon}) => Column(
+  Widget _nutriField({
+    required TextEditingController ctrl,
+    required String label,
+    required Color color,
+    required IconData icon,
+    String? error,
+    ValueChanged<String>? onChanged,
+  }) =>
+      Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
           const SizedBox(height: 4),
           TextField(
             controller: ctrl,
-            keyboardType: TextInputType.number,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: onChanged,
             decoration: InputDecoration(hintText: '0', prefixIcon: Icon(icon, color: color, size: 16), contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6)),
           ),
+          if (error != null) ...[
+            const SizedBox(height: 3),
+            Text(error, style: const TextStyle(fontSize: 10.5, color: Colors.redAccent, fontWeight: FontWeight.w600)),
+          ],
         ],
       );
 

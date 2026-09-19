@@ -13,11 +13,9 @@
 
 import 'dart:io';
 
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'dart:convert';
-import 'package:get_storage/get_storage.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'manage_system_plan_details_view.dart';
 import '../../../core/constants/app_colors.dart';
@@ -96,9 +94,8 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
   // ไม่ว่างเมื่อคลิกดูรายละเอียดแผน — สลับแสดงเนื้อหาแทนที่ในสล็อตเดิมของ sidebar shell
   Map<String, dynamic>? _drillPlan;
 
-  String get apiUrl => '${ApiClient.serverUrl}/api/workouts/plans';
-  String get _token => GetStorage().read('auth_token') ?? '';
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer $_token'};
+  static const _path = '/workouts/plans';
+  final ApiClient _api = ApiClient();
 
   @override
   void initState() {
@@ -124,9 +121,9 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
   Future<void> _fetchPlans() async {
     setState(() => _hasError = false);
     try {
-      final response = await http.get(Uri.parse(apiUrl), headers: _authHeaders);
+      final response = await _api.get(_path);
       if (response.statusCode == 200) {
-        final decoded = json.decode(utf8.decode(response.bodyBytes));
+        final decoded = response.data;
         List<dynamic> list = [];
         if (decoded is Map) {
           list = (decoded['data'] ?? decoded['items'] ?? decoded['result'] ?? []) as List;
@@ -155,24 +152,19 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
     _showLoadingDialog();
     try {
       final isEdit = oldItem != null;
-      final url = isEdit ? '$apiUrl/${oldItem['wpt_id']}' : apiUrl;
-      final request = http.MultipartRequest(isEdit ? 'PUT' : 'POST', Uri.parse(url));
-      request.headers.addAll(_authHeaders);
-      request.fields['wpt_name'] = planName.trim();
-      request.fields['wpt_days_per_week'] = daysPerWeek.toString();
-      request.fields['wpt_difficulty'] = difficulty.toString();
-      request.fields['wpt_description'] = description.trim();
+      final path = isEdit ? '$_path/${oldItem['wpt_id']}' : _path;
+      final formData = dio.FormData.fromMap({
+        'wpt_name': planName.trim(),
+        'wpt_days_per_week': daysPerWeek.toString(),
+        'wpt_difficulty': difficulty.toString(),
+        'wpt_description': description.trim(),
+        if (kIsWeb && imageBytes != null && imageFileName != null)
+          'wpt_image': dio.MultipartFile.fromBytes(imageBytes, filename: imageFileName)
+        else if (!kIsWeb && imageFile != null)
+          'wpt_image': await dio.MultipartFile.fromFile(imageFile.path),
+      });
 
-      if (kIsWeb) {
-        if (imageBytes != null && imageFileName != null) {
-          request.files.add(http.MultipartFile.fromBytes('wpt_image', imageBytes, filename: imageFileName));
-        }
-      } else if (imageFile != null) {
-        request.files.add(await http.MultipartFile.fromPath('wpt_image', imageFile.path));
-      }
-
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
+      final response = isEdit ? await _api.put(path, formData) : await _api.post(path, formData);
 
       if (!mounted) return;
       Navigator.pop(context);
@@ -184,13 +176,10 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
         // เพิ่มแผนใหม่ (ไม่ใช่แก้ไข) — พาไปหน้ารายละเอียดแผนทันที ไม่ต้องกลับมาคลิกการ์ดซ้ำ
         // เพื่อเริ่มใส่ท่าฝึกแต่ละวันต่อ (บรีฟข้อ 6)
         if (oldItem == null) {
-          try {
-            final decoded = json.decode(utf8.decode(response.bodyBytes));
-            final created = decoded is Map ? decoded['data'] : null;
-            if (created is Map) {
-              setState(() => _drillPlan = Map<String, dynamic>.from(created));
-            }
-          } catch (_) {}
+          final created = response.data is Map ? response.data['data'] : null;
+          if (created is Map) {
+            setState(() => _drillPlan = Map<String, dynamic>.from(created));
+          }
         }
       } else {
         _showSnackBar('บันทึกไม่สำเร็จ: ${response.statusCode}');
@@ -201,11 +190,8 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
     }
   }
 
-  String? _extractErrorMessage(String body) {
-    try {
-      final decoded = json.decode(body);
-      if (decoded is Map && decoded['error'] is String) return decoded['error'] as String;
-    } catch (_) {}
+  String? _extractErrorMessage(dynamic body) {
+    if (body is Map && body['error'] is String) return body['error'] as String;
     return null;
   }
 
@@ -221,11 +207,10 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
 
     _showLoadingDialog();
     try {
-      final response = await http.delete(Uri.parse('$apiUrl/$id'), headers: _authHeaders);
+      final response = await _api.delete('$_path/$id');
       if (!mounted) return;
       Navigator.pop(context);
       if (response.statusCode == 200) {
-        ApiClient.clearCache();
         await _fetchPlans();
         _showSnackBar('ลบ "$title" เรียบร้อย', type: AppAlertType.success);
       } else if (response.statusCode == 400) {
@@ -233,10 +218,10 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
           context,
           icon: Icons.lock_outline_rounded,
           title: 'ไม่สามารถลบได้',
-          content: _extractErrorMessage(response.body) ?? 'ไม่สามารถลบแผนนี้ได้',
+          content: _extractErrorMessage(response.data) ?? 'ไม่สามารถลบแผนนี้ได้',
         );
       } else {
-        _showSnackBar(_extractErrorMessage(response.body) ?? 'ลบไม่สำเร็จ: ${response.statusCode}');
+        _showSnackBar(_extractErrorMessage(response.data) ?? 'ลบไม่สำเร็จ: ${response.statusCode}');
       }
     } catch (e) {
       if (mounted) Navigator.pop(context);
@@ -274,7 +259,12 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
     final diffVal = (item?['wpt_difficulty'] as num?)?.toInt() ?? 0;
     final fs = _PlanFormState(
       difficulty: diffVal >= 1 && diffVal <= 3 ? diffVal : 1,
-      daysPerWeek: daysVal.clamp(1, 7),
+      // จำกัดตัวเลือกเหลือ 3-6 วัน/สัปดาห์ (เดิม 1-7) — 1 และ 7 วันไม่มี mapping วันจริงใน
+      // kPlanDayWeekday (plan_day_labels.dart) ได้แค่ label ทั่วไป "วัน N" แทนชื่อวันจริง
+      // (จันทร์/พุธ/ศุกร์ ฯลฯ) ตัดสินใจร่วมกับผู้ใช้ 2026-09-15: จำกัดตัวเลือกที่ UI แทนการเพิ่ม
+      // mapping ให้ครบ 1/7 — แผนเก่าที่เคยมี 1 หรือ 7 วันอยู่แล้ว (ถ้ามี) จะถูก clamp เข้าช่วงนี้
+      // ตอนเปิดฟอร์มแก้ไข ไม่กระทบ backend (ยังรับ 1-7 เหมือนเดิม เผื่อ endpoint อื่นที่ไม่ผ่านฟอร์มนี้)
+      daysPerWeek: daysVal.clamp(3, 6),
     );
     final picker = ImagePicker();
 
@@ -343,7 +333,7 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
                           const SizedBox(height: 16),
                           const Text('ชื่อแผนการฝึก *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
                           const SizedBox(height: 6),
-                          TextField(controller: nameCtrl, decoration: InputDecoration(hintText: 'เช่น แผนเพิ่มกล้ามเนื้อ, แผนลดน้ำหนัก', prefixIcon: const Icon(Icons.assignment_outlined, color: AppColors.primaryGreen, size: 18), contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12))),
+                          TextField(controller: nameCtrl, decoration: InputDecoration(hintText: 'เช่น แผนเพิ่มน้ำหนัก, แผนลดน้ำหนัก', prefixIcon: const Icon(Icons.assignment_outlined, color: AppColors.primaryGreen, size: 18), contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12))),
                           const SizedBox(height: 14),
                           const Text('คำอธิบาย', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
                           const SizedBox(height: 6),
@@ -362,7 +352,7 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
                                 color: AppColors.primaryGreen,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                onPressed: fs.daysPerWeek > 1 ? () => setModalState(() => fs.daysPerWeek--) : null,
+                                onPressed: fs.daysPerWeek > 3 ? () => setModalState(() => fs.daysPerWeek--) : null,
                               ),
                               SizedBox(width: 28, child: Text('${fs.daysPerWeek}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
                               IconButton(
@@ -370,10 +360,10 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
                                 color: AppColors.primaryGreen,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                onPressed: fs.daysPerWeek < 7 ? () => setModalState(() => fs.daysPerWeek++) : null,
+                                onPressed: fs.daysPerWeek < 6 ? () => setModalState(() => fs.daysPerWeek++) : null,
                               ),
                               const SizedBox(width: 10),
-                              const Text('วัน / สัปดาห์ (1-7)', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                              const Text('วัน / สัปดาห์ (3-6)', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
                             ]),
                           ),
                           const SizedBox(height: 14),
@@ -422,7 +412,6 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
                                       planId: item['wpt_id'] as int,
                                       newDays: fs.daysPerWeek,
                                       oldDays: oldDays,
-                                      authHeaders: _authHeaders,
                                     );
                                     if (!canProceed) return;
                                   }

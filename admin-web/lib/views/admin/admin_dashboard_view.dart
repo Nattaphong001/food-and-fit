@@ -20,7 +20,7 @@ class _RegPoint {
 }
 
 class _TargetSlice {
-  final int target; // 1=ลดน้ำหนัก 2=เพิ่มกล้ามเนื้อ 3=รักษาน้ำหนัก
+  final int target; // 1=ลดน้ำหนัก 2=เพิ่มน้ำหนัก 3=รักษาน้ำหนัก
   final int count;
   _TargetSlice(this.target, this.count);
   factory _TargetSlice.fromJson(Map<String, dynamic> j) => _TargetSlice((j['target'] ?? 0) as int, (j['count'] ?? 0) as int);
@@ -343,7 +343,7 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
   }
 
   // ── โดนัทชาร์ต: สัดส่วนเป้าหมายสุขภาพ ──
-  static const _targetLabels = {1: 'ลดน้ำหนัก', 2: 'เพิ่มกล้ามเนื้อ', 3: 'รักษาน้ำหนัก'};
+  static const _targetLabels = {1: 'ลดน้ำหนัก', 2: 'เพิ่มน้ำหนัก', 3: 'รักษาน้ำหนัก'};
 
   Widget _buildTargetDonut() {
     final slices = List<_TargetSlice>.from(_data!.targetDistribution)..sort((a, b) => b.count.compareTo(a.count));

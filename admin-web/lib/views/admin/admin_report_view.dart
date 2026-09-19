@@ -8,11 +8,8 @@
 // Logic ดึงข้อมูล/คำนวณ/กราฟ/PDF เหมือนเดิมทุกจุด (COPY) — ตัด AppBar+back button ออก
 // (ฝังในหน้า Admin shell แทน) การ์ดสถิติ 2 คอลัมน์ -> Wrap responsive สูงสุด 4 คอลัมน์บนจอกว้าง
 
-import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:get_storage/get_storage.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../core/theme/theme.dart';
@@ -106,18 +103,12 @@ class _MenuEntry {
 // ─────────────────────────────────────────────
 
 class _AdminApi {
-  static String get _base => '${ApiClient.serverUrl}/api/admin';
-
-  static Map<String, String> get _headers => {
-        'Authorization': 'Bearer ${GetStorage().read('auth_token') ?? ''}',
-        'Content-Type': 'application/json',
-      };
+  static final ApiClient _api = ApiClient();
 
   static Future<_AdminOverview> fetchOverview({required String start, required String end}) async {
-    final uri = Uri.parse('$_base/analytics/overview?start=$start&end=$end');
-    final res = await http.get(uri, headers: _headers);
+    final res = await _api.get('/admin/analytics/overview?start=$start&end=$end');
     if (res.statusCode != 200) throw Exception('API Error ${res.statusCode}');
-    return _AdminOverview.fromJson(jsonDecode(res.body));
+    return _AdminOverview.fromJson(res.data);
   }
 }
 

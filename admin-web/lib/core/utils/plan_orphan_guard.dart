@@ -11,9 +11,7 @@
 // รายละเอียดแผน (manage_system_plan_details_view.dart) — เพื่อไม่ให้ตรรกะป้องกันข้อมูลกำพร้านี้
 // หลุด sync กันระหว่าง 2 จุดที่แก้ wpt_days_per_week ได้เหมือนกัน
 
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../constants/app_colors.dart';
 import '../widgets/app_confirm_dialog.dart';
 import '../widgets/top_flash.dart';
@@ -26,13 +24,13 @@ Future<bool> resolveOrphanPlanDaysBeforeSave(
   required int planId,
   required int newDays,
   required int oldDays,
-  required Map<String, String> authHeaders,
 }) async {
+  final api = ApiClient();
   List<dynamic> details;
   try {
-    final res = await http.get(Uri.parse('${ApiClient.serverUrl}/api/workouts/details?plan_id=$planId'), headers: authHeaders);
+    final res = await api.get('/workouts/details?plan_id=$planId');
     if (res.statusCode != 200) return true;
-    final decoded = json.decode(utf8.decode(res.bodyBytes));
+    final decoded = res.data;
     details = decoded is Map ? (decoded['data'] ?? decoded['items'] ?? decoded['result'] ?? []) as List : decoded as List;
   } catch (_) {
     return true; // เช็คไม่ได้ (เน็ตหลุด ฯลฯ) ปล่อยให้ backend เป็นคนตัดสินตอนบันทึกจริง ไม่บล็อกแอดมินเฉยๆ
@@ -63,7 +61,7 @@ Future<bool> resolveOrphanPlanDaysBeforeSave(
 
   showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.primaryGreen)));
   try {
-    await Future.wait(orphans.map((o) => http.delete(Uri.parse('${ApiClient.serverUrl}/api/workouts/details/${o['ptd_id']}'), headers: authHeaders)));
+    await Future.wait(orphans.map((o) => api.delete('/workouts/details/${o['ptd_id']}')));
   } catch (e) {
     Navigator.pop(context);
     showAppAlert(context, 'ลบท่าที่เกินไม่สำเร็จ: $e');
