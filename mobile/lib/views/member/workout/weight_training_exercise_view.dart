@@ -92,17 +92,22 @@ class _WeightTrainingExerciseViewState
   // ของจริง (2026-08-22) — ใช้ตัวนี้เป็นฐานเวลาคำนวณพลังงานระดับเซสชันด้วย (ดู _saveWorkoutToApi)
   int _globalSeconds = 0;
   int _restSeconds = 0;
-  // เวลาออกแรงต่อเซต (หยุดนับตอนพัก) — ส่งขึ้น API เก็บลง wtrs_active_seconds ไว้เป็นหลักฐาน
-  // ตรวจสอบย้อนหลังเท่านั้น สูตร Smart Auto Calorie (2026-09-08) ไม่ได้ใช้ค่านี้คำนวณพลังงาน
-  // — ฐานเวลาที่ใช้จริงคือ _globalSeconds (เวลารวมทั้งเซสชัน รวมพัก) คอมเมนต์เดิมตรงนี้เขียนว่า
-  // "ใช้คำนวณแคล" ซึ่งไม่จริงแล้วหลังเปลี่ยนมาคำนวณระดับเซสชัน
-  int _activeSetSeconds = 0;
+  // เวลาจริง (wall-clock) ของเซสชัน — ค่าที่ส่งบันทึกและที่โชว์คำนวณจากเวลาจริงเหล่านี้ ไม่ใช่การบวกทีละ
+  // วินาทีของ Timer (ซึ่งนับตกเมื่อจอดับ/แอปไปอยู่เบื้องหลัง ทำให้เวลารวมและเวลาพักเพี้ยนไปคนละทาง)
+  // เวลารวมที่ส่งบันทึก = จากเริ่มฝึกถึงตอนบันทึกเซตล่าสุด (_sessionDurationSeconds) ส่วนที่ลืมกดจบ
+  // ตอนท้ายจึงไม่ถูกนับ ไม่ต้องมีเพดานในสูตร
+  DateTime? _sessionStartedAt;
+  DateTime? _restStartedAt;
+  DateTime? _lastSetLoggedAt;
+  // จุดเริ่มนับ "ไม่มีการบันทึกเซต" สำหรับถามว่ายังฝึกอยู่ไหม (เริ่มฝึก / บันทึกเซต / กด "ฝึกต่อ" ล่าสุด)
+  DateTime? _idleCheckFrom;
+  bool _idlePromptOpen = false;
+  static const Duration _idlePromptAfter = Duration(minutes: 10);
   bool _showSummary = false;
   double _summaryVolume = 0;
 
   Timer? _countdownTimer;
   Timer? _globalTimer;
-  Timer? _activeSetTimer;
   Timer? _restTimer;
   Timer? _alertTimer;
 
@@ -112,6 +117,9 @@ class _WeightTrainingExerciseViewState
 
   // ── Set Data ─────────────────────────────────────────────────────────────────
   final List<Map<String, dynamic>> _completedSets = [];
+
+  // กำลังยืนยัน/บันทึกอยู่ — ล็อกปุ่มบันทึกกันกดรัวจนส่งซ้ำ (backend ก็กันซ้ำอีกชั้นแล้ว แต่ไม่ควรพึ่งชั้นเดียว)
+  bool _isSaving = false;
 
   final _repsController = TextEditingController();
   final _weightController = TextEditingController();
@@ -157,7 +165,6 @@ class _WeightTrainingExerciseViewState
     _glowController.dispose();
     _countdownTimer?.cancel();
     _globalTimer?.cancel();
-    _activeSetTimer?.cancel();
     _restTimer?.cancel();
     _alertTimer?.cancel();
     _repsController.dispose();
@@ -191,27 +198,53 @@ class _WeightTrainingExerciseViewState
   }
 
   void _startGlobalTimer() {
+    _sessionStartedAt ??= DateTime.now();
+    _idleCheckFrom ??= _sessionStartedAt;
+    _globalTimer?.cancel();
     _globalTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) setState(() => _globalSeconds++);
+      if (!mounted) return;
+      setState(() => _globalSeconds = DateTime.now().difference(_sessionStartedAt!).inSeconds);
+      _promptIfIdle();
     });
-    _startActiveSetTimer();
   }
 
-  void _startActiveSetTimer() {
-    _activeSetTimer?.cancel();
-    _activeSetSeconds = 0;
-    _activeSetTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) _activeSetSeconds++;
-    });
+  // เวลารวมของเซสชันที่ส่งบันทึก: จากเริ่มฝึกถึงตอนบันทึกเซตล่าสุด — ยังไม่มีเซตที่บันทึกก็ยังไม่มีอะไรให้ส่ง
+  // จึงคืนเวลาบนนาฬิกาไปก่อน (ใช้แสดงผลอย่างเดียว)
+  int get _sessionDurationSeconds {
+    final start = _sessionStartedAt;
+    final end = _lastSetLoggedAt;
+    if (start == null || end == null) return _globalSeconds;
+    final seconds = end.difference(start).inSeconds;
+    return seconds < 1 ? 1 : seconds;
+  }
+
+  // ไม่มีการบันทึกเซตมานานเกิน _idlePromptAfter → ถามว่ายังฝึกอยู่ไหม เพื่อไม่ให้ลืมกดจบแล้วนาฬิกาเดินต่อ
+  // ไม่ว่าตอบอะไรเวลาที่ส่งบันทึกก็ยังนับถึงเซตล่าสุดเท่านั้น (ดู _sessionDurationSeconds)
+  Future<void> _promptIfIdle() async {
+    if (_idlePromptOpen || _showSummary || _isCountingDown) return;
+    final from = _idleCheckFrom;
+    if (from == null || DateTime.now().difference(from) < _idlePromptAfter) return;
+    _idlePromptOpen = true;
+    final finish = await showAppConfirmDialog(
+      context,
+      icon: Icons.timer_outlined,
+      title: 'ยังฝึกอยู่หรือไม่?',
+      content: 'ไม่มีการบันทึกเซตมาเกิน ${_idlePromptAfter.inMinutes} นาทีแล้ว\nถ้าเลิกฝึกแล้ว ระบบจะนับเวลาถึงเซตล่าสุดที่บันทึกไว้เท่านั้น',
+      confirmLabel: 'จบและสรุปผล',
+      cancelLabel: 'ฝึกต่อ',
+      color: AppColors.primaryGreen,
+    );
+    _idlePromptOpen = false;
+    if (!mounted) return;
+    _idleCheckFrom = DateTime.now();
+    if (finish) _endWorkout();
   }
 
   void _startRest() {
     HapticFeedback.lightImpact();
     FocusScope.of(context).unfocus();
     // เวลาฝึกรวม (_globalSeconds) เดินต่อเนื่องไม่หยุดแม้ตอนพัก — นาฬิกาเรือนบนสุด
-    // แสดงเวลาที่ใช้ไปทั้งเซสชันจริง ส่วนเวลาออกแรงต่อเซต (_activeSetSeconds ใช้คำนวณแคล)
-    // หยุดนับระหว่างพักเท่านั้น เพราะร่างกายแทบไม่เผาผลาญจากการออกแรงตอนพัก
-    _activeSetTimer?.cancel(); // หยุดนับ active time ระหว่างพัก
+    // แสดงเวลาที่ใช้ไปทั้งเซสชันจริง
 
     // Smart auto-fill: ดึงน้ำหนักจากเซตล่าสุด ล้างครั้ง
     if (_completedSets.isNotEmpty) {
@@ -222,6 +255,7 @@ class _WeightTrainingExerciseViewState
       _weightController.clear();
     }
 
+    _restStartedAt = DateTime.now();
     setState(() {
       _isResting = true;
       _restSeconds = 0;
@@ -236,7 +270,7 @@ class _WeightTrainingExerciseViewState
         return;
       }
       setState(() {
-        _restSeconds++;
+        _restSeconds = DateTime.now().difference(_restStartedAt!).inSeconds;
         _checkRestAlerts(_restSeconds);
       });
     });
@@ -292,16 +326,21 @@ class _WeightTrainingExerciseViewState
     if (_canSaveSet) {
       final String w = _weightController.text.trim();
       final String r = _repsController.text.trim();
+      final DateTime now = DateTime.now();
+      final started = _restStartedAt;
+      final int restSeconds = started == null ? 0 : now.difference(started).inSeconds;
+      _lastSetLoggedAt = now;
+      _idleCheckFrom = now;
       setState(() {
         _completedSets.add({
           'set': _completedSets.length + 1,
           'reps': r,
           'weight': w,
-          'active_seconds': _activeSetSeconds.clamp(5, 600),
-          // เวลาพักหลังเซตนี้ (วินาที) — คือ _restSeconds ที่นับมาตั้งแต่กดปุ่มพักหลังจบเซตนี้
+          // เวลาพักหลังเซตนี้ (วินาที) — เวลาจริงตั้งแต่กดปุ่มพักหลังจบเซตนี้
           // จนถึงตอนนี้ที่กด "จบการพัก" ส่งขึ้น API เป็น wtrs_rest_seconds ให้ Dynamic Base MET
           // (Logic Matrix, ดู backend calculator.go) ใช้แทน proxy ความหนาแน่นเฉลี่ยทั้งเซสชัน
-          'rest_seconds': _restSeconds,
+          'rest_seconds': restSeconds,
+          // (เซตสุดท้ายของเซสชันไม่ส่งค่านี้ขึ้น API — ดู _saveWorkoutToApi)
         });
       });
     }
@@ -339,8 +378,6 @@ class _WeightTrainingExerciseViewState
         curve: Curves.easeOut,
       );
     }
-    // resume active set timer สำหรับเซตถัดไป — _globalTimer เดินตลอดอยู่แล้วไม่เคยหยุด
-    _startActiveSetTimer();
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -350,7 +387,6 @@ class _WeightTrainingExerciseViewState
   void _endWorkout() {
     HapticFeedback.mediumImpact();
     _globalTimer?.cancel();
-    _activeSetTimer?.cancel();
     _videoController?.pause();
     double vol = 0;
     for (final s in _completedSets) {
@@ -366,22 +402,30 @@ class _WeightTrainingExerciseViewState
   // ยืนยันตอนกดบันทึกจริงจากหน้าสรุปผล (ไม่ใช่ตอนกดปุ่มหยุดสีแดงอีกต่อไป) — กันกดพลาด
   // ตรงจุดที่ข้อมูลจะถูกเขียนลงจริง แทนที่จะถามตั้งแต่กลางเซต
   Future<void> _confirmSaveWorkout() async {
-    final confirm = await showAppConfirmDialog(
-      context,
-      icon: Icons.flag_rounded,
-      title: 'บันทึกการฝึก?',
-      content: 'ยืนยันบันทึกข้อมูลการฝึกครั้งนี้',
-      confirmLabel: 'บันทึก',
-      cancelLabel: 'ยกเลิก',
-      color: AppColors.primaryGreen,
-    );
-    if (confirm) await _saveWorkoutToApi();
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      final confirm = await showAppConfirmDialog(
+        context,
+        icon: Icons.flag_rounded,
+        title: 'บันทึกการฝึก?',
+        content: 'ยืนยันบันทึกข้อมูลการฝึกครั้งนี้',
+        confirmLabel: 'บันทึก',
+        cancelLabel: 'ยกเลิก',
+        color: AppColors.primaryGreen,
+      );
+      if (confirm) await _saveWorkoutToApi();
+    } finally {
+      // ปลดล็อกทุกกรณี (ยกเลิก/ล้มเหลว/สำเร็จ) — ล้มเหลวแล้วต้องกดลองใหม่ได้
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
-  // ปิดสรุปแล้วกลับไปฝึกต่อ — ต้อง restart _globalTimer/_activeSetTimer ที่ถูก cancel
-  // ไปตอน _endWorkout() ไม่งั้นนาฬิกา session ค้างตายและเซตถัดไปจะไม่มี active_seconds
+  // ปิดสรุปแล้วกลับไปฝึกต่อ — ต้อง restart _globalTimer ที่ถูก cancel
+  // ไปตอน _endWorkout() ไม่งั้นนาฬิกา session ค้างตาย
   void _resumeWorkout() {
     setState(() => _showSummary = false);
+    _idleCheckFrom = DateTime.now();
     _startGlobalTimer();
     _videoController?.play();
   }
@@ -448,7 +492,7 @@ class _WeightTrainingExerciseViewState
                           _statBox(
                             icon: Icons.timer_rounded,
                             label: 'เวลาฝึก',
-                            value: _formatTimeSummary(_globalSeconds),
+                            value: _formatTimeSummary(_sessionDurationSeconds),
                             color: const Color(0xFF64B5F6),
                           ),
                           const SizedBox(width: 12),
@@ -554,7 +598,7 @@ class _WeightTrainingExerciseViewState
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: _confirmSaveWorkout,
+                        onPressed: _isSaving ? null : _confirmSaveWorkout,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: green,
                           padding: const EdgeInsets.symmetric(vertical: 16),
@@ -562,14 +606,20 @@ class _WeightTrainingExerciseViewState
                               borderRadius: BorderRadius.circular(14)),
                           elevation: 0,
                         ),
-                        child: const Text('บันทึกการฝึก',
-                            style: TextStyle(color: Colors.black, fontSize: 16,
-                                fontWeight: FontWeight.w800)),
+                        child: _isSaving
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.black),
+                              )
+                            : const Text('บันทึกการฝึก',
+                                style: TextStyle(color: Colors.black, fontSize: 16,
+                                    fontWeight: FontWeight.w800)),
                       ),
                     ),
                     const SizedBox(height: 10),
                     TextButton(
-                      onPressed: _resumeWorkout,
+                      onPressed: _isSaving ? null : _resumeWorkout,
                       child: const Text('ฝึกต่อ',
                           style: TextStyle(color: Colors.white54, fontSize: 14)),
                     ),
@@ -643,20 +693,23 @@ class _WeightTrainingExerciseViewState
       'date': today,
       'wet_id': widget.exerciseId,
       if (scheduleId != null) 'wsch_id': scheduleId,
-      // _globalSeconds เดินต่อเนื่องไม่หยุดตอนพักอยู่แล้ว (ดู _startRest) และหยุดนิ่งตั้งแต่
-      // _endWorkout() ก่อนหน้าจอสรุปจะโชว์ จึงเป็นเวลาเซสชันทั้งหมดพอดี ไม่ต้องจับเวลาใหม่
-      'total_duration_seconds': _globalSeconds,
-      'sets': validSets.map((s) {
+      // เวลารวมจากเริ่มฝึกถึงตอนบันทึกเซตล่าสุด (รวมช่วงพักระหว่างเซต) — ไม่นับส่วนที่ลืมกดจบตอนท้าย
+      // เวลาพักแต่ละเซตเป็นช่วงย่อยของช่วงนี้เสมอ จึงรวมกันไม่เกินเวลารวม (backend ตรวจข้อนี้)
+      'total_duration_seconds': _sessionDurationSeconds,
+      'sets': validSets.asMap().entries.map((entry) {
+        final s = entry.value;
+        final isLastSet = entry.key == validSets.length - 1;
         return {
           'wtrs_set_no': s['set'],
           'wtrs_reps': int.tryParse(s['reps'].toString()) ?? 0,
           'wtrs_weight': double.tryParse(s['weight'].toString()) ?? 0.0,
-          // เวลาออกแรงจริงต่อเซต จับไว้แล้วตอน _finishRest (ดู _activeSetSeconds) ส่งขึ้นไปด้วย
-          // ครั้งแรก — ก่อนหน้านี้จับไว้เฉยๆ ไม่เคยส่งขึ้น API เลย
-          'active_seconds': s['active_seconds'] ?? 0,
           // เวลาพักหลังเซตนี้ (วินาที) — ใช้กับ Dynamic METs Logic Matrix (ดู backend
           // services.CalculateWeightTrainingCalories) เพิ่งเริ่มส่งขึ้น API ตอนนี้ (2026-09-18)
-          'wtrs_rest_seconds': s['rest_seconds'] ?? 0,
+          //
+          // เซตสุดท้ายส่ง null (ไม่ทราบ): ไม่มีการพักจริงหลังเซตสุดท้าย ผู้ใช้กรอกเสร็จแล้วจบการฝึกเลย
+          // เวลาที่นับได้เป็นแค่เวลากรอกข้อมูล ถ้าส่งไปจะดึง MET เฉลี่ยผิด (เช่น ท่าน้ำหนักตัวพักจริง 60 วิ
+          // แต่เซตสุดท้ายได้ 8 วิ → MET 8.0 → พลังงานสูงเกินจริงราว 50%) backend ใช้ค่าเฉลี่ยเวลาพักของเซตอื่นแทน
+          'wtrs_rest_seconds': isLastSet ? null : (s['rest_seconds'] ?? 0),
         };
       }).toList(),
     };
