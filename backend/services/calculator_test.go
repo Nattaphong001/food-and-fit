@@ -1,6 +1,7 @@
 package services
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -8,8 +9,19 @@ import (
 	"food_and_fit_api/models"
 )
 
+// ไฟล์นี้ชื่อ calculator_test.go ตามกติกา Go (คู่กับ calculator.go) แต่เทสต์ฟังก์ชันจาก services/*.go
+// หลายไฟล์รวมกัน ไม่ใช่แค่ calculator.go — แต่ละหมวดด้านล่างระบุไฟล์ต้นทางของสูตรกำกับไว้ ดูตาราง
+// สูตร↔ไฟล์เต็มที่ root CLAUDE.md ข้อ 2
+
+// almostEqual เดิมอยู่ใน calculator_weight_training_test.go (ลบแล้ว 2026-09-22 พร้อมสูตรเวท) — ย้าย
+// มาไว้ที่นี่เพราะเทสต์คาร์ดิโอ/BMR/TDEE ในไฟล์นี้ยังใช้อยู่
+func almostEqual(a, b, tolerance float64) bool {
+	return math.Abs(a-b) <= tolerance
+}
+
 // ─────────────────────────────────────────────────────────────────────────
-// AgeFromBirthDate (ตัวเดียวที่คำนวณอายุ — CalculateAge เดิมถูกลบแล้ว 2026-09-19)
+// AgeFromBirthDate / AgeOn — สูตรอยู่ใน member_service.go (ไม่ใช่ calculator.go) ตัวเดียวที่คำนวณอายุ
+// (CalculateAge เดิมรับ string ถูกลบแล้ว 2026-09-19)
 // ─────────────────────────────────────────────────────────────────────────
 
 func TestAgeFromBirthDate_BirthdayAlreadyPassedThisYear(t *testing.T) {
@@ -64,7 +76,9 @@ func TestAgeOn_LeapYearBoundaries(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// NetEnergyKcal / CalculateCardioCalories — สูตร ACSM (METs−1)×3.5×kg/200×นาที
+// NetEnergyKcal / CalculateCardioCalories — สูตรอยู่ใน calculator.go หมวด 4 (พลังงานคาร์ดิโอ) ACSM
+// (METs−1)×3.5×kg/200×นาที — ตอนนี้ใช้เฉพาะคาร์ดิโอ (สูตรพลังงานเวทถูกลบออกจาก calculator.go แล้ว
+// 2026-09-22 ดูคอมเมนต์หัวหมวด 4)
 // ─────────────────────────────────────────────────────────────────────────
 
 func TestNetEnergyKcal(t *testing.T) {
@@ -102,7 +116,8 @@ func TestCalculateCardioCalories_DurationInSeconds(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// CalculateNutrientTotals — ค่าต่อหน่วย × จำนวนหน่วยที่กิน ครบทั้ง 4 ค่า
+// CalculateNutrientTotals — สูตรอยู่ใน nutrition_service.go (ไม่ใช่ calculator.go) ค่าต่อหน่วย ×
+// จำนวนหน่วยที่กิน ครบทั้ง 4 ค่า
 // ─────────────────────────────────────────────────────────────────────────
 
 func TestCalculateNutrientTotals(t *testing.T) {
@@ -115,7 +130,9 @@ func TestCalculateNutrientTotals(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// SQL ที่ประกอบจาก constant ของ Go — placeholder ต้องถูกแทนครบและได้ค่าที่ถูกต้อง
+// dailySumBetweenSQL — ตัวแปร SQL อยู่ใน analytics_service.go (ไม่ใช่ calculator.go) ประกอบจาก
+// constant ของ Go (SedentaryCoefficient, FallbackBmr/Tdee/TargetTdee ที่นิยามใน calculator.go หมวด 2)
+// placeholder ต้องถูกแทนครบและได้ค่าที่ถูกต้อง
 // ─────────────────────────────────────────────────────────────────────────
 
 func TestDailySumBetweenSQL_ConstantsSubstituted(t *testing.T) {
@@ -130,7 +147,8 @@ func TestDailySumBetweenSQL_ConstantsSubstituted(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// CalculateBaselineExpenditure — Baseline = BMR × 1.2 (Sedentary, IOM 2548) ห้ามแก้ตัวเลข
+// CalculateBaselineExpenditure — สูตรอยู่ใน calculator.go หมวด 2 — Baseline = BMR × 1.2 (Sedentary,
+// IOM 2548) ห้ามแก้ตัวเลข
 // ─────────────────────────────────────────────────────────────────────────
 
 func TestCalculateBaselineExpenditure(t *testing.T) {
@@ -150,7 +168,8 @@ func TestCalculateBaselineExpenditure(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// EstimateOneRepMax — Epley: weight × (1 + reps/30) (บทที่ 2 ข้อ 2.1.4.13) ห้ามแก้ตัวเลข
+// EstimateOneRepMax — สูตรอยู่ใน calculator.go หมวด 3 — Epley: weight × (1 + reps/30) (บทที่ 2 ข้อ
+// 2.1.4.13) ห้ามแก้ตัวเลข
 // ─────────────────────────────────────────────────────────────────────────
 
 func TestEstimateOneRepMax(t *testing.T) {
@@ -159,10 +178,10 @@ func TestEstimateOneRepMax(t *testing.T) {
 		reps     int
 		want     float64
 	}{
-		{100, 5, 116.67},  // 100 * (1 + 5/30) = 116.666... -> 116.67
-		{60, 10, 80},       // 60 * (1 + 10/30) = 80
-		{0, 8, 0},          // ท่า bodyweight น้ำหนัก 0
-		{100, 0, 100},      // reps=0 -> ไม่คูณเพิ่ม (นอกช่วงแม่นยำ 2-10 แต่สูตรยังคำนวณได้)
+		{100, 5, 116.67}, // 100 * (1 + 5/30) = 116.666... -> 116.67
+		{60, 10, 80},     // 60 * (1 + 10/30) = 80
+		{0, 8, 0},        // ท่า bodyweight น้ำหนัก 0
+		{100, 0, 100},    // reps=0 -> ไม่คูณเพิ่ม (นอกช่วงแม่นยำ 2-10 แต่สูตรยังคำนวณได้)
 	}
 	for _, tc := range cases {
 		if got := EstimateOneRepMax(tc.weightKg, tc.reps); !almostEqual(got, tc.want, 0.005) {
@@ -172,8 +191,9 @@ func TestEstimateOneRepMax(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// CalculateGoals — BMI/BMR(Mifflin-St Jeor)/TDEE/Target ตามบทที่ 2 ข้อ 7 (root CLAUDE.md)
-// ห้ามแก้ตัวเลข: ลดน้ำหนัก -20% (clamp ไม่ต่ำกว่า BMR), เพิ่มน้ำหนัก +15%, รักษาน้ำหนัก = TDEE
+// CalculateGoals — สูตรอยู่ใน calculator.go หมวด 1 — BMI/BMR(Mifflin-St Jeor)/TDEE/Target ตามบทที่ 2
+// ข้อ 7 (root CLAUDE.md) ห้ามแก้ตัวเลข: ลดน้ำหนัก -20% (clamp ไม่ต่ำกว่า BMR), เพิ่มน้ำหนัก +15%,
+// รักษาน้ำหนัก = TDEE
 // ─────────────────────────────────────────────────────────────────────────
 
 func TestCalculateGoals_Male_WeightLoss(t *testing.T) {
