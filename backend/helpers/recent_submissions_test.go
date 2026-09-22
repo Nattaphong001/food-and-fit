@@ -106,6 +106,7 @@ func TestWeightSessionFingerprint(t *testing.T) {
 		{"น้ำหนักต่าง", WeightSessionFingerprint(1, 5, 300, []WeightSetCheck{{Reps: 10, WeightKg: 42.5, RestSeconds: rest(60)}, {Reps: 8, WeightKg: 40}})},
 		{"เวลาพักต่าง", WeightSessionFingerprint(1, 5, 300, []WeightSetCheck{{Reps: 10, WeightKg: 40, RestSeconds: rest(61)}, {Reps: 8, WeightKg: 40}})},
 		{"nil ต่างจาก 0", WeightSessionFingerprint(1, 5, 300, []WeightSetCheck{{Reps: 10, WeightKg: 40, RestSeconds: rest(60)}, {Reps: 8, WeightKg: 40, RestSeconds: rest(0)}})},
+		{"เวลาออกแรงต่าง", WeightSessionFingerprint(1, 5, 300, []WeightSetCheck{{Reps: 10, WeightKg: 40, RestSeconds: rest(60), WorkSeconds: rest(40)}, {Reps: 8, WeightKg: 40}})},
 		{"จำนวนเซตต่าง", WeightSessionFingerprint(1, 5, 300, base[:1])},
 	}
 	for _, c := range changed {

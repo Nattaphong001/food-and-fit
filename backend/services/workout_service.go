@@ -198,8 +198,8 @@ func CopySystemPlanToSchedule(tx *gorm.DB, uid uint, plan models.WorkoutPlanTemp
 
 // GetBestOneRepMax ดึง Estimated 1RM ที่ดีที่สุดของสมาชิกคนนี้ในท่านี้ จากประวัติที่มีอยู่แล้ว
 // เท่านั้น (query ก่อนบันทึกเซสชันใหม่เสมอ จึงไม่รวมเซตที่กำลังจะบันทึก) — ใช้ร่วมกันระหว่าง
-// GetBest1RM (แสดงผลอย่างเดียว) และ SaveWorkoutResult (หา 1RM ไปทำ label ความหนัก IntensityLevel ของ Smart Auto
-// Calorie, ดู CalculateWeightTrainingCalories) แยกออกมาเพื่อไม่ให้ 2 endpoint สูตรตัน
+// GetBest1RM (แสดงผลอย่างเดียว) และ SaveWorkoutResult (แสดง one_rep_max_used ใน response — ไม่ได้ใช้
+// คำนวณพลังงานแล้ว หลังลบสูตรเวทออก 2026-09-22) แยกออกมาเพื่อไม่ให้ 2 endpoint สูตรตัน
 func GetBestOneRepMax(mbID, wetID uint) (best1RM, bestWeight float64, bestReps int, bestDate string, hasData bool) {
 	var row struct {
 		BestWeight float64 `gorm:"column:best_weight"`

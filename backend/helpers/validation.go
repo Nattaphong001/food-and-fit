@@ -172,6 +172,7 @@ type WeightSetCheck struct {
 	Reps        int
 	WeightKg    float64
 	RestSeconds *int // nil = ไม่ทราบเวลาพัก (client เก่า) ไม่ตรวจ
+	WorkSeconds *int // nil = ไม่ทราบเวลาออกแรงจริง (client เก่า) ไม่ตรวจ
 }
 
 // ValidateWeightSession - ตรวจความสมเหตุสมผลของเวลาและเซตตอนบันทึกผลเวทเทรนนิ่ง (SaveWorkoutResult)
@@ -191,7 +192,7 @@ func ValidateWeightSession(totalDurationSeconds int, sets []WeightSetCheck) (boo
 	if totalDurationSeconds > WeightSessionMaxSeconds {
 		return false, fmt.Sprintf("เวลารวมยาวผิดปกติ (สูงสุด %d นาทีต่อท่า) อาจลืมกดจบการฝึก", WeightSessionMaxSeconds/60)
 	}
-	restSum := 0
+	restSum, workSum := 0, 0
 	for _, s := range sets {
 		if s.Reps < 1 || s.Reps > WeightSetMaxReps {
 			return false, fmt.Sprintf("จำนวนครั้งต้องอยู่ระหว่าง 1-%d", WeightSetMaxReps)
@@ -199,16 +200,24 @@ func ValidateWeightSession(totalDurationSeconds int, sets []WeightSetCheck) (boo
 		if s.WeightKg < 0 || s.WeightKg > WeightSetMaxWeightKg {
 			return false, fmt.Sprintf("น้ำหนักที่ยกต้องอยู่ระหว่าง 0-%.2f กก.", WeightSetMaxWeightKg)
 		}
-		if s.RestSeconds == nil {
-			continue
+		if s.RestSeconds != nil {
+			if *s.RestSeconds < 0 || *s.RestSeconds > totalDurationSeconds {
+				return false, "เวลาพักไม่ถูกต้อง (ติดลบหรือมากกว่าเวลารวม)"
+			}
+			restSum += *s.RestSeconds
 		}
-		if *s.RestSeconds < 0 || *s.RestSeconds > totalDurationSeconds {
-			return false, "เวลาพักไม่ถูกต้อง (ติดลบหรือมากกว่าเวลารวม)"
+		if s.WorkSeconds != nil {
+			if *s.WorkSeconds < 0 || *s.WorkSeconds > totalDurationSeconds {
+				return false, "เวลาออกแรงไม่ถูกต้อง (ติดลบหรือมากกว่าเวลารวม)"
+			}
+			workSum += *s.WorkSeconds
 		}
-		restSum += *s.RestSeconds
 	}
-	if restSum > totalDurationSeconds+WeightRestSumToleranceSeconds {
-		return false, "ผลรวมเวลาพักมากกว่าเวลารวมของการฝึก"
+	// ผลรวมเวลาออกแรง+เวลาพักต้องไม่เกินเวลารวมของเซสชัน (ทั้งสองเป็นส่วนย่อยของเวลาเดียวกัน) —
+	// client เก่าที่ไม่ส่ง WorkSeconds เลย workSum จะเป็น 0 เสมอ เช็คนี้จึงลดรูปกลับเป็นเช็ค restSum
+	// เดิมพอดี ไม่กระทบ client เก่า
+	if restSum+workSum > totalDurationSeconds+WeightRestSumToleranceSeconds {
+		return false, "ผลรวมเวลาออกแรง+เวลาพักมากกว่าเวลารวมของการฝึก"
 	}
 	return true, ""
 }

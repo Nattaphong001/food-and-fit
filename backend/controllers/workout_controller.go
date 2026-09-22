@@ -850,10 +850,12 @@ type WeightSessionSetInput struct {
 	WtrsSetNo  int     `json:"wtrs_set_no" binding:"required,gt=0"`
 	WtrsReps   int     `json:"wtrs_reps" binding:"required,gt=0"`
 	WtrsWeight float64 `json:"wtrs_weight"`
-	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป — optional, nil เมื่อมือถือยังไม่ส่งมา (เพิ่มคอลัมน์
-	// 2026-09-18 ใช้กับ Dynamic METs Logic Matrix, services.CalculateWeightTrainingCalories) —
-	// nil ให้ fallback เป็นความหนาแน่นเฉลี่ยทั้งเซสชันแทนเวลาพักจริง
+	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป — optional, nil เมื่อมือถือยังไม่ส่งมา เก็บลง DB
+	// ตรงๆ เท่านั้น ไม่เข้าสูตรคำนวณพลังงานแล้ว (สูตรเวทถูกลบออก 2026-09-22 รอกำหนดสูตรใหม่)
 	WtrsRestSeconds *int `json:"wtrs_rest_seconds"`
+	// เวลาออกแรงจริงของเซตนี้ (วินาที) — optional, nil เมื่อมือถือยังไม่ส่งมา เก็บลง DB ตรงๆ เท่านั้น
+	// ไม่เข้าสูตรคำนวณพลังงานแล้ว (สูตรเวทถูกลบออก 2026-09-22 รอกำหนดสูตรใหม่)
+	WtrsActiveSeconds *int `json:"wtrs_active_seconds"`
 }
 
 // WeightSessionRequest - บันทึกผลเวทเทรนนิ่งทั้งเซสชันในคำขอเดียว (แทนที่ของเดิมที่ยิงทีละเซต
@@ -886,11 +888,13 @@ var recentWeightSessions = helpers.NewRecentSubmissions(60 * time.Second)
 
 const recentSubmissionWait = 15 * time.Second
 
-// SaveWorkoutResult บันทึกผลเวทเทรนนิ่งทั้งเซสชัน (Smart Auto Calorie — ออกแบบ 2026-09-08)
-// แทนที่ระบบเดิมที่ผู้ใช้เลือกความหนัก 3 ระดับเอง (wtrs_intensity_level) ซึ่งตรวจแล้วพบว่าไม่เคย
-// ทำงานจริง — mobile ไม่เคยส่งค่านี้ขึ้น API เลย ทุกแถวเก่าใน DB จึง fallback เป็น 1 (เบา) หมด
-// ต้องรับทั้งเซสชันครั้งเดียว (ไม่ใช่ยิงทีละเซตเหมือนเดิม) เพราะ MET ของโมเดลใหม่คำนวณระดับ
-// เซสชัน (ถ่วงน้ำหนัก+ความหนาแน่นตามจำนวนเซตรวม/เวลารวม) ต้องรู้ทุกเซตพร้อมกันถึงจะหาค่าได้
+// SaveWorkoutResult บันทึกผลเวทเทรนนิ่งทั้งเซสชัน — รับทั้งเซสชันครั้งเดียว (ไม่ใช่ยิงทีละเซต) กัน
+// เน็ตหลุดกลางทางแล้วได้ข้อมูลครึ่งๆ
+//
+// ⚠️ 2026-09-22: สูตรคำนวณพลังงาน (เดิม Two-Compartment Energy Model) ถูกลบออกจาก
+// services/calculator.go แล้ว รอกำหนดสูตรใหม่สำหรับเวทเทรนนิ่ง — ระหว่างนี้ `wtrs_calories` บันทึก
+// เป็น 0 และ `wtrs_intensity_level` บันทึกเป็น 2 (กลาง) เป็นค่า placeholder ชั่วคราวทุกแถว ไม่ใช่ค่า
+// ที่คำนวณจริง ต้องกลับมาแก้จุดนี้เมื่อมีสูตรใหม่
 func SaveWorkoutResult(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -909,7 +913,7 @@ func SaveWorkoutResult(c *gin.Context) {
 	// ปฏิเสธค่าที่เป็นไปไม่ได้ที่นี่ ไม่แก้ค่าเงียบๆ (ดู helpers.ValidateWeightSession)
 	checks := make([]helpers.WeightSetCheck, 0, len(req.Sets))
 	for _, s := range req.Sets {
-		checks = append(checks, helpers.WeightSetCheck{Reps: s.WtrsReps, WeightKg: s.WtrsWeight, RestSeconds: s.WtrsRestSeconds})
+		checks = append(checks, helpers.WeightSetCheck{Reps: s.WtrsReps, WeightKg: s.WtrsWeight, RestSeconds: s.WtrsRestSeconds, WorkSeconds: s.WtrsActiveSeconds})
 	}
 	if ok, msg := helpers.ValidateWeightSession(req.TotalDurationSeconds, checks); !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
@@ -967,23 +971,14 @@ func SaveWorkoutResult(c *gin.Context) {
 		bodyWeight = bodyStat.MbsWeight
 	}
 
-	// 1RM ที่ดีที่สุดจากประวัติเดิม (ไม่รวมเซสชันนี้) → ใช้ทำ IntensityLevel (label แสดงผล) เท่านั้น
-	// ไม่ใช้เลือก MET (Dynamic METs Logic Matrix เลือกจากหมวดท่า/ประเภทท่า/เวลาพัก/Reps)
+	// 1RM ที่ดีที่สุดจากประวัติเดิม (ไม่รวมเซสชันนี้) — ยังใช้แสดงผล (one_rep_max_used) แม้สูตร
+	// คำนวณพลังงานเวทจะถูกลบไปแล้ว
 	oneRepMax, _, _, _, _ := services.GetBestOneRepMax(uid, req.WetID)
 
-	setLogs := make([]services.SetLog, 0, len(req.Sets))
-	for _, s := range req.Sets {
-		setLogs = append(setLogs, services.SetLog{
-			WeightKg:    s.WtrsWeight,
-			Reps:        s.WtrsReps,
-			RestSeconds: s.WtrsRestSeconds,
-		})
-	}
-	profile := services.ExerciseProfile{
-		Equipment:    exercise.WetEquipment,
-		ExerciseType: exercise.WetExerciseType,
-	}
-	calc := services.CalculateWeightTrainingCalories(bodyWeight, req.TotalDurationSeconds, oneRepMax, profile, setLogs)
+	// placeholder ชั่วคราวระหว่างไม่มีสูตรคำนวณพลังงานเวท (ดูคอมเมนต์หัวฟังก์ชัน) — wtrs_calories = 0,
+	// wtrs_intensity_level = 2 (กลาง) ทุกแถว ไม่ใช่ค่าที่คำนวณจริง
+	const placeholderCaloriesPerSet = 0.0
+	const placeholderIntensityLevel = int8(2)
 
 	// เลขเซ็ทนับต่อเนื่องทั้งวันจาก DB จริง ไม่ใช้เลขเซ็ทจาก client ตรงๆ — client (หน้าจอฝึก) นับ
 	// เซ็ทแบบรีเซ็ตเป็น 1 ใหม่ทุกครั้งที่เปิดหน้าจอ (ทุก "รอบ") ถ้าฝึกท่าเดียวกันซ้ำวันเดียวกัน
@@ -1001,7 +996,7 @@ func SaveWorkoutResult(c *gin.Context) {
 	sessionBest1RM := 0.0
 	for _, s := range req.Sets {
 		if s.WtrsReps <= 0 {
-			continue // เซตไม่สมบูรณ์ ข้าม — เหมือนตัวกรองใน CalculateWeightTrainingCalories
+			continue // เซตไม่สมบูรณ์ ข้าม
 		}
 		duration := req.TotalDurationSeconds
 		rows = append(rows, models.WeightTrainingResult{
@@ -1011,13 +1006,12 @@ func SaveWorkoutResult(c *gin.Context) {
 			WtrsWeight:         s.WtrsWeight,
 			WtrsDuration:       &duration,
 			WtrsRestSeconds:    s.WtrsRestSeconds,
-			WtrsIntensityLevel: calc.IntensityLevel,
-			// SessionKcal หารเท่ากันทุกเซต — analytics_controller.go SUM(wtrs_calories) ยังถูกต้อง
-			// เป๊ะโดยไม่ต้องแก้ (ผลรวมของเซตทั้งหมด = SessionKcal พอดี)
-			WtrsCalories: calc.CaloriesPerSet,
-			MbID:         uid,
-			WetID:        &req.WetID,
-			WschID:       req.WschID,
+			WtrsActiveSeconds:  s.WtrsActiveSeconds,
+			WtrsIntensityLevel: placeholderIntensityLevel,
+			WtrsCalories:       placeholderCaloriesPerSet,
+			MbID:               uid,
+			WetID:              &req.WetID,
+			WschID:             req.WschID,
 		})
 		nextSetNo++
 
@@ -1042,18 +1036,15 @@ func SaveWorkoutResult(c *gin.Context) {
 	}
 
 	body := gin.H{
-		"message":         "บันทึกผลการฝึกสำเร็จ",
-		"data":            rows,
-		"calories_burned": calc.TotalCalories,
+		"message": "บันทึกผลการฝึกสำเร็จ",
+		"data":    rows,
+		// calories_burned = 0 ชั่วคราวเสมอ — สูตรคำนวณพลังงานเวทถูกลบออกแล้ว (ดูคอมเมนต์หัวฟังก์ชัน)
+		"calories_burned": placeholderCaloriesPerSet * float64(len(rows)),
 		"estimated_1rm":   sessionBest1RM,
-		// รายละเอียดที่มาของตัวเลข — ให้ debug/ตรวจสอบได้ว่าทำไมได้ค่านี้ ไม่ใช่กล่องดำ
 		"calculation": gin.H{
-			"session_base_met": calc.SessionBaseMET,
-			"final_met":        calc.FinalMET,
-			"duration_minutes": calc.DurationMinutes,
-			"intensity_level":  calc.IntensityLevel,
 			"one_rep_max_used": oneRepMax,
 			"body_weight_kg":   bodyWeight,
+			"note":             "สูตรคำนวณพลังงานเวทถูกลบออกชั่วคราว รอกำหนดสูตรใหม่",
 		},
 	}
 	recentWeightSessions.Complete(submission, http.StatusOK, body)
