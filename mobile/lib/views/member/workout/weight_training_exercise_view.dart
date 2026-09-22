@@ -99,6 +99,13 @@ class _WeightTrainingExerciseViewState
   DateTime? _sessionStartedAt;
   DateTime? _restStartedAt;
   DateTime? _lastSetLoggedAt;
+  // เวลาออกแรงจริงของเซตที่กำลังจะบันทึก (วินาที) — คำนวณตอนเริ่มพัก (ดู _startRest) จากผลต่างของ
+  // timestamp: ตอนนี้ ลบตอนจบพักของเซตก่อนหน้า (_lastSetLoggedAt) หรือตอนเริ่มเซสชันถ้าเป็นเซตแรก
+  // ใช้ timestamp diff เหมือน _restSeconds ไม่ใช่ timer นับต่อวินาที (แบบ _activeSetTimer เดิมที่เคย
+  // ถูกลบไปเพราะนับตกตอนจอดับ — ดู git history) ส่งขึ้น API เป็น wtrs_active_seconds ให้
+  // Two-Compartment Energy Model ใช้เป็นเวลาช่วงออกแรงจริง (แทนค่าประมาณ Reps×4 วิ ที่ backend
+  // fallback ให้เมื่อไม่มีค่านี้)
+  int? _pendingWorkSeconds;
   // จุดเริ่มนับ "ไม่มีการบันทึกเซต" สำหรับถามว่ายังฝึกอยู่ไหม (เริ่มฝึก / บันทึกเซต / กด "ฝึกต่อ" ล่าสุด)
   DateTime? _idleCheckFrom;
   bool _idlePromptOpen = false;
@@ -255,7 +262,13 @@ class _WeightTrainingExerciseViewState
       _weightController.clear();
     }
 
-    _restStartedAt = DateTime.now();
+    final now = DateTime.now();
+    // เวลาออกแรงจริงของเซตที่เพิ่งจบ = ตอนนี้ (เริ่มพัก = จบการยกพอดี) ลบตอนจบพักของเซตก่อนหน้า
+    // หรือตอนเริ่มเซสชันถ้าเป็นเซตแรก (ยังไม่เคยพักมาก่อนเลย) — ไม่มีทั้งคู่ (ยังไม่เริ่มเซสชัน) ก็ยังไม่ทราบ
+    final workBoundary = _lastSetLoggedAt ?? _sessionStartedAt;
+    _pendingWorkSeconds = workBoundary == null ? null : now.difference(workBoundary).inSeconds;
+
+    _restStartedAt = now;
     setState(() {
       _isResting = true;
       _restSeconds = 0;
@@ -341,6 +354,12 @@ class _WeightTrainingExerciseViewState
           // (Logic Matrix, ดู backend calculator.go) ใช้แทน proxy ความหนาแน่นเฉลี่ยทั้งเซสชัน
           'rest_seconds': restSeconds,
           // (เซตสุดท้ายของเซสชันไม่ส่งค่านี้ขึ้น API — ดู _saveWorkoutToApi)
+          //
+          // เวลาออกแรงจริงของเซตนี้ (วินาที) — คำนวณไว้แล้วตอนกด "เริ่มพัก" (ดู _startRest/
+          // _pendingWorkSeconds) ส่งขึ้น API เป็น wtrs_active_seconds ให้ Two-Compartment Energy
+          // Model ใช้เป็นเวลาช่วงออกแรงจริง (เซตสุดท้ายก็ส่งค่านี้ปกติ ต่างจาก rest_seconds —
+          // เวลาออกแรงของเซตสุดท้ายยังถูกต้องอยู่ ไม่เหมือนเวลาพักที่ไม่มีการพักจริงหลังเซตสุดท้าย)
+          'work_seconds': _pendingWorkSeconds,
         });
       });
     }
@@ -710,6 +729,11 @@ class _WeightTrainingExerciseViewState
           // เวลาที่นับได้เป็นแค่เวลากรอกข้อมูล ถ้าส่งไปจะดึง MET เฉลี่ยผิด (เช่น ท่าน้ำหนักตัวพักจริง 60 วิ
           // แต่เซตสุดท้ายได้ 8 วิ → MET 8.0 → พลังงานสูงเกินจริงราว 50%) backend ใช้ค่าเฉลี่ยเวลาพักของเซตอื่นแทน
           'wtrs_rest_seconds': isLastSet ? null : (s['rest_seconds'] ?? 0),
+          // เวลาออกแรงจริงของเซตนี้ (วินาที) — ใช้กับ Two-Compartment Energy Model (backend
+          // services.CalculateWeightTrainingCalories, เพิ่งเริ่มส่งขึ้น API ตอนนี้ 2026-09-20)
+          // ต่างจาก rest_seconds: ส่งค่านี้ทุกเซตรวมเซตสุดท้ายด้วย (เวลาออกแรงของเซตสุดท้ายยังถูกต้อง
+          // อยู่ ไม่มีปัญหาแบบเวลาพักที่ไม่มีการพักจริงหลังเซตสุดท้าย)
+          'wtrs_active_seconds': s['work_seconds'],
         };
       }).toList(),
     };

@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_storage/get_storage.dart';
 
@@ -22,13 +22,15 @@ class ApiClient {
   // ใช้เฉพาะตอน autoDetectServer() หา backend เองไม่เจอจริงๆ (ไม่มี Wi-Fi/ไฟร์วอลล์บล็อก
   // ทั้งวง client isolation) — ไม่ใช่ทางหลักแล้ว ไม่ต้องแก้เลขนี้เวลาเปลี่ยน Wi-Fi
   static const _fallbackIp =
-      String.fromEnvironment('REAL_IP', defaultValue: '192.168.1.122');
+      String.fromEnvironment('REAL_IP', defaultValue: '172.24.133.56');
 
   // ผลลัพธ์จาก autoDetectServer() — cache ไว้ในหน่วยความจำระหว่างรันแอปครั้งนี้
   static String? _detectedIp;
 
   static String get serverUrl {
     if (kIsWeb) return 'http://localhost:$_port';                    // Chrome
+    // Windows desktop รัน backend บนเครื่องเดียวกัน — 10.0.2.2 ใช้ได้เฉพาะใน Android Emulator
+    if (defaultTargetPlatform == TargetPlatform.windows) return 'http://localhost:$_port';
     if (_device == 'real') return 'http://${_detectedIp ?? _fallbackIp}:$_port'; // เครื่องจริง
     return 'http://10.0.2.2:$_port';                                 // Android Emulator
   }
