@@ -109,6 +109,15 @@ class AuthService extends GetxService {
     isProfileComplete.value = false;
   }
 
+  // เรียกจาก global interceptor ของ ApiClient (onResponse) ทันทีที่เจอ 401 จาก endpoint ที่ต้อง
+  // login (ไม่ใช่ /login เอง) — ต่างจาก logout() ตรงที่ไม่ยิง POST /logout ซ้ำ เพราะ token ตาย
+  // อยู่แล้ว ยิงไปก็ได้ 401 กลับมาอีก วนไม่จบ
+  Future<void> handleUnauthorized() async {
+    if (!isLoggedIn.value) return; // เคลียร์ไปแล้ว/ยังไม่เคย login กันเด้งซ้ำ
+    await _clearSession();
+    Get.offAllNamed('/login');
+  }
+
   // ==========================================
   // 🔓 เข้าสู่ระบบแบบรวม (เช็คฐานข้อมูลจริง)
   // ==========================================

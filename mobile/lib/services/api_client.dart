@@ -1,9 +1,17 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'package:flutter/foundation.dart' show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_storage/get_storage.dart';
 
+import 'auth_service.dart';
 import 'lan_scanner.dart';
+
+// endpoint ที่ตอบ 401 ได้เองตามปกติ (ยังไม่ login/ไม่มี token) — ห้ามให้ onResponse ข้างล่าง
+// ตีความว่า "session หมดอายุ" แล้วเด้งออกจากหน้า login/สมัครสมาชิกไปซ้ำ
+const _authEndpoints = {
+  '/login', '/register', '/verify-email', '/resend-otp',
+  '/password/forgot', '/password/reset',
+};
 
 class _CacheEntry {
   final Response response;
@@ -22,7 +30,7 @@ class ApiClient {
   // ใช้เฉพาะตอน autoDetectServer() หา backend เองไม่เจอจริงๆ (ไม่มี Wi-Fi/ไฟร์วอลล์บล็อก
   // ทั้งวง client isolation) — ไม่ใช่ทางหลักแล้ว ไม่ต้องแก้เลขนี้เวลาเปลี่ยน Wi-Fi
   static const _fallbackIp =
-      String.fromEnvironment('REAL_IP', defaultValue: '172.24.133.56');
+      String.fromEnvironment('REAL_IP', defaultValue: '192.168.1.50');
 
   // ผลลัพธ์จาก autoDetectServer() — cache ไว้ในหน่วยความจำระหว่างรันแอปครั้งนี้
   static String? _detectedIp;
@@ -51,15 +59,21 @@ class ApiClient {
 
     final storage = GetStorage();
     final cachedIp = storage.read<String>(_storageKeyIp);
+    debugPrint('[ApiClient] cached IP (จากรันครั้งก่อน, persist ใน GetStorage): $cachedIp');
     if (cachedIp != null && await _probe(cachedIp)) {
+      debugPrint('[ApiClient] cached IP ใช้ได้ → ใช้ $cachedIp (ไม่สแกนใหม่)');
       _detectedIp = cachedIp;
       return;
     }
+    if (cachedIp != null) debugPrint('[ApiClient] cached IP ใช้ไม่ได้แล้ว (probe fail) → สแกน subnet ใหม่');
 
     final found = await _scanForBackend();
     if (found != null) {
+      debugPrint('[ApiClient] สแกนเจอ backend ที่ $found → บันทึกแทน cache เดิม');
       _detectedIp = found;
       await storage.write(_storageKeyIp, found);
+    } else {
+      debugPrint('[ApiClient] สแกนไม่เจอ backend เลยทั้ง subnet → ใช้ fallback IP: $_fallbackIp');
     }
     // หาไม่เจอ — ปล่อยให้ serverUrl fallback ไปใช้ _fallbackIp ต่อ (หน้าจอจะขึ้น error state
     // ตามปกติถ้ายังต่อไม่ติด ไม่ต่างจากพฤติกรรมเดิม)
@@ -81,6 +95,10 @@ class ApiClient {
 
   static Future<String?> _scanForBackend() async {
     final prefixes = await localSubnetPrefixes();
+    debugPrint('[ApiClient] subnet prefix ที่ตรวจเจอบนเครื่องนี้: $prefixes');
+    if (prefixes.isEmpty) {
+      debugPrint('[ApiClient] ไม่เจอ subnet prefix เลย — เช็คว่ามือถือต่อ Wi-Fi อยู่จริงไหม');
+    }
     for (final prefix in prefixes) {
       final hit = await _scanPrefix(prefix);
       if (hit != null) return hit;
@@ -90,6 +108,7 @@ class ApiClient {
 
   /// สแกน .1-.254 ของ subnet เป็นชุดๆ ละ 64 ตัวพร้อมกัน (timeout สั้นต่อตัวอยู่แล้วจาก _probeDio)
   static Future<String?> _scanPrefix(String prefix) async {
+    debugPrint('[ApiClient] เริ่มสแกน $prefix.1-254 หา backend...');
     const batchSize = 64;
     for (var start = 1; start <= 254; start += batchSize) {
       final end = (start + batchSize - 1).clamp(1, 254);
@@ -101,6 +120,7 @@ class ApiClient {
         if (ip != null) return ip;
       }
     }
+    debugPrint('[ApiClient] สแกน $prefix.1-254 ครบแล้ว ไม่เจอ backend');
     return null;
   }
 
@@ -131,11 +151,18 @@ class ApiClient {
         }
         return handler.next(options);
       },
-      onError: (DioException e, handler) {
-        // ถ้า Token หมดอายุ (401) สามารถสั่ง Logout หรือ Refresh Token ตรงนี้ได้
-        if (e.response?.statusCode == 401) {
-          // logic logout หรือ redirect ไปหน้า login
+      // BaseOptions.validateStatus ด้านบนรับทุก status code ที่ไม่ใช่ null ว่า "สำเร็จ" เสมอ
+      // (โค้ด service เดิมทั้งหมด เช็ค response.statusCode เองแบบ manual ไม่ throw) เพราะงั้น 401
+      // จะไม่มีวันโผล่มาที่ onError นี้เลย ต้องดักที่ onResponse แทนถึงจะเจอจริง
+      onResponse: (response, handler) {
+        if (response.statusCode == 401 && !_authEndpoints.contains(response.requestOptions.path)) {
+          AuthService.to.handleUnauthorized();
         }
+        return handler.next(response);
+      },
+      onError: (DioException e, handler) {
+        // ทางนี้เจอเฉพาะ error ระดับ connection จริงๆ (timeout, ไม่มีเน็ต, DNS ไม่เจอ ฯลฯ)
+        // ไม่ใช่ 401/4xx/5xx — ของพวกนั้นดักที่ onResponse ด้านบนแล้ว
         return handler.next(e);
       },
     ));
