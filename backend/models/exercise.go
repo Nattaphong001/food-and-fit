@@ -183,20 +183,19 @@ type WeightTrainingResult struct {
 	// เวลารวมทั้งเซสชัน (วินาที) ซ้ำกันทุกแถวของเซสชันเดียวกัน — ห้าม SUM ข้ามแถว
 	WtrsDuration *int `gorm:"type:smallint unsigned;column:wtrs_duration" json:"wtrs_duration"`
 	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป (เพิ่มเข้ามา 2026-09-18, migrations/2026-09-18_
-	// add_weight_training_rest_seconds.sql) — NULL = ไม่ทราบ (แถวเก่า/มือถือยังไม่ส่งมา) เก็บลง DB
-	// ตรงๆ เท่านั้น ไม่เข้าสูตรคำนวณพลังงานแล้ว — สูตรเวท (เดิม Two-Compartment Energy Model) ถูกลบออก
-	// จาก services/calculator.go แล้ว (2026-09-22) รอกำหนดสูตรใหม่
+	// add_weight_training_rest_seconds.sql) — NULL = ไม่ทราบ (แถวเก่า/มือถือยังไม่ส่งมา หรือเซตสุดท้าย
+	// ของเซสชัน) เก็บลง DB เพื่อดูประวัติเท่านั้น ตั้งแต่สูตร Session MET (2026-09-26,
+	// services.CalculateWeightTrainingCalories) ไม่ได้ใช้เวลาพักเข้าสูตรเลือก MET แล้ว
 	WtrsRestSeconds    *int           `gorm:"type:smallint unsigned;column:wtrs_rest_seconds" json:"wtrs_rest_seconds"`
-	// เวลาออกแรงจริงของเซตนี้ (วินาที) — คอลัมน์นี้เคยมีมาก่อน (เก็บไว้เป็นหลักฐานย้อนหลังอย่างเดียว
-	// ไม่เคยเข้าสูตร) ถูกตัดออกไปครั้งหนึ่งแล้วเพิ่มกลับมา (migrations/2026-09-20_revive_weight_
-	// training_active_seconds.sql) — ปัจจุบันเก็บลง DB ตรงๆ เท่านั้น ไม่เข้าสูตรคำนวณพลังงานแล้ว (สูตร
-	// เวทถูกลบออก 2026-09-22 รอกำหนดสูตรใหม่) NULL = ไม่ทราบ (แถวเก่า/มือถือรุ่นเก่า)
+	// เวลาออกแรงจริงของเซตนี้ (วินาที) — ไม่เข้าสูตรคำนวณพลังงาน (Session MET ใช้เวลารวมทั้งเซสชัน
+	// ไม่ใช่เวลาออกแรงต่อเซต) เก็บไว้เพื่อดูประวัติ/ตรวจขอบเขตความสมเหตุสมผลของข้อมูล
+	// (helpers.ValidateWeightSession) NULL = ไม่ทราบ (แถวเก่า/มือถือรุ่นเก่า)
 	WtrsActiveSeconds  *int           `gorm:"type:smallint unsigned;column:wtrs_active_seconds" json:"wtrs_active_seconds"`
-	// 1=เบา, 2=กลาง, 3=หนัก — ⚠️ ตั้งแต่ 2026-09-22 บันทึกเป็น placeholder คงที่ 2 (กลาง) ทุกแถวจาก
-	// SaveWorkoutResult ไม่ใช่ค่าที่คำนวณจริงอีกต่อไป (สูตรเวทถูกลบออก รอกำหนดสูตรใหม่)
+	// 1=เบา, 2=กลาง, 3=หนัก — ระดับที่ resolveSessionMET เลือกให้ทั้งเซสชัน (ตาราง 2.2 + Effort Ratio,
+	// แก้ 2026-09-26 ดู ../../CLAUDE.md ข้อ 7[B-1]) ทุกเซตในเซสชันเดียวกันได้ค่าเดียวกัน
 	WtrsIntensityLevel int8           `gorm:"type:tinyint;column:wtrs_intensity_level" json:"wtrs_intensity_level"`
-	// ⚠️ ตั้งแต่ 2026-09-22 บันทึกเป็น placeholder คงที่ 0 ทุกแถวจาก SaveWorkoutResult ไม่ใช่ค่าที่
-	// คำนวณจริงอีกต่อไป (สูตรเวทถูกลบออก รอกำหนดสูตรใหม่)
+	// พลังงานสุทธิ (kcal) ของเซตนี้ = totalKcal ทั้งเซสชัน หารเท่ากันทุกเซต (ดู
+	// services.CalculateWeightTrainingCalories) SUM(wtrs_calories) GROUP BY wtrs_date ยังถูกต้อง
 	WtrsCalories       float64        `gorm:"type:decimal(6,2);column:wtrs_calories" json:"wtrs_calories"`
 	MbID               uint           `gorm:"type:int(11);column:mb_id;not null" json:"mb_id"`
 	// WetID เป็น *uint เพราะคอลัมน์ wet_id เป็น nullable จริงใน DB (FK ON DELETE SET NULL) ถ้า
