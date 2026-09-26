@@ -148,15 +148,22 @@ func ValidateCardioResult(durationSeconds int, distanceKm float64, hasDistance b
 }
 
 // ── ขอบเขตของข้อมูลเซสชันเวทเทรนนิ่ง (ValidateWeightSession) ──
-// เวลารวมกับเวลาพักคือตัวที่ทำให้ kcal เพี้ยนได้มากที่สุด: kcal เป็นเส้นตรงกับเวลารวม (สูตรไม่มีเพดานแล้ว
-// ตั้งแต่ 2026-09-19) และเวลาพักเป็นตัวเลือก MET ในหมวดน้ำหนักตัว (8.0 กับ 3.5) — จึงต้องกันค่าที่เป็นไปไม่ได้
-// ตั้งแต่ชั้นรับข้อมูล ค่าเพดานด้านล่างเป็นค่าที่ผู้พัฒนาเลือก ไม่ได้มาจากสเปกบทที่ 2
+// เวลารวมคือตัวที่ทำให้ kcal เพี้ยนได้มากที่สุด: kcal เป็นเส้นตรงกับเวลารวมของเซสชัน (Session MET ตาม
+// ตาราง 2.2 — ดู services.CalculateWeightTrainingCalories, ../../CLAUDE.md ข้อ 7[B-1]) เวลาพักไม่ได้เลือก
+// MET แล้ว (เกณฑ์เดิมที่ใช้เวลาพักถูกตัดออกไปตั้งแต่ 2026-09-26 พร้อม Compendium Per-Set MET Matrix)
+// เหลือหน้าที่แค่ตรวจว่าค่าที่ส่งมาสมเหตุสมผลไหม ต้องกันค่าที่เป็นไปไม่ได้ตั้งแต่ชั้นรับข้อมูล ค่าเพดาน
+// ด้านล่างเป็นค่าที่ผู้พัฒนาเลือก ไม่ได้มาจากสเปกบทที่ 2
 const (
 	// เวลาต่ำสุดต่อเซต: 1 เซตที่บันทึกได้จริงต้องใช้เวลาอย่างน้อยกี่วินาที (กันข้อมูลขยะจากการกดรัว)
 	WeightSessionMinSecondsPerSet = 5
 	// เวลารวมสูงสุดของ 1 ท่า 1 เซสชัน (2 ชม.) — ท่าเดียว 5×5 พัก 5 นาทีก็ราว 35 นาที ยาวกว่า 2 ชม.
 	// เกือบแน่นอนว่าลืมกดจบ ต้องไม่เอาไปคิด kcal (คอลัมน์ wtrs_duration เป็น SMALLINT UNSIGNED เก็บได้ถึง 65535)
 	WeightSessionMaxSeconds = 7200
+	// เวลารวมสูงสุดต่อเซต (10 นาที) — กันถ่างช่องว่างระหว่างเซตให้นานผิดปกติเพื่อยืดเวลาเซสชันได้ kcal
+	// เพิ่มฟรี (เพดานเวลารวมข้างบนอย่างเดียวหลวมเกินไป: 2 เซตก็ยังยัดเข้าไปได้ถึง 7200 วิ) ใช้ 10 นาที
+	// เดียวกับ _idlePromptAfter ฝั่งมือถือ (weight_training_exercise_view.dart) ซึ่งเป็นเกณฑ์ที่ระบบ
+	// นิยาม "ช่องว่างระหว่างเซตผิดปกติ" ไว้อยู่แล้ว ไม่ใช่ตัวเลขใหม่ที่เดาเพิ่ม
+	WeightSessionMaxSecondsPerSet = 600
 	// จำนวนเซตสูงสุดต่อคำขอ (wtrs_set_no เป็น TINYINT UNSIGNED)
 	WeightSessionMaxSets = 50
 	// Reps สูงสุดต่อเซต ให้ตรงกับรูปแบบ Reps 3 หลักของแผนฝึก (RepsPattern)
@@ -191,6 +198,9 @@ func ValidateWeightSession(totalDurationSeconds int, sets []WeightSetCheck) (boo
 	}
 	if totalDurationSeconds > WeightSessionMaxSeconds {
 		return false, fmt.Sprintf("เวลารวมยาวผิดปกติ (สูงสุด %d นาทีต่อท่า) อาจลืมกดจบการฝึก", WeightSessionMaxSeconds/60)
+	}
+	if totalDurationSeconds > len(sets)*WeightSessionMaxSecondsPerSet {
+		return false, fmt.Sprintf("เวลารวมยาวผิดปกติเมื่อเทียบกับจำนวนเซต (สูงสุด %d นาทีต่อเซต) อาจลืมกดจบการฝึกหรือช่องว่างระหว่างเซตนานเกินไป", WeightSessionMaxSecondsPerSet/60)
 	}
 	restSum, workSum := 0, 0
 	for _, s := range sets {

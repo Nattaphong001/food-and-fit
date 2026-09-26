@@ -65,9 +65,11 @@ func TestValidateWeightSession(t *testing.T) {
 		{"เวลา 5 วิ/เซตพอดี (3 เซต 15 วิ)", 15, sets(3, 10, nil), true},
 		{"เวลา 0", 0, sets(1, 10, nil), false},
 		{"เวลาติดลบ", -60, sets(1, 10, nil), false},
-		{"เวลารวม 7200 วิ พอดี (2 ชม.)", 7200, sets(3, 10, rest(120)), true},
-		{"เวลารวม 7201 วิ", 7201, sets(3, 10, rest(120)), false},
+		{"เวลารวม 7200 วิ พอดี (2 ชม., 12 เซตพอสำหรับเพดานต่อเซต)", 7200, sets(12, 10, rest(120)), true},
+		{"เวลารวม 7201 วิ", 7201, sets(12, 10, rest(120)), false},
 		{"เวลารวมเกินคอลัมน์ SMALLINT", 70000, sets(3, 10, nil), false},
+		{"เวลารวมยาวผิดปกติเทียบจำนวนเซต (3 เซต 610 วิ/เซต)", 1830, sets(3, 10, nil), false},
+		{"เวลารวม 600 วิ/เซตพอดี (3 เซต)", 1800, sets(3, 10, nil), true},
 		{"พักติดลบ", 540, sets(3, 10, rest(-1)), false},
 		{"พักเซตเดียวมากกว่าเวลารวม", 540, sets(1, 10, rest(541)), false},
 		{"ผลรวมพักเกินเวลารวมเกินค่าเผื่อ (3×190 = 570 > 540+10)", 540, sets(3, 10, rest(190)), false},
@@ -99,6 +101,43 @@ func TestValidateWeightSession(t *testing.T) {
 			}
 		}
 	})
+}
+
+// ValidateCardioResult: ขอบของเวลา (60-36000 วิ) และระยะทาง (0-999.99 กม. เฉพาะกิจกรรมที่มีระยะทาง)
+func TestValidateCardioResult(t *testing.T) {
+	cases := []struct {
+		name        string
+		duration    int
+		distance    float64
+		hasDistance bool
+		want        bool
+	}{
+		{"ปกติ 30 นาที มีระยะทาง", 1800, 5.0, true, true},
+		{"ปกติ 30 นาที ไม่มีระยะทาง (เช่น เวทบอลออกกำลัง)", 1800, 0, false, true},
+		{"เวลาต่ำกว่า 60 วิ", 59, 0, false, false},
+		{"เวลา 60 วิพอดี (ขั้นต่ำ)", 60, 0, false, true},
+		{"เวลา 36000 วิพอดี (เพดาน 600 นาที)", 36000, 0, false, true},
+		{"เวลาเกินเพดาน 36001 วิ", 36001, 0, false, false},
+		{"เวลา 0", 0, 0, false, false},
+		{"เวลาติดลบ", -60, 0, false, false},
+		{"ระยะทางติดลบ (มีระยะทาง)", 1800, -1, true, false},
+		{"ระยะทาง 0 พอดี (มีระยะทาง — วิ่งอยู่กับที่)", 1800, 0, true, true},
+		{"ระยะทาง 999.99 พอดี (เพดานคอลัมน์ DECIMAL(5,2))", 1800, 999.99, true, true},
+		{"ระยะทางเกินเพดาน 1000", 1800, 1000, true, false},
+		{"ระยะทางติดลบแต่ hasDistance=false ไม่ตรวจ (ไม่มีผลต่อ DB)", 1800, -1, false, true},
+		{"ระยะทางเกินเพดานแต่ hasDistance=false ไม่ตรวจ", 1800, 5000, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, msg := ValidateCardioResult(tc.duration, tc.distance, tc.hasDistance)
+			if ok != tc.want {
+				t.Errorf("ValidateCardioResult(%d, %.2f, %v) = (%v, %q), want ok=%v", tc.duration, tc.distance, tc.hasDistance, ok, msg, tc.want)
+			}
+			if !ok && msg == "" {
+				t.Errorf("ต้องมีข้อความบอกเหตุผลเมื่อ reject")
+			}
+		})
+	}
 }
 
 // WorkSeconds (wtrs_active_seconds, เพิ่มกลับมา 2026-09-20) ใช้กฎขอบเขตเดียวกับ RestSeconds
