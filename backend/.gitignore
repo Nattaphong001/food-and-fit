@@ -15,6 +15,9 @@ food_and_fit_api
 # Go coverage
 *.out
 
+# Python cache (tests/tools/*.py helper scripts)
+__pycache__/
+
 # IDE
 .vscode/
 .idea/

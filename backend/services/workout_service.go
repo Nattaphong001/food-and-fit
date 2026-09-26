@@ -206,10 +206,16 @@ func GetBestOneRepMax(mbID, wetID uint) (best1RM, bestWeight float64, bestReps i
 		BestReps   int     `gorm:"column:best_reps"`
 		Date       string  `gorm:"column:date"`
 	}
+	// wtrs_reps จำกัดช่วง 1-10 — สูตร Epley (บทที่ 2 ข้อ 2.1.4.13) แม่นยำสูงสุดเมื่อ Reps 2-10 ครั้ง
+	// (Brzycki, 2536) ขยายลงมาถึง 1 เพราะเซตที่ยก 1 ครั้งคือการทดสอบ 1RM ตรงตัว ไม่ต้องพึ่งการทำนาย
+	// เลย แม่นยำกว่าเซตอื่นทั้งหมด (ตีความเพิ่มเติมของผู้วิจัย นอกเหนือจากช่วง 2-10 ที่ Brzycki ระบุ
+	// ต้องเขียนกำกับในเล่ม) — ก่อนแก้ 2026-09-26 ไม่มี filter นี้ ทำให้เซต Reps สูง (เช่น 25-30 ครั้ง)
+	// ที่ Epley ประเมินพองเกินจริงถูกเลือกเป็น Best 1RM ได้ กระทบทั้งหน้าจอแสดง 1RM (GetBest1RM) และ
+	// Effort Ratio ที่ใช้เลือกระดับความเข้มข้นเวทเทรนนิ่ง (services.CalculateWeightTrainingCalories)
 	config.DB.Raw(`
 		SELECT wtrs_weight AS best_weight, wtrs_reps AS best_reps, wtrs_date AS date
 		FROM weight_training_result
-		WHERE mb_id = ? AND wet_id = ? AND wtrs_weight > 0 AND wtrs_reps > 0
+		WHERE mb_id = ? AND wet_id = ? AND wtrs_weight > 0 AND wtrs_reps BETWEEN 1 AND 10
 		ORDER BY (wtrs_weight * (1 + wtrs_reps / 30.0)) DESC
 		LIMIT 1
 	`, mbID, wetID).Scan(&row)
