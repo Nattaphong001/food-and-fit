@@ -102,9 +102,11 @@ class _WeightTrainingExerciseViewState
   // เวลาออกแรงจริงของเซตที่กำลังจะบันทึก (วินาที) — คำนวณตอนเริ่มพัก (ดู _startRest) จากผลต่างของ
   // timestamp: ตอนนี้ ลบตอนจบพักของเซตก่อนหน้า (_lastSetLoggedAt) หรือตอนเริ่มเซสชันถ้าเป็นเซตแรก
   // ใช้ timestamp diff เหมือน _restSeconds ไม่ใช่ timer นับต่อวินาที (แบบ _activeSetTimer เดิมที่เคย
-  // ถูกลบไปเพราะนับตกตอนจอดับ — ดู git history) ส่งขึ้น API เป็น wtrs_active_seconds ให้
-  // Two-Compartment Energy Model ใช้เป็นเวลาช่วงออกแรงจริง (แทนค่าประมาณ Reps×4 วิ ที่ backend
-  // fallback ให้เมื่อไม่มีค่านี้)
+  // ถูกลบไปเพราะนับตกตอนจอดับ — ดู git history) ส่งขึ้น API เป็น wtrs_active_seconds — สูตรพลังงาน
+  // ปัจจุบัน (Session MET ตามตาราง 2.2, แก้ 2026-09-26) ไม่ได้ใช้ค่านี้เข้าสูตรแล้ว (Two-Compartment
+  // Energy Model ที่เคยใช้ค่านี้ถูกลบไปตั้งแต่ 2026-09-22) เหลือแค่ backend เอาไปเช็คขอบเขตความสมเหตุสมผล
+  // ของข้อมูล (ดู helpers.ValidateWeightSession) — ยังส่งไว้เผื่ออนาคตต้องใช้ ไม่ได้เป็น dead field เฉยๆ
+  // เพราะ validation ยังพึ่งอยู่
   int? _pendingWorkSeconds;
   // จุดเริ่มนับ "ไม่มีการบันทึกเซต" สำหรับถามว่ายังฝึกอยู่ไหม (เริ่มฝึก / บันทึกเซต / กด "ฝึกต่อ" ล่าสุด)
   DateTime? _idleCheckFrom;
@@ -341,7 +343,10 @@ class _WeightTrainingExerciseViewState
       final String r = _repsController.text.trim();
       final DateTime now = DateTime.now();
       final started = _restStartedAt;
-      final int restSeconds = started == null ? 0 : now.difference(started).inSeconds;
+      // แก้ 2026-09-26: เดิมกด "เพิ่มเซต" โดยไม่เคยกดปุ่มพักเลย (started == null) จะได้ 0 ปนกับ
+      // "พักจริง 0 วินาที" (กดเริ่มพักแล้วกดจบพักทันที) ทำให้ backend ต้องเดาว่า 0 หมายถึงอะไร —
+      // ตอนนี้แยกให้ชัด: ไม่เคยกดปุ่มพัก = null (ไม่ทราบ), กดจริงแล้วได้ 0 วิ = ค่าจริง ส่งเป็น 0
+      final int? restSeconds = started == null ? null : now.difference(started).inSeconds;
       _lastSetLoggedAt = now;
       _idleCheckFrom = now;
       setState(() {
@@ -349,9 +354,9 @@ class _WeightTrainingExerciseViewState
           'set': _completedSets.length + 1,
           'reps': r,
           'weight': w,
-          // เวลาพักหลังเซตนี้ (วินาที) — เวลาจริงตั้งแต่กดปุ่มพักหลังจบเซตนี้
-          // จนถึงตอนนี้ที่กด "จบการพัก" ส่งขึ้น API เป็น wtrs_rest_seconds ให้ Dynamic Base MET
-          // (Logic Matrix, ดู backend calculator.go) ใช้แทน proxy ความหนาแน่นเฉลี่ยทั้งเซสชัน
+          // เวลาพักหลังเซตนี้ (วินาที) — เวลาจริงตั้งแต่กดปุ่มพักหลังจบเซตนี้จนถึงตอนนี้ที่กด "จบการ
+          // พัก" ส่งขึ้น API เป็น wtrs_rest_seconds ให้ Compendium Per-Set MET Matrix (ดู backend
+          // calculator.go) — null เมื่อไม่เคยกดปุ่มพักเลย (ไม่ใช่ 0 วินาที) ดูคอมเมนต์ด้านบน
           'rest_seconds': restSeconds,
           // (เซตสุดท้ายของเซสชันไม่ส่งค่านี้ขึ้น API — ดู _saveWorkoutToApi)
           //
@@ -722,13 +727,17 @@ class _WeightTrainingExerciseViewState
           'wtrs_set_no': s['set'],
           'wtrs_reps': int.tryParse(s['reps'].toString()) ?? 0,
           'wtrs_weight': double.tryParse(s['weight'].toString()) ?? 0.0,
-          // เวลาพักหลังเซตนี้ (วินาที) — ใช้กับ Dynamic METs Logic Matrix (ดู backend
+          // เวลาพักหลังเซตนี้ (วินาที) — ใช้กับ Compendium Per-Set MET Matrix (ดู backend
           // services.CalculateWeightTrainingCalories) เพิ่งเริ่มส่งขึ้น API ตอนนี้ (2026-09-18)
           //
           // เซตสุดท้ายส่ง null (ไม่ทราบ): ไม่มีการพักจริงหลังเซตสุดท้าย ผู้ใช้กรอกเสร็จแล้วจบการฝึกเลย
           // เวลาที่นับได้เป็นแค่เวลากรอกข้อมูล ถ้าส่งไปจะดึง MET เฉลี่ยผิด (เช่น ท่าน้ำหนักตัวพักจริง 60 วิ
           // แต่เซตสุดท้ายได้ 8 วิ → MET 8.0 → พลังงานสูงเกินจริงราว 50%) backend ใช้ค่าเฉลี่ยเวลาพักของเซตอื่นแทน
-          'wtrs_rest_seconds': isLastSet ? null : (s['rest_seconds'] ?? 0),
+          //
+          // ส่งค่าจาก s['rest_seconds'] ตรงๆ ไม่ coalesce เป็น 0 อีกต่อไป (แก้ 2026-09-26) — ค่านี้
+          // เป็น null อยู่แล้วถ้าไม่เคยกดปุ่มพัก (ดู _finishRest) การ ?? 0 เดิมจะกลบ null ที่แท้จริง
+          // เป็น 0 ปนกับพักจริง 0 วินาที ทำให้ backend แยกไม่ออก
+          'wtrs_rest_seconds': isLastSet ? null : s['rest_seconds'],
           // เวลาออกแรงจริงของเซตนี้ (วินาที) — ใช้กับ Two-Compartment Energy Model (backend
           // services.CalculateWeightTrainingCalories, เพิ่งเริ่มส่งขึ้น API ตอนนี้ 2026-09-20)
           // ต่างจาก rest_seconds: ส่งค่านี้ทุกเซตรวมเซตสุดท้ายด้วย (เวลาออกแรงของเซตสุดท้ายยังถูกต้อง
