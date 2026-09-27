@@ -888,8 +888,8 @@ var recentWeightSessions = helpers.NewRecentSubmissions(60 * time.Second)
 const recentSubmissionWait = 15 * time.Second
 
 // เตือน (ไม่ block) เมื่อน้ำหนักที่ยกในเซตประเมิน 1RM ได้สูงกว่า Best 1RM เดิมมากผิดปกติ — กัน Best 1RM
-// เสียถาวรจากการกรอกพลาด (พิมพ์เกิน/หน่วยผิด) เพราะ GetBestOneRepMax เอาค่านี้เข้าสูตร Effort Ratio ของ
-// ทุกเซสชันถัดไปแล้ว (ดู ../../CLAUDE.md ข้อ 7[B-1]) ไม่ block เพราะสมาชิกแข็งแรงขึ้นจริงมีจริง รูปแบบ
+// เสียถาวรจากการกรอกพลาด (พิมพ์เกิน/หน่วยผิด) เพราะ GetBestOneRepMax เอาค่านี้เข้าสูตร RIR ของทุก
+// เซสชันถัดไปแล้ว (ดู ../../CLAUDE.md ข้อ 7[B-1]) ไม่ block เพราะสมาชิกแข็งแรงขึ้นจริงมีจริง รูปแบบ
 // เดียวกับ warnings ของ UpdateBodyStats (member_controller.go, D10) — เกณฑ์ 20% เป็นค่าที่ผู้พัฒนาเลือก
 // ไม่ได้มาจากสเปกบทที่ 2
 const abnormalOneRepMaxJumpRatio = 1.2
@@ -897,8 +897,8 @@ const abnormalOneRepMaxJumpRatio = 1.2
 // SaveWorkoutResult บันทึกผลเวทเทรนนิ่งทั้งเซสชัน — รับทั้งเซสชันครั้งเดียว (ไม่ใช่ยิงทีละเซต) กัน
 // เน็ตหลุดกลางทางแล้วได้ข้อมูลครึ่งๆ
 //
-// สูตรคำนวณพลังงาน: Session MET ตามตาราง 2.2 + Effort Ratio (แก้ 2026-09-26 แทนที่ Compendium
-// Per-Set MET Matrix — ดู services.CalculateWeightTrainingCalories และ ../../CLAUDE.md ข้อ 7[B])
+// สูตรคำนวณพลังงาน: Session MET ตามตาราง 2.2 + RIR (Reps in Reserve) (แก้ 2026-09-27 แทนที่ Effort
+// Ratio ≥ 0.90 — ดู services.CalculateWeightTrainingCalories และ ../../CLAUDE.md ข้อ 7[B-1])
 func SaveWorkoutResult(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -976,7 +976,7 @@ func SaveWorkoutResult(c *gin.Context) {
 	}
 
 	// 1RM ที่ดีที่สุดจากประวัติเดิม (ไม่รวมเซสชันนี้, Reps 1-10 เท่านั้น — ดู GetBestOneRepMax) —
-	// เข้าสูตรพลังงานจริงแล้ว (Effort Ratio ระดับเซสชัน) ไม่ใช่แค่แสดงผลอย่างเดียวเหมือนก่อน 2026-09-26
+	// เข้าสูตรพลังงานจริงแล้ว (RIR ระดับเซสชัน) ไม่ใช่แค่แสดงผลอย่างเดียวเหมือนก่อน 2026-09-26
 	oneRepMax, _, _, _, _ := services.GetBestOneRepMax(uid, req.WetID)
 
 	// เลขเซ็ทนับต่อเนื่องทั้งวันจาก DB จริง ไม่ใช้เลขเซ็ทจาก client ตรงๆ — client (หน้าจอฝึก) นับ
