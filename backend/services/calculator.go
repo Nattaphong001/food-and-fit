@@ -14,7 +14,7 @@ func CalculateGoals(weight, height float64, age, gender int, activityLevel float
 	heightInMeters := height / 100
 	bmi = weight / (heightInMeters * heightInMeters)
 
-	// BMR 
+	// BMR
 	if gender == 1 { // ชาย
 		bmr = (10 * weight) + (6.25 * height) - float64(5*age) + 5
 	} else { // หญิง
@@ -63,6 +63,36 @@ func CalculateBaselineExpenditure(bmr float64) float64 {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// 2b. สัดส่วนสารอาหารมหัพภาค (Macronutrient Distribution) — CalculateMacroTargets
+// ═══════════════════════════════════════════════════════════════════════
+// บทที่ 2 ข้อ 2.1.4.8 — สัดส่วน C:P:F คงที่ต่อเป้าหมาย (mbs_target/goal_type) ห้ามแก้ตัวเลข
+// ย้ายมาจาก mobile/lib/core/utils/dashboard_insights.dart (macroTargetPct) เมื่อ 2026-09-27 —
+// เดิมคำนวณฝั่ง Dart ตั้งแต่ initial commit โดยไม่เคยมีฝั่ง Go เลย ขัดกฎ "backend เป็นเจ้าของสูตร
+// ทั้งหมด" ของ formula-guard (Dart อนุญาตแค่ Volume/1RM/Cardio Burn/Energy Balance status)
+type macroPercent struct{ protein, carb, fat float64 }
+
+// goalType: 1=ลดน้ำหนัก, 2=เพิ่มน้ำหนัก, 3=รักษาน้ำหนัก (mbs_target) — ไม่มีใน map นี้ = ไม่รู้จัก
+var macroPercentByGoal = map[int]macroPercent{
+	1: {protein: 0.40, carb: 0.35, fat: 0.25},
+	2: {protein: 0.30, carb: 0.50, fat: 0.20},
+	3: {protein: 0.20, carb: 0.50, fat: 0.30},
+}
+
+// CalculateMacroTargets แปลง Target Calories เป็นกรัมโปรตีน/คาร์บ/ไขมัน ตามสัดส่วนของเป้าหมาย
+// (โปรตีน/คาร์บ = kcal/4, ไขมัน = kcal/9 — Atwater General Factor System)
+// goalType ที่ไม่ใช่ 1/2/3 หรือ targetCalories <= 0 → คืน 0 ทั้ง 3 ค่า ห้ามเดาสัดส่วนแทนผู้ใช้
+func CalculateMacroTargets(targetCalories float64, goalType int) (proteinG, carbG, fatG float64) {
+	pct, ok := macroPercentByGoal[goalType]
+	if !ok || targetCalories <= 0 {
+		return 0, 0, 0
+	}
+	proteinG = targetCalories * pct.protein / 4
+	carbG = targetCalories * pct.carb / 4
+	fatG = targetCalories * pct.fat / 9
+	return math.Round(proteinG*100) / 100, math.Round(carbG*100) / 100, math.Round(fatG*100) / 100
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // 3. Estimated 1RM — EstimateOneRepMax
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -98,8 +128,9 @@ func CalculateCardioCalories(mets, bodyWeightKg float64, durationSeconds int) fl
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// 5. พลังงานเวทเทรนนิ่ง — Session MET ตามตาราง 2.2 + Effort Ratio
-//    (รายละเอียดประวัติการเปลี่ยนสูตร ดู ../../CLAUDE.md ข้อ 7[B-1])
+//  5. พลังงานเวทเทรนนิ่ง — Session MET ตามตาราง 2.2 + Effort Ratio
+//     (รายละเอียดประวัติการเปลี่ยนสูตร ดู ../../CLAUDE.md ข้อ 7[B-1])
+//
 // ═══════════════════════════════════════════════════════════════════════
 //
 // 3 ระดับตรงตาราง 2.2: 02056=3.0 เบา / 02054=3.5 ปานกลาง / 02050=6.0 หนัก

@@ -168,6 +168,32 @@ func TestCalculateBaselineExpenditure(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// CalculateMacroTargets — สูตรอยู่ใน calculator.go หมวด 2b (บทที่ 2 ข้อ 2.1.4.8) ห้ามแก้ตัวเลข
+// สัดส่วน: ลดน้ำหนัก(1) 40:35:25, เพิ่มน้ำหนัก(2) 30:50:20, รักษาน้ำหนัก(3) 20:50:30 (P:C:F)
+// ─────────────────────────────────────────────────────────────────────────
+
+func TestCalculateMacroTargets(t *testing.T) {
+	cases := []struct {
+		targetCalories                 float64
+		goalType                       int
+		wantProtein, wantCarb, wantFat float64
+	}{
+		{2000, 1, 200, 175, 55.56}, // ลดน้ำหนัก: P40/C35/F25
+		{2000, 2, 150, 250, 44.44}, // เพิ่มน้ำหนัก: P30/C50/F20
+		{2000, 3, 100, 250, 66.67}, // รักษาน้ำหนัก: P20/C50/F30
+		{2000, 99, 0, 0, 0},        // goalType ไม่รู้จัก -> ห้ามเดา
+		{0, 1, 0, 0, 0},            // ยังไม่มี target -> 0 ทั้งชุด
+	}
+	for _, tc := range cases {
+		gotP, gotC, gotF := CalculateMacroTargets(tc.targetCalories, tc.goalType)
+		if !almostEqual(gotP, tc.wantProtein, 0.01) || !almostEqual(gotC, tc.wantCarb, 0.01) || !almostEqual(gotF, tc.wantFat, 0.01) {
+			t.Errorf("CalculateMacroTargets(%.0f, %d) = (%.2f, %.2f, %.2f), want (%.2f, %.2f, %.2f)",
+				tc.targetCalories, tc.goalType, gotP, gotC, gotF, tc.wantProtein, tc.wantCarb, tc.wantFat)
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // EstimateOneRepMax — สูตรอยู่ใน calculator.go หมวด 3 — Epley: weight × (1 + reps/30) (บทที่ 2 ข้อ
 // 2.1.4.13) ห้ามแก้ตัวเลข
 // ─────────────────────────────────────────────────────────────────────────
