@@ -128,27 +128,48 @@ func CalculateCardioCalories(mets, bodyWeightKg float64, durationSeconds int) fl
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  5. พลังงานเวทเทรนนิ่ง — Session MET ตามตาราง 2.2 + Effort Ratio
-//     (รายละเอียดประวัติการเปลี่ยนสูตร ดู ../../CLAUDE.md ข้อ 7[B-1])
+//  5. พลังงานเวทเทรนนิ่ง — Session MET ตามตาราง 2.2 + RIR (Reps in Reserve)
+//     (แก้ 2026-09-27 จาก Effort Ratio ≥ 0.90 — ดูเหตุผลและประวัติสูตรเดิมใน ../../CLAUDE.md ข้อ 7[B-1])
 //
 // ═══════════════════════════════════════════════════════════════════════
 //
-// 3 ระดับตรงตาราง 2.2: 02056=3.0 เบา / 02054=3.5 ปานกลาง / 02050=6.0 หนัก
+// 3 ระดับ MET ประมาณจากตาราง Conditioning Exercise ของ 2024 Adult Compendium of Physical
+// Activities (Herrmann et al., 2567): 02056=3.0 เบา / 02054=3.5 ปานกลาง / 02050=6.0 หนัก — ใช้
+// เป็นค่าประมาณร่วมแบบที่ระบบ/แอปทั่วไปใช้กัน (Compendium ให้เฉพาะค่า METs กับคำบรรยายเชิงคุณภาพ
+// ของแต่ละรหัส ไม่ได้กำหนดเกณฑ์ตัวเลขไว้ว่าเซสชันแบบไหนควรได้ระดับใด)
 // เวลาเซสชัน = เริ่มเซตแรกถึงจบเซตสุดท้าย รวมพักระหว่างเซต (มาตรฐาน Apple Watch/Garmin/Strava —
 // MET ของ Compendium เป็นค่าเฉลี่ยที่ครอบคลุมช่วงพักสั้นอยู่แล้ว, ACSM 2561) กันยืดเวลาได้พลังงานฟรี
 // ด้วยชั้นรับข้อมูลแทนเพดานในสูตร: มือถือเด้งเตือนเมื่อไม่บันทึกเซตเกิน 10 นาที
 // (weight_training_exercise_view.dart _promptIfIdle) + backend ปฏิเสธเซสชัน > 7200 วิ
 // (helpers.WeightSessionMaxSeconds)
 //
-// ระดับ "หนัก" ใช้ Effort Ratio แทน %1RM ตรงๆ เพราะตาราง 2.2 ครอบคลุมทั้งพาวเวอร์ลิฟติ้ง (หนักน้อย
-// ครั้ง) และเพาะกาย (กลางๆ จนหมดแรง) — %1RM เดี่ยวจับเพาะกายไม่ได้ ใช้สูตร Epley ประมาณ 1RM ของเซต
-// เทียบกับ Best 1RM ของสมาชิก:
+// ระดับ "หนัก" ใช้ RIR (Reps in Reserve — จำนวนครั้งที่ยังยกต่อได้ก่อนกล้ามเนื้อล้า) แทน %1RM
+// ตรงๆ ตามถ้อยแถลงร่วมของ American College of Sports Medicine และ Exercise and Sport Science
+// Australia (Bishop et al., 2568 — ACSM–ESSA Physical Activity and Exercise Intensity
+// Terminology, Table 2) ซึ่งเสนอ RIR แทนร้อยละของ 1RM เป็นตัวบ่งชี้ความหนักของการฝึกแรงต้าน และ
+// จำแนกระดับ High ไว้ที่ RIR 2-3 ครั้ง, Very high ที่ < 2 ครั้ง, Moderate ที่ 4-6 ครั้ง (ถ้อยแถลง
+// เสนอให้ใช้คำว่า "High" แทน "vigorous" ที่ใช้กันมาแต่เดิม) RIR ประมาณจากสูตร Epley (ข้อ 2.1.4.13,
+// เดียวกับที่ใช้หา Best 1RM) โดยกลับสมการหาจำนวนครั้งสูงสุดที่ยกได้ ณ น้ำหนักหนึ่ง:
 //
-//	Effort Ratio (เซต) = [น้ำหนักที่ยก × (1 + Reps/30)] ÷ Best 1RM
+//	จำนวนครั้งสูงสุดที่ภาระ w (เซต) = 30 × (Best 1RM ÷ น้ำหนักที่ยก − 1)
+//	RIR (เซต) = จำนวนครั้งสูงสุดที่ภาระ w − จำนวนครั้งที่ทำได้จริง (ค่าติดลบถือเป็น 0)
 //
-// เกณฑ์ ≥ 0.90 ≈ เหลือแรงสำรอง 4-5 ครั้ง (Reps in Reserve) ต่ำกว่าจุดสูงสุดจริง (2-3 ครั้ง) เล็กน้อย
-// โดยตั้งใจ ชดเชยกรณี Best 1RM จากประวัติอาจต่ำกว่าความสามารถจริงปัจจุบัน — เป็นการตีความของผู้วิจัย
-// ต้องระบุในเล่มว่าเป็นการประยุกต์ ไม่ใช่ตัวเลขจาก Compendium/ACSM ตรงๆ
+// เกณฑ์ RIR เฉลี่ยทั้งเซสชัน ≤ 3 ครั้ง (High/Very high ตาม ACSM–ESSA) ตรงกับ Effort Ratio เดิม
+// ≈ 0.92-0.93 (สูงกว่า 0.90 เดิมเล็กน้อย เพราะ 0.90 แปลงกลับเป็น RIR ได้ประมาณ 3.9-4.7 ครั้ง ซึ่งอยู่
+// ในช่วง Moderate ของ ACSM–ESSA ไม่ใช่ High — เกณฑ์เดิมตั้งไว้หลวมกว่าที่ตั้งใจ)
+//
+// ⚠️ ยังเป็นการออกแบบ/การตีความของผู้วิจัย 6 จุด ไม่มีเอกสารใดกำหนดตรงๆ ทั้งหมด ต้องระบุในเล่ม:
+//  1. การกลับสมการ Epley เพื่อประมาณ RIR ทั้งที่สมการสร้างมาเพื่อประมาณ 1RM จากเซตที่ยกจนหมดแรง
+//  2. ใช้ Best e1RM จากประวัติ (อาจไม่ได้ยกจนหมดแรง จึงอาจต่ำกว่า 1RM จริง) แทน 1RM ปัจจุบัน
+//  3. สรุปทั้งเซสชันด้วยค่าเฉลี่ยเลขคณิตของ RIR แต่ละเซต ไม่มีเอกสารกำหนดวิธีรวมค่าไว้
+//  4. ค่า RIR เฉลี่ยที่อยู่ระหว่าง 3 กับ 4 (ไม่ใช่จำนวนเต็ม) จัดไว้ในระดับ Moderate (ต่ำกว่า)
+//  5. การจับคู่ระดับ High ของ ACSM–ESSA เข้ากับรหัส 02050 (6.0 METs) ของ Compendium — ACSM–ESSA
+//     รองรับแค่ความสมมูลของคำว่า High กับ vigorous เท่านั้น ไม่ได้รองรับการใช้ METs เป็นตัวชี้วัด
+//  6. ท่าน้ำหนักตัว (wet_equipment=5) ได้ 02056=3.0 (General) เสมอ ไม่เคยขึ้นถึง 02057=6.5 (High
+//     intensity) เพราะไม่มีเอกสารกำหนดเกณฑ์ตัวเลขแยกสองรหัสนี้
+// ข้อ 1-2 เอนเอียงไปทางเดียวกัน (ทำให้ RIR ประมาณได้ต่ำกว่าจริง) จึงมีแนวโน้มจัดเซสชันเป็น High
+// มากกว่าน้อยเกินจริง — รายละเอียดงานวิจัยที่ตรวจสอบมาทั้งหมด (Compendium, ACSM/ACSM–ESSA, NSCA,
+// การวัดแคลอริเมตรีจริง, ตัวเลือกที่ตัดออก) → docs/reports/เกณฑ์เลือก METs เวทเทรนนิ่ง.md
 const (
 	metResistanceHigh     = 6.0 // 02050 หนัก - พาวเวอร์ลิฟติ้งหรือเพาะกาย ความพยายามระดับหนักมาก
 	metResistanceModerate = 3.5 // 02054 กลาง - ยกน้ำหนัก หลากหลายท่า 8-15 ครั้งต่อเซต
@@ -156,13 +177,9 @@ const (
 )
 
 const (
-	// Effort Ratio เฉลี่ยทั้งเซสชัน ≥ ค่านี้ = ความพยายามระดับหนักมาก (เมื่อมี Best 1RM จากประวัติ)
-	// = เหลือแรงสำรองโดยประมาณ 4-5 ครั้ง (ตีความของผู้วิจัย ดูรายละเอียดเหตุผลหัวบล็อกด้านบน)
-	weightTrainingEffortRatioHigh = 0.90
-	// ไม่มี Best 1RM (ครั้งแรกที่ฝึกท่านี้) ใช้ Reps เฉลี่ยแทนเป็นทางสำรอง — ต่ำกว่าค่านี้ถือว่าหนัก
-	// อิงจากตาราง 2.2 เอง (ระดับปานกลางกำหนดไว้ที่ 8-15 ครั้งต่อเซต ต่ำกว่า 8 จึงเข้าระดับหนัก) ต้องมี
-	// น้ำหนักที่ยกจริง (> 0) ด้วย กันท่า bodyweight ที่ทำ Reps น้อยเข้าเกณฑ์นี้ผิดกลุ่ม
-	weightTrainingHighIntensityFallbackMaxReps = 7
+	// RIR เฉลี่ยทั้งเซสชัน ≤ ค่านี้ = ระดับ High/Very high ตาม ACSM–ESSA 2025 Table 2 (เมื่อมี
+	// Best 1RM จากประวัติ) — ดูที่มาและจุดตีความที่เหลือในหัวบล็อกด้านบน
+	weightTrainingRIRHighMax = 3.0
 )
 
 // WeightTrainingBodyweightEquipment คือค่า wet_equipment ของหมวดน้ำหนักตัว/แคลิสเทนิกส์ — ตาราง 2.2
@@ -173,37 +190,39 @@ const WeightTrainingBodyweightEquipment = 5
 // resolveSessionMET เลือก MET ระดับเซสชัน (1 คำขอ = 1 wet_id) ตามตาราง 2.2
 // bestOneRepMax: Estimated 1RM ที่ดีที่สุดของสมาชิกในท่านี้ จากประวัติก่อนเซสชันนี้ (0 = ไม่มีประวัติ
 // — GetBestOneRepMax กรอง Reps 1-10 มาแล้ว)
+//
+// ไม่มีประวัติ Best 1RM (ครั้งแรกที่ฝึกท่านี้) → ประมาณ RIR ไม่ได้ (ไม่มีตัวหารสำหรับ Epley ย้อนกลับ)
+// ใช้ระดับปานกลาง (02054) เป็นค่าเริ่มต้นแทน — เดิมมีทางสำรองอิง Reps เฉลี่ย ≤ 7 → หนัก แต่ตัดออกแล้ว
+// (2026-09-27) เพราะไม่มีข้อมูลว่าเซตนั้นยกจนหมดแรงหรือไม่ ACSM–ESSA ชี้ว่า Reps อย่างเดียวบอกความหนัก
+// ไม่ได้ ภาระเดียวกันอาจเป็นระดับ Low หรือ Very high ก็ได้ขึ้นกับว่าใกล้หมดแรงแค่ไหน
 func resolveSessionMET(equipment int8, bestOneRepMax float64, sets []helpers.WeightSetCheck) (met float64, intensityLevel int8) {
 	if equipment == WeightTrainingBodyweightEquipment {
 		return metBodyweightGeneral, 1 // เบา
 	}
 
-	hasHistory := bestOneRepMax > 0
-
-	if hasHistory {
-		sumER, countER := 0.0, 0
-		for _, s := range sets {
-			if s.WeightKg > 0 {
-				sumER += EstimateOneRepMax(s.WeightKg, s.Reps) / bestOneRepMax
-				countER++
-			}
-		}
-		if countER > 0 && sumER/float64(countER) >= weightTrainingEffortRatioHigh {
-			return metResistanceHigh, 3 // หนัก
-		}
-		return metResistanceModerate, 2 // ปานกลาง
+	if bestOneRepMax <= 0 {
+		return metResistanceModerate, 2 // ไม่มีประวัติ — ปานกลาง (ค่าเริ่มต้น)
 	}
 
-	// ไม่มีประวัติ Best 1RM (ครั้งแรกที่ฝึกท่านี้) — ใช้ Reps เฉลี่ยของเซตที่มีน้ำหนักที่ยกจริงแทน
-	sumReps, countWeighted := 0, 0
+	sumRIR, countRIR := 0.0, 0
 	for _, s := range sets {
 		if s.WeightKg > 0 {
-			sumReps += s.Reps
-			countWeighted++
+			maxRepsAtWeight := 30.0 * (bestOneRepMax/s.WeightKg - 1) // กลับสมการ Epley
+			rir := maxRepsAtWeight - float64(s.Reps)
+			if rir < 0 {
+				rir = 0
+			}
+			sumRIR += rir
+			countRIR++
 		}
 	}
-	if countWeighted > 0 && float64(sumReps)/float64(countWeighted) <= weightTrainingHighIntensityFallbackMaxReps {
-		return metResistanceHigh, 3 // หนัก
+	if countRIR == 0 {
+		return metResistanceModerate, 2 // ไม่มีเซตที่มีน้ำหนักยกจริง — ปานกลาง (ค่าเริ่มต้น)
+	}
+
+	avgRIR := sumRIR / float64(countRIR)
+	if avgRIR <= weightTrainingRIRHighMax {
+		return metResistanceHigh, 3 // หนัก — RIR เฉลี่ย ≤ 3 ครั้ง (High/Very high ตาม ACSM–ESSA)
 	}
 	return metResistanceModerate, 2 // ปานกลาง
 }

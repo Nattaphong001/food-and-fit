@@ -211,7 +211,7 @@ func GetBestOneRepMax(mbID, wetID uint) (best1RM, bestWeight float64, bestReps i
 	// เลย แม่นยำกว่าเซตอื่นทั้งหมด (ตีความเพิ่มเติมของผู้วิจัย นอกเหนือจากช่วง 2-10 ที่ Brzycki ระบุ
 	// ต้องเขียนกำกับในเล่ม) — ก่อนแก้ 2026-09-26 ไม่มี filter นี้ ทำให้เซต Reps สูง (เช่น 25-30 ครั้ง)
 	// ที่ Epley ประเมินพองเกินจริงถูกเลือกเป็น Best 1RM ได้ กระทบทั้งหน้าจอแสดง 1RM (GetBest1RM) และ
-	// Effort Ratio ที่ใช้เลือกระดับความเข้มข้นเวทเทรนนิ่ง (services.CalculateWeightTrainingCalories)
+	// RIR ที่ใช้เลือกระดับความเข้มข้นเวทเทรนนิ่ง (services.CalculateWeightTrainingCalories)
 	config.DB.Raw(`
 		SELECT wtrs_weight AS best_weight, wtrs_reps AS best_reps, wtrs_date AS date
 		FROM weight_training_result
