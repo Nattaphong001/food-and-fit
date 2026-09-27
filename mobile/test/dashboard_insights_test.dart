@@ -50,21 +50,6 @@ void main() {
     });
   });
 
-  group('macroTargetPct', () {
-    test('goalType 1 = ลดน้ำหนัก', () {
-      expect(di.macroTargetPct(1), {'protein': 0.40, 'carb': 0.35, 'fat': 0.25});
-    });
-    test('goalType 2 = เพิ่มน้ำหนัก', () {
-      expect(di.macroTargetPct(2), {'protein': 0.30, 'carb': 0.50, 'fat': 0.20});
-    });
-    test('goalType 3 = รักษาน้ำหนัก', () {
-      expect(di.macroTargetPct(3), {'protein': 0.20, 'carb': 0.50, 'fat': 0.30});
-    });
-    test('goalType เพี้ยน (ไม่ใช่ 1/2/3) -> ห้ามเดา คืน 0 ทั้งชุด', () {
-      expect(di.macroTargetPct(99), {'protein': 0.0, 'carb': 0.0, 'fat': 0.0});
-    });
-  });
-
   group('weeklyGoalDays', () {
     test('counts only days within ±tolerance of target', () {
       final pts = [
@@ -143,6 +128,9 @@ void main() {
         bmr: 1500,
         tdee: 2000,
         targetTdee: 2000,
+        targetProteinG: 200,
+        targetCarbsG: 175,
+        targetFatG: 55.56,
         weight: 65,
         goalType: 1,
         baseline: 1800,
