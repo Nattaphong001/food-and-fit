@@ -191,8 +191,8 @@ type WeightTrainingResult struct {
 	// ไม่ใช่เวลาออกแรงต่อเซต) เก็บไว้เพื่อดูประวัติ/ตรวจขอบเขตความสมเหตุสมผลของข้อมูล
 	// (helpers.ValidateWeightSession) NULL = ไม่ทราบ (แถวเก่า/มือถือรุ่นเก่า)
 	WtrsActiveSeconds  *int           `gorm:"type:smallint unsigned;column:wtrs_active_seconds" json:"wtrs_active_seconds"`
-	// 1=เบา, 2=กลาง, 3=หนัก — ระดับที่ resolveSessionMET เลือกให้ทั้งเซสชัน (ตาราง 2.2 + Effort Ratio,
-	// แก้ 2026-09-26 ดู ../../CLAUDE.md ข้อ 7[B-1]) ทุกเซตในเซสชันเดียวกันได้ค่าเดียวกัน
+	// 1=เบา, 2=กลาง, 3=หนัก — ระดับที่ resolveSessionMET เลือกให้ทั้งเซสชัน (ตาราง 2.2 + RIR,
+	// แก้ 2026-09-27 ดู ../../CLAUDE.md ข้อ 7[B-1]) ทุกเซตในเซสชันเดียวกันได้ค่าเดียวกัน
 	WtrsIntensityLevel int8           `gorm:"type:tinyint;column:wtrs_intensity_level" json:"wtrs_intensity_level"`
 	// พลังงานสุทธิ (kcal) ของเซตนี้ = totalKcal ทั้งเซสชัน หารเท่ากันทุกเซต (ดู
 	// services.CalculateWeightTrainingCalories) SUM(wtrs_calories) GROUP BY wtrs_date ยังถูกต้อง
