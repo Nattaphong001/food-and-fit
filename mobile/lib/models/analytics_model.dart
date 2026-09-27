@@ -5,6 +5,9 @@ class DailyAnalytics {
   final double bmr;
   final double tdee;
   final double targetTdee;
+  final double targetProteinG;
+  final double targetCarbsG;
+  final double targetFatG;
   final double weight;
   final int goalType; // 1=ลดน้ำหนัก, 2=เพิ่มน้ำหนัก, 3=รักษาน้ำหนัก
   final double baseline;
@@ -25,6 +28,9 @@ class DailyAnalytics {
     required this.bmr,
     required this.tdee,
     required this.targetTdee,
+    required this.targetProteinG,
+    required this.targetCarbsG,
+    required this.targetFatG,
     required this.weight,
     required this.goalType,
     required this.baseline,
@@ -52,6 +58,9 @@ class DailyAnalytics {
       bmr: (json['bmr'] ?? 0).toDouble(),
       tdee: (json['tdee'] ?? 0).toDouble(),
       targetTdee: (json['target_tdee'] ?? 0).toDouble(),
+      targetProteinG: (json['target_protein_g'] ?? 0).toDouble(),
+      targetCarbsG: (json['target_carbs_g'] ?? 0).toDouble(),
+      targetFatG: (json['target_fat_g'] ?? 0).toDouble(),
       weight: (json['weight'] ?? 0).toDouble(),
       goalType: (json['goal_type'] ?? 1) as int,
       baseline: (json['baseline'] ?? 0).toDouble(),

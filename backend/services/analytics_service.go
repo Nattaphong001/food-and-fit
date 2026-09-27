@@ -10,20 +10,23 @@ import (
 
 // DailyAnalyticsResult - ผลลัพธ์สรุปพลังงานและโภชนาการรายวัน (GetDailyAnalytics)
 type DailyAnalyticsResult struct {
-	Date              string               `json:"date"`
-	Bmi               float64              `json:"bmi"`
-	Bmr               float64              `json:"bmr"`
-	Tdee              float64              `json:"tdee"`
-	IsBmrEstimated    bool                 `json:"is_bmr_estimated"`
-	TargetTdee        float64              `json:"target_tdee"`
-	Weight            float64              `json:"weight"`
-	GoalType          int                  `json:"goal_type"`
-	TotalCaloriesIn   float64              `json:"total_calories_in"`
-	TotalCaloriesOut  float64              `json:"total_calories_out"`
-	Baseline          float64              `json:"baseline"`
-	ExerciseBurn      float64              `json:"exercise_burn"`
-	Balance           float64              `json:"balance"`
-	Macros            DailyAnalyticsMacros `json:"macros"`
+	Date             string               `json:"date"`
+	Bmi              float64              `json:"bmi"`
+	Bmr              float64              `json:"bmr"`
+	Tdee             float64              `json:"tdee"`
+	IsBmrEstimated   bool                 `json:"is_bmr_estimated"`
+	TargetTdee       float64              `json:"target_tdee"`
+	TargetProteinG   float64              `json:"target_protein_g"`
+	TargetCarbsG     float64              `json:"target_carbs_g"`
+	TargetFatG       float64              `json:"target_fat_g"`
+	Weight           float64              `json:"weight"`
+	GoalType         int                  `json:"goal_type"`
+	TotalCaloriesIn  float64              `json:"total_calories_in"`
+	TotalCaloriesOut float64              `json:"total_calories_out"`
+	Baseline         float64              `json:"baseline"`
+	ExerciseBurn     float64              `json:"exercise_burn"`
+	Balance          float64              `json:"balance"`
+	Macros           DailyAnalyticsMacros `json:"macros"`
 }
 
 type DailyAnalyticsMacros struct {
@@ -61,14 +64,18 @@ func GetDailyAnalyticsData(userID any, date string) DailyAnalyticsResult {
 		Scan(&macros)
 
 	// 3. รวมพลังงานจากคาร์ดิโอ
-	var cardioOut struct{ Total float64 `gorm:"column:total"` }
+	var cardioOut struct {
+		Total float64 `gorm:"column:total"`
+	}
 	config.DB.Model(&models.CardioResult{}).
 		Select("COALESCE(SUM(cdors_calories), 0) as total").
 		Where("mb_id = ? AND cdors_date = ?", userID, date).
 		Scan(&cardioOut)
 
 	// 4. รวมพลังงานจาก Weight Training
-	var weightOut struct{ Total float64 `gorm:"column:total"` }
+	var weightOut struct {
+		Total float64 `gorm:"column:total"`
+	}
 	config.DB.Model(&models.WeightTrainingResult{}).
 		Select("COALESCE(SUM(wtrs_calories), 0) as total").
 		Where("mb_id = ? AND wtrs_date = ?", userID, date).
@@ -99,6 +106,10 @@ func GetDailyAnalyticsData(userID any, date string) DailyAnalyticsResult {
 	//    ซ้ำอีกจุดหนึ่ง เสี่ยงเพี้ยนจาก CalculateGoals ถ้าแก้ % แค่จุดเดียว)
 	targetTdee := bmrHistory.MbhTdeeTarget
 
+	// 9. สัดส่วนสารอาหารมหัพภาค (โปรตีน/คาร์บ/ไขมัน เป็นกรัม) จาก target_tdee + เป้าหมายของสมาชิก
+	//    (บทที่ 2.1.4.8) — goalType ที่ไม่ใช่ 1/2/3 ได้ 0 ทั้ง 3 ค่า ไม่เดาสัดส่วนแทนผู้ใช้
+	targetProteinG, targetCarbsG, targetFatG := CalculateMacroTargets(targetTdee, bodyStat.MbsTarget)
+
 	return DailyAnalyticsResult{
 		Date:             date,
 		Bmi:              bmrHistory.MbhBmi,
@@ -106,6 +117,9 @@ func GetDailyAnalyticsData(userID any, date string) DailyAnalyticsResult {
 		Tdee:             bmrHistory.MbhTdee,
 		IsBmrEstimated:   isBmrEstimated,
 		TargetTdee:       targetTdee,
+		TargetProteinG:   targetProteinG,
+		TargetCarbsG:     targetCarbsG,
+		TargetFatG:       targetFatG,
 		Weight:           bodyStat.MbsWeight,
 		GoalType:         bodyStat.MbsTarget,
 		TotalCaloriesIn:  macros.TotalCal,
@@ -149,7 +163,8 @@ var sqlConstReplacer = strings.NewReplacer(
 // เดิมส่ง baseline เป็น parameter ตัวเลขเดียวคำนวณจาก BMR ล่าสุดสุด ทำให้ทุกวันในรายงานใช้ BMR
 // ของวันนี้ผิดๆ ถ้าผู้ใช้เพิ่งแก้น้ำหนัก/เป้าหมายเปลี่ยนกลางช่วงที่รายงาน
 // ลำดับพารามิเตอร์: mb_id(baseline subquery), mb_id(target subquery), mb_id(x3 ใน date_list),
-//                    mb_id(join dn), mb_id(cr_sum), mb_id(wt_sum), startDate, endDate
+//
+//	mb_id(join dn), mb_id(cr_sum), mb_id(wt_sum), startDate, endDate
 var dailySumBetweenSQL = sqlConstReplacer.Replace(`
 	SELECT date_list.date,
 		   COALESCE(SUM(dn.dntt_total_calories), 0) as calories_in,
@@ -347,10 +362,10 @@ type MonthStat struct {
 }
 
 type MonthlyComparisonResult struct {
-	ThisMonth      MonthStat
-	LastMonth      MonthStat
-	CalChangePct   float64
-	WorkoutChange  int
+	ThisMonth     MonthStat
+	LastMonth     MonthStat
+	CalChangePct  float64
+	WorkoutChange int
 }
 
 // GetMonthlyComparisonData - เปรียบเทียบเดือนนี้ vs เดือนที่แล้ว
@@ -662,4 +677,3 @@ func GetAdminAnalyticsOverviewData(start, end string) AdminAnalyticsOverview {
 		PopularMenus:         popularMenus,
 	}
 }
-

@@ -259,14 +259,15 @@ class _DashboardViewState extends State<DashboardView>
         activePlanDays: WorkoutService.to.activePlanDays,
       );
 
-  // goalType ที่ไม่ใช่ 1/2/3 (ค่าเพี้ยน/ไม่รู้จัก) ห้ามเดาสัดส่วนมาโครแทนผู้ใช้ — ดู _macroTargetPct
+  // goalType ที่ไม่ใช่ 1/2/3 (ค่าเพี้ยน/ไม่รู้จัก) ห้ามเดาสัดส่วนมาโครแทนผู้ใช้ — backend คืน 0
+  // ทั้งชุดในกรณีนี้ (CalculateMacroTargets) ไม่ต้องเช็คซ้ำฝั่ง Dart
   bool get _hasValidGoalType => _goalType == 1 || _goalType == 2 || _goalType == 3;
 
-  Map<String, double> get _macroTargetPct => di.macroTargetPct(_goalType);
-
-  double get _targetProtein => _targetCalories * _macroTargetPct['protein']! / 4;
-  double get _targetCarbs   => _targetCalories * _macroTargetPct['carb']!    / 4;
-  double get _targetFat     => _targetCalories * _macroTargetPct['fat']!     / 9;
+  // เป้าหมายกรัมโปรตีน/คาร์บ/ไขมัน — backend คำนวณจาก target_tdee + goal_type แล้ว (บทที่ 2.1.4.8)
+  // ห้ามคำนวณซ้ำฝั่ง Dart (ย้ายมาจาก di.macroTargetPct เมื่อ 2026-09-27)
+  double get _targetProtein => _daily?.targetProteinG ?? 0;
+  double get _targetCarbs   => _daily?.targetCarbsG   ?? 0;
+  double get _targetFat     => _daily?.targetFatG     ?? 0;
 
   // ใช้ calc.bmiLabel() ที่เดียวกับ home_view.dart/onboarding_result_view.dart แทนการเขียน
   // เกณฑ์ซ้ำเอง — เดิมสองที่นี้เคยใช้คำคนละชุด (ผอม/ปกติ vs ผอมเกินไป/สมส่วน) ทั้งที่เกณฑ์ตัวเลข

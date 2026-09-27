@@ -115,20 +115,6 @@ double adherenceRate({required int workoutDaysThisWeek, required int activePlanD
   return (workoutDaysThisWeek / target).clamp(0.0, 1.0);
 }
 
-// goalType ที่ไม่ใช่ 1/2/3 (ค่าเพี้ยน/ไม่รู้จัก) ห้ามเดาสัดส่วนมาโครแทนผู้ใช้ — คืน 0 ทั้งชุด
-Map<String, double> macroTargetPct(int goalType) {
-  switch (goalType) {
-    case 1:
-      return {'protein': 0.40, 'carb': 0.35, 'fat': 0.25};
-    case 2:
-      return {'protein': 0.30, 'carb': 0.50, 'fat': 0.20};
-    case 3:
-      return {'protein': 0.20, 'carb': 0.50, 'fat': 0.30};
-    default:
-      return {'protein': 0.0, 'carb': 0.0, 'fat': 0.0};
-  }
-}
-
 List<double> fillTargetGaps(List<double> raw) {
   final out = List<double>.filled(raw.length, 0);
   double last = 0;

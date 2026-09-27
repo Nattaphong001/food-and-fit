@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/health_calculations.dart' as calc;
-import '../../../core/utils/dashboard_insights.dart' as di;
 import '../../../core/utils/nutrition_format.dart';
 import '../../../core/widgets/cached_image.dart';
 import '../../../core/widgets/weekly_calendar_component.dart';
@@ -95,18 +94,20 @@ class NutritionViewState extends State<NutritionView> with RouteAware {
 
   int get _goalType => _analytics?.goalType ?? 1;
 
-  // goalType ที่ไม่ใช่ 1/2/3 (ค่าเพี้ยน/ไม่รู้จัก) ห้ามเดาสัดส่วนมาโครแทนผู้ใช้ — ดู _macroTargetPct
+  // goalType ที่ไม่ใช่ 1/2/3 (ค่าเพี้ยน/ไม่รู้จัก) ห้ามเดาสัดส่วนมาโครแทนผู้ใช้ — backend คืน 0
+  // ทั้งชุดในกรณีนี้ (CalculateMacroTargets) ไม่ต้องเช็คซ้ำฝั่ง Dart
   bool get _hasValidGoalType => _goalType == 1 || _goalType == 2 || _goalType == 3;
-
-  Map<String, double> get _macroTargetPct => di.macroTargetPct(_goalType);
 
   // ไม่มีเป้าหมายจาก API (ยังโหลดไม่ได้/ไม่มีโปรไฟล์) → 0 แล้วแสดง "-" ห้ามเดาเป็น 2000 kcal
   // (เดิมมี fallback 2000 ทำให้เป้าหมายเท็จค้างบนหน้าจอ) — ดู _hasTarget
   double get _targetCalories => (_analytics?.targetTdee ?? 0) > 0 ? _analytics!.targetTdee : 0;
   bool get _hasTarget => _targetCalories > 0;
-  double get _targetProtein => _targetCalories * _macroTargetPct['protein']! / 4;
-  double get _targetCarbs   => _targetCalories * _macroTargetPct['carb']! / 4;
-  double get _targetFat     => _targetCalories * _macroTargetPct['fat']! / 9;
+
+  // เป้าหมายกรัมโปรตีน/คาร์บ/ไขมัน — backend คำนวณจาก target_tdee + goal_type แล้ว (บทที่ 2.1.4.8)
+  // ห้ามคำนวณซ้ำฝั่ง Dart (ย้ายมาจาก di.macroTargetPct เมื่อ 2026-09-27)
+  double get _targetProtein => _analytics?.targetProteinG ?? 0;
+  double get _targetCarbs   => _analytics?.targetCarbsG   ?? 0;
+  double get _targetFat     => _analytics?.targetFatG     ?? 0;
 
   List<DailyNutrition> get _filteredFoodLog {
     final byCategory = _selectedCategoryId == 0
