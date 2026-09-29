@@ -11,6 +11,12 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "no-referrer")
 		c.Header("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'")
+		// HSTS ส่งเฉพาะตอนคุยกันผ่าน HTTPS จริง (native TLS หรือหลัง reverse proxy ที่ terminate
+		// TLS แล้วส่ง X-Forwarded-Proto ต่อมา) — ส่งตอน HTTP เฉยๆ ไม่มีความหมาย เบราว์เซอร์ไม่สนใจ
+		// header นี้บน plain HTTP อยู่แล้ว แต่เช็คกันไว้ไม่ให้ทำให้ dev บนเครื่อง (HTTP ล้วน) สับสน
+		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		c.Next()
 	}
 }
