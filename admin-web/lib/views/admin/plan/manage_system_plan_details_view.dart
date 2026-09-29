@@ -501,15 +501,13 @@ class _ManageSystemPlanDetailsViewState extends State<ManageSystemPlanDetailsVie
   Future<void> _savePlanInfo(String name, int daysPerWeek, int difficulty, String description, File? imageFile, Uint8List? imageBytes, String? imageFileName) async {
     _showLoadingDialog();
     try {
+      final wptImageField = await ApiClient.buildUploadField(file: imageFile, bytes: imageBytes, fileName: imageFileName);
       final formData = dio.FormData.fromMap({
         'wpt_name': name,
         'wpt_days_per_week': daysPerWeek.toString(),
         'wpt_difficulty': difficulty.toString(),
         'wpt_description': description,
-        if (kIsWeb && imageBytes != null && imageFileName != null)
-          'wpt_image': dio.MultipartFile.fromBytes(imageBytes, filename: imageFileName)
-        else if (!kIsWeb && imageFile != null)
-          'wpt_image': await dio.MultipartFile.fromFile(imageFile.path),
+        if (wptImageField != null) 'wpt_image': wptImageField,
       });
       final response = await _api.put('/workouts/plans/${widget.planId}', formData);
       if (!mounted) return;

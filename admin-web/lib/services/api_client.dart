@@ -1,6 +1,10 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:get/get.dart' hide Response;
+import 'package:get/get.dart' hide Response, MultipartFile;
 import '../core/constants/api_config.dart';
 import '../views/login_view.dart';
 import 'admin_auth_service.dart';
@@ -137,5 +141,23 @@ class ApiClient {
     final response = await dio.delete(path);
     clearCache();
     return response;
+  }
+
+  /// สร้าง MultipartFile จากไฟล์รูป/วิดีโอที่ผู้ใช้เลือก รองรับทั้ง web (bytes+filename จาก
+  /// image_picker บน web ไม่มี File จริง) และ desktop/mobile (File path) — เดิม 8 หน้าแอดมินเขียน
+  /// เงื่อนไข kIsWeb ซ้ำๆ กันเองแบบนี้ทุกที่ (บางที่พลาดใช้ dio.MultipartFile ปนกับ MultipartFile
+  /// เปล่าๆ) รวมมาไว้จุดเดียว คืน null ถ้าไม่มีทั้งไฟล์และ bytes (ไม่ได้เลือกไฟล์ใหม่ตอนแก้ไข)
+  static Future<MultipartFile?> buildUploadField({
+    File? file,
+    Uint8List? bytes,
+    String? fileName,
+  }) async {
+    if (kIsWeb && bytes != null && fileName != null) {
+      return MultipartFile.fromBytes(bytes, filename: fileName);
+    }
+    if (!kIsWeb && file != null) {
+      return MultipartFile.fromFile(file.path);
+    }
+    return null;
   }
 }

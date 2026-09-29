@@ -236,6 +236,8 @@ class _ManageCardioActivitiesViewState extends State<ManageCardioActivitiesView>
     try {
       final isEdit = oldItem != null;
       final path = isEdit ? '/exercises/cardio/${oldItem['cdo_id']}' : '/exercises/cardio';
+      final cdoImageField = await ApiClient.buildUploadField(file: imageFile, bytes: imageBytes, fileName: imageFileName);
+      final cdoLoopVideoField = await ApiClient.buildUploadField(file: loopVideoFile, bytes: loopVideoBytes, fileName: loopVideoFileName);
       final formData = dio.FormData.fromMap({
         'cdo_name': name.trim(),
         'cdo_mets': mets,
@@ -244,14 +246,8 @@ class _ManageCardioActivitiesViewState extends State<ManageCardioActivitiesView>
         'cdo_video': video,
         'cdc_id': catId.toString(),
         'cdo_has_distance': hasDistance ? '1' : '0',
-        if (kIsWeb && imageBytes != null && imageFileName != null)
-          'cdo_image': dio.MultipartFile.fromBytes(imageBytes, filename: imageFileName)
-        else if (!kIsWeb && imageFile != null)
-          'cdo_image': await dio.MultipartFile.fromFile(imageFile.path),
-        if (kIsWeb && loopVideoBytes != null && loopVideoFileName != null)
-          'cdo_loop_video': dio.MultipartFile.fromBytes(loopVideoBytes, filename: loopVideoFileName)
-        else if (!kIsWeb && loopVideoFile != null)
-          'cdo_loop_video': await dio.MultipartFile.fromFile(loopVideoFile.path),
+        if (cdoImageField != null) 'cdo_image': cdoImageField,
+        if (cdoLoopVideoField != null) 'cdo_loop_video': cdoLoopVideoField,
       });
 
       final response = isEdit ? await _api.put(path, formData) : await _api.post(path, formData);
