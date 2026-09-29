@@ -22,7 +22,7 @@ func LogAudit(c *gin.Context, actorType string, actorID int, action, detail stri
 		IPAddress: c.ClientIP(),
 	}
 	if err := config.DB.Create(&entry).Error; err != nil {
-		slog.Warn("audit log write failed", "err", err, "action", action, "actor_type", actorType)
+		slog.Warn("audit log write failed", "err", err, "action", action, "actor_type", actorType, "request_id", c.GetString("request_id"))
 	}
 }
 
@@ -65,6 +65,6 @@ func LogAdminMutation(c *gin.Context, action, table string, recordID interface{}
 		IPAddress:   c.ClientIP(),
 	}
 	if err := config.DB.Create(&entry).Error; err != nil {
-		slog.Warn("audit log write failed", "err", err, "action", action, "table", table)
+		slog.Warn("audit log write failed", "err", err, "action", action, "table", table, "request_id", c.GetString("request_id"))
 	}
 }

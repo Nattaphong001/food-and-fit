@@ -31,7 +31,7 @@ func GetWorkoutTemplates(c *gin.Context) {
 
 	// ดึงเฉพาะแผนระบบ (wpt_difficulty > 0) เรียงตามจำนวนวัน
 	if err := config.DB.Where("wpt_difficulty > 0").Order("wpt_days_per_week asc").Find(&templates).Error; err != nil {
-		slog.Error("GetWorkoutTemplates: query failed", "err", err)
+		slog.Error("GetWorkoutTemplates: query failed", "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"message": "ไม่สามารถดึงข้อมูลต้นแบบได้",
@@ -156,7 +156,7 @@ func AddPlanDetail(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "ลำดับท่าซ้ำ กรุณาลองใหม่อีกครั้ง"})
 			return
 		}
-		slog.Error("AddPlanDetail: create failed", "err", err)
+		slog.Error("AddPlanDetail: create failed", "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "เพิ่มรายละเอียดแผนไม่สำเร็จ"})
 		return
 	}
@@ -767,7 +767,7 @@ func CreateWorkoutSchedule(c *gin.Context) {
 	case errDuplicateExercise:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ท่านี้มีอยู่ในวันนี้แล้ว"})
 	default:
-		slog.Error("CreateWorkoutSchedule: create failed", "err", txErr)
+		slog.Error("CreateWorkoutSchedule: create failed", "err", txErr, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "เพิ่มท่าไม่สำเร็จ"})
 	}
 }
@@ -1040,7 +1040,7 @@ func SaveWorkoutResult(c *gin.Context) {
 	}
 
 	if err := config.DB.Create(&rows).Error; err != nil {
-		slog.Error("SaveWorkoutResult: create failed", "err", err)
+		slog.Error("SaveWorkoutResult: create failed", "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกผลไม่สำเร็จ กรุณาลองใหม่"})
 		return
 	}
@@ -1153,7 +1153,7 @@ func SaveCardioResult(c *gin.Context) {
 	}
 
 	if err := config.DB.Create(&result).Error; err != nil {
-		slog.Error("SaveResult: create failed", "err", err)
+		slog.Error("SaveResult: create failed", "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกผลไม่สำเร็จ กรุณาลองใหม่"})
 		return
 	}
@@ -1203,7 +1203,7 @@ func GetPlanDetails(c *gin.Context) {
 	}
 
 	if err := query.Find(&details).Error; err != nil {
-		slog.Error("GetPlanDetails: query failed", "err", err)
+		slog.Error("GetPlanDetails: query failed", "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ดึงข้อมูลล้มเหลว กรุณาลองใหม่"})
 		return
 	}
@@ -1454,7 +1454,7 @@ func GetMemberPlanDetails(c *gin.Context) {
 	}
 
 	if err := config.DB.Preload("WeightExercise").Where("wpt_id = ?", planID).Find(&details).Error; err != nil {
-		slog.Error("GetMemberPlanDetails: query failed", "err", err)
+		slog.Error("GetMemberPlanDetails: query failed", "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"message": "ดึงข้อมูลล้มเหลว กรุณาลองใหม่",

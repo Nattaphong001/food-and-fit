@@ -79,13 +79,14 @@ func Register(c *gin.Context) {
 			"mb_otp":           otpHash,
 			"mb_otp_expired":   expiration,
 		}).Error; err != nil {
-			slog.Error("Register: update existing user failed", "err", err)
+			slog.Error("Register: update existing user failed", "err", err, "request_id", c.GetString("request_id"))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่"})
 			return
 		}
+		reqID := c.GetString("request_id") // capture ก่อนเข้า goroutine — c ถูก gin recycle หลัง handler return
 		go func() {
 			if err := helpers.SendWelcomeOTPEmail(req.Email, otpCode); err != nil {
-				slog.Warn("could not send welcome email", "email", req.Email, "err", err)
+				slog.Warn("could not send welcome email", "email", req.Email, "err", err, "request_id", reqID)
 			}
 		}()
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "ส่งรหัส OTP ใหม่ไปที่อีเมลแล้ว กรุณายืนยันตัวตน"})
@@ -111,15 +112,16 @@ func Register(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "อีเมลนี้มีในระบบแล้ว"})
 			return
 		}
-		slog.Error("Register: create member failed", "err", err)
+		slog.Error("Register: create member failed", "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่"})
 		return
 	}
 
 	// หมายเหตุ: ห้าม log ค่า OTP ลง console/log แม้ตอนส่งอีเมลไม่สำเร็จ (ข้อมูลอ่อนไหว)
+	reqID := c.GetString("request_id") // capture ก่อนเข้า goroutine — c ถูก gin recycle หลัง handler return
 	go func() {
 		if err := helpers.SendWelcomeOTPEmail(req.Email, otpCode); err != nil {
-			slog.Warn("could not send welcome email", "email", req.Email, "err", err)
+			slog.Warn("could not send welcome email", "email", req.Email, "err", err, "request_id", reqID)
 		}
 	}()
 
@@ -201,7 +203,7 @@ func Login(c *gin.Context) {
 		if sysUser.SysStartDate == nil {
 			now := time.Now()
 			if err := config.DB.Model(&sysUser).Update("sys_start_date", now).Error; err != nil {
-				slog.Error("Login: set sys_start_date failed", "sys_id", sysUser.SysID, "err", err)
+				slog.Error("Login: set sys_start_date failed", "sys_id", sysUser.SysID, "err", err, "request_id", c.GetString("request_id"))
 			}
 		}
 
@@ -327,9 +329,10 @@ func ResendOTP(c *gin.Context) {
 		return
 	}
 
+	reqID := c.GetString("request_id") // capture ก่อนเข้า goroutine — c ถูก gin recycle หลัง handler return
 	go func() {
 		if err := helpers.SendWelcomeOTPEmail(req.Email, newOtp); err != nil {
-			slog.Warn("could not resend OTP email", "email", req.Email, "err", err)
+			slog.Warn("could not resend OTP email", "email", req.Email, "err", err, "request_id", reqID)
 		}
 	}()
 
@@ -349,7 +352,7 @@ func Logout(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		slog.Error("Logout: revoke token failed", "err", err)
+		slog.Error("Logout: revoke token failed", "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ออกจากระบบไม่สำเร็จ กรุณาลองใหม่"})
 		return
 	}

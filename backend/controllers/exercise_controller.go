@@ -439,7 +439,7 @@ func GetExerciseMuscleDetails(c *gin.Context) {
 	query += " ORDER BY emd.exm_type ASC"
 
 	if err := config.DB.Raw(query, args...).Scan(&results).Error; err != nil {
-		slog.Error("GetExerciseMuscleDetails: query failed", "err", err)
+		slog.Error("GetExerciseMuscleDetails: query failed", "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถดึงข้อมูลได้ กรุณาลองใหม่"})
 		return
 	}

@@ -392,7 +392,7 @@ func CreateDailyNutrition(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		slog.Warn("binding error", "err", err)
+		slog.Warn("binding error", "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบข้อมูลที่กรอก"})
 		return
 	}
