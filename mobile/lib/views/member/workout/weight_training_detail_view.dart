@@ -581,6 +581,7 @@ class _WeightTrainingDetailViewState extends State<WeightTrainingDetailView>
                           exerciseType: widget.exerciseType,
                           muscleGroupName: widget.muscleGroupName,
                           wschId: widget.wschId,
+                          isBodyweight: widget.equipment == EquipmentType.bodyweight,
                         ),
                       ),
                     )
@@ -708,6 +709,9 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
 
   // เรียงใหม่กันเหนียว แม้ backend จะคืนมาเรียง wtrs_date desc อยู่แล้วก็ตาม
   List<String> get _dates => _grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+
+  // ท่าบอดี้เวทไม่มีน้ำหนัก/จำนวนครั้ง (บันทึกเป็น 0) — ซ่อนสถิติ/กราฟที่อิงน้ำหนักทั้งหมด
+  bool get _isBodyweight => widget.equipment == EquipmentType.bodyweight;
 
   double _sessionMax(String date) {
     final sets = _grouped[date] ?? [];
@@ -877,7 +881,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _buildStats(dates),
-                                if (dates.length >= 2) _buildChart(dates),
+                                if (dates.length >= 2 && !_isBodyweight) _buildChart(dates),
                                 _buildHistoryList(dates, grouped),
                               ],
                             ),
@@ -948,6 +952,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
             isDate: true,
           ),
         ]),
+        if (!_isBodyweight) ...[
         const SizedBox(height: 10),
         Row(children: [
           _statCard(
@@ -966,6 +971,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
             iconColor: Colors.deepPurple.shade300,
           ),
         ]),
+        ],
         const SizedBox(height: 10),
         Row(children: [
           _statCard(
@@ -975,6 +981,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
             icon: Icons.local_fire_department_rounded,
             iconColor: Colors.orange.shade400,
           ),
+          if (!_isBodyweight) ...[
           const SizedBox(width: 10),
           Expanded(
             child: Container(
@@ -998,6 +1005,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
               ]),
             ),
           ),
+          ],
         ]),
         if (_best1RM > 0) ...[
           const SizedBox(height: 10),
@@ -1215,7 +1223,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
           final sets = grouped[date]!;
           final isLatest = i == 0;
           final maxW = sets.map((s) => s.weight).reduce(math.max);
-          final isPR = _overallMax > 0 && maxW >= _overallMax;
+          final isPR = !_isBodyweight && _overallMax > 0 && maxW >= _overallMax;
           final volume = _sessionVolume(date);
           final calories = _sessionCalories(date);
           final seconds = sessionDurationSeconds(sets);
@@ -1247,16 +1255,19 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
               ]),
               const SizedBox(height: 4),
               Text(
-                '${sets.length} เซ็ต · สูงสุด ${maxW.toStringAsFixed(0)} กก. · '
+                '${sets.length} เซ็ต · '
+                '${_isBodyweight ? '' : 'สูงสุด ${maxW.toStringAsFixed(0)} กก. · '}'
                 '${seconds > 0 ? '${formatDuration(seconds)} · ' : ''}'
                 '${calories.toStringAsFixed(0)} kcal',
                 style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
               ),
-              const SizedBox(height: 2),
-              Text(
-                'ปริมาตร ${volume.toStringAsFixed(0)} กก.',
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-              ),
+              if (!_isBodyweight) ...[
+                const SizedBox(height: 2),
+                Text(
+                  'ปริมาตร ${volume.toStringAsFixed(0)} กก.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                ),
+              ],
               const SizedBox(height: 8),
               ...sets.map((s) {
                 final oneRM = (s.weight > 0 && s.reps > 0) ? calc.estimateOneRepMax(s.weight, s.reps) : 0.0;
@@ -1277,7 +1288,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text('${s.weight} กก.  ×  ${s.reps} ครั้ง',
+                      child: Text(_isBodyweight ? 'เสร็จแล้ว' : '${s.weight} กก.  ×  ${s.reps} ครั้ง',
                           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                     ),
                     if (oneRM > 0)
