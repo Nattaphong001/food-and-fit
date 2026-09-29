@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -76,8 +77,17 @@ func SetupRouter() *gin.Engine {
 	r.Static("/uploads", filepath.Join(baseDir, "uploads"))
 	r.Static("/images", filepath.Join(baseDir, "images"))
 
-	// ✅ ตั้งค่า Trusted Proxies เพื่อให้ Accept connection จากทุก interface
-	r.SetTrustedProxies([]string{"127.0.0.1", "localhost", "10.0.2.2", "0.0.0.0", "::", "*"})
+	// TrustedProxies ไม่เกี่ยวกับว่า server accept connection จาก interface ไหน (คนละเรื่องกับ
+	// r.Run bind address — เข้าใจผิดมาตั้งแต่แรก) มันคือ "เชื่อ IP ไหนบ้างว่า header X-Forwarded-For
+	// ที่ส่งมาไม่ได้ปลอมมา" ของเดิมใส่ "*"/"0.0.0.0"/"::" (wildcard ทั้งหมด) ทำให้ผู้โจมตีปลอม
+	// X-Forwarded-For header เอง แล้ว c.ClientIP() (ที่ authLimiter/CheckLoginLockout/audit_logs
+	// ใช้จำกัด rate ต่อ IP) เชื่อค่าปลอมนั้นทันที เท่ากับ bypass brute-force protection ทั้งหมดได้ง่ายๆ
+	// โปรเจกต์นี้ mobile/admin เชื่อมตรงเข้า backend ไม่มี reverse proxy คั่นกลาง — set เป็น nil
+	// (ไม่เชื่อ proxy ไหนเลย) ให้ ClientIP() ใช้ RemoteAddr จริงเสมอ ปลอมผ่าน header ไม่ได้
+	// ถ้าอนาคตมี reverse proxy จริง (เช่น nginx) ต้องเปลี่ยนมาระบุ IP ของ proxy นั้นเจาะจงแทน nil
+	if err := r.SetTrustedProxies(nil); err != nil {
+		slog.Error("SetTrustedProxies failed", "err", err)
+	}
 
 	// ==========================================
 	// 🌐 API Group
