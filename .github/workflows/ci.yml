@@ -35,6 +35,7 @@ jobs:
           flutter-version: "3.35.7"
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
+      - run: flutter test
 
   admin-web:
     name: Admin-web (Flutter)
@@ -49,3 +50,4 @@ jobs:
           flutter-version: "3.35.7"
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
+      - run: flutter test
