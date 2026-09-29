@@ -97,11 +97,7 @@ func WeightSessionFingerprint(memberID, exerciseID uint, totalDurationSeconds in
 		if s.RestSeconds != nil {
 			rest = fmt.Sprint(*s.RestSeconds)
 		}
-		work := "nil"
-		if s.WorkSeconds != nil {
-			work = fmt.Sprint(*s.WorkSeconds)
-		}
-		fmt.Fprintf(&b, "|%d,%.2f,%s,%s", s.Reps, s.WeightKg, rest, work)
+		fmt.Fprintf(&b, "|%d,%.2f,%s", s.Reps, s.WeightKg, rest)
 	}
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:])

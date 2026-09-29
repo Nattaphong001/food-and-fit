@@ -34,7 +34,12 @@ type WeightExercise struct {
 	// WetBaseMet (wet_base_met) — ตัดออกจาก struct แล้ว (2026-09-19) เพราะเป็น dead input มาตั้งแต่
 	// Dynamic Base MET (2026-09-08): services.CalculateWeightTrainingCalories ไม่เคยอ่านค่านี้เลย
 	// คอลัมน์ถูก DROP ออกจาก DB จริงแล้วด้วย (migrations/2026-09-19_drop_wet_base_met.sql) ไม่ใช่แค่
-	// เลิกใช้ในโค้ดเฉยๆ เหมือนที่เคยตัดสินใจไว้ก่อนหน้า (ดู ../../CLAUDE.md ข้อ 7[B-1])
+	// เลิกใช้ในโค้ดเฉยๆ เหมือนที่เคยตัดสินใจไว้ก่อนหน้า
+	//
+	// WetMets (wet_mets) — เพิ่มเข้ามา 2026-09-29 (migrations/2026-09-29_weight_exercises_per_exercise_mets.sql)
+	// METs คงที่ต่อท่า อ้างอิง 2024 Adult Compendium of Physical Activities (Herrmann et al., 2567)
+	// แทนที่ Session MET + RIR เดิม (ดู ../../CLAUDE.md ข้อ 7[B-1]) — แบบเดียวกับ cardio.cdo_mets
+	WetMets         float64                `gorm:"type:decimal(4,2);column:wet_mets" json:"wet_mets"`
 	MuscleDetails []ExerciseMuscleDetail `gorm:"foreignKey:WetID;references:WetID" json:"muscle_details"`
 }
 
@@ -187,13 +192,14 @@ type WeightTrainingResult struct {
 	// ของเซสชัน) เก็บลง DB เพื่อดูประวัติเท่านั้น ตั้งแต่สูตร Session MET (2026-09-26,
 	// services.CalculateWeightTrainingCalories) ไม่ได้ใช้เวลาพักเข้าสูตรเลือก MET แล้ว
 	WtrsRestSeconds    *int           `gorm:"type:smallint unsigned;column:wtrs_rest_seconds" json:"wtrs_rest_seconds"`
-	// เวลาออกแรงจริงของเซตนี้ (วินาที) — ไม่เข้าสูตรคำนวณพลังงาน (Session MET ใช้เวลารวมทั้งเซสชัน
-	// ไม่ใช่เวลาออกแรงต่อเซต) เก็บไว้เพื่อดูประวัติ/ตรวจขอบเขตความสมเหตุสมผลของข้อมูล
-	// (helpers.ValidateWeightSession) NULL = ไม่ทราบ (แถวเก่า/มือถือรุ่นเก่า)
-	WtrsActiveSeconds  *int           `gorm:"type:smallint unsigned;column:wtrs_active_seconds" json:"wtrs_active_seconds"`
-	// 1=เบา, 2=กลาง, 3=หนัก — ระดับที่ resolveSessionMET เลือกให้ทั้งเซสชัน (ตาราง 2.2 + RIR,
-	// แก้ 2026-09-27 ดู ../../CLAUDE.md ข้อ 7[B-1]) ทุกเซตในเซสชันเดียวกันได้ค่าเดียวกัน
-	WtrsIntensityLevel int8           `gorm:"type:tinyint;column:wtrs_intensity_level" json:"wtrs_intensity_level"`
+	// wtrs_active_seconds ถูกลบออกจาก DB แล้ว (2026-09-29, migrations/2026-09-29_drop_wtrs_active_seconds.sql)
+	// — เก็บไว้เผื่ออนาคตแต่ไม่เคยเข้าสูตรคำนวณพลังงานเลยตั้งแต่โมเดล Two-Compartment Energy Model ถูก
+	// ยกเลิก (2026-09-22) จนถึง METs คงที่ต่อท่าปัจจุบัน (ดู ../../CLAUDE.md ข้อ 7[B-1]) — ตัดทิ้งเพราะ
+	// ไม่มีจุดไหนใช้จริง ยิ่งเก็บยิ่งเป็นภาระ maintain (validation + request struct + มือถือต้องคำนวณ/ส่ง)
+	// wtrs_intensity_level ถูกลบออกจาก DB แล้ว (2026-09-29,
+	// migrations/2026-09-29_weight_exercises_per_exercise_mets.sql) — METs ไม่ได้ตัดสินจากความหนัก
+	// ของเซสชันอีกต่อไป เปลี่ยนเป็นค่าคงที่ต่อท่า (weight_exercises.wet_mets) แทน ดู
+	// ../../CLAUDE.md ข้อ 7[B-1]
 	// พลังงานสุทธิ (kcal) ของเซตนี้ = totalKcal ทั้งเซสชัน หารเท่ากันทุกเซต (ดู
 	// services.CalculateWeightTrainingCalories) SUM(wtrs_calories) GROUP BY wtrs_date ยังถูกต้อง
 	WtrsCalories       float64        `gorm:"type:decimal(6,2);column:wtrs_calories" json:"wtrs_calories"`

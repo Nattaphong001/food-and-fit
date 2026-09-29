@@ -187,6 +187,17 @@ func CreateWeightExercise(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
+	// wet_mets — METs คงที่ของท่านี้ (2024 Adult Compendium of Physical Activities, Herrmann et al.,
+	// 2567) ช่วงตรวจเดียวกับ cdo_mets ของ cardio ค่าเริ่มต้น 3.5 ถ้าไม่ได้ส่งมา (ตรงกับ DB default)
+	wetMets := 3.5
+	if metsStr := c.PostForm("wet_mets"); metsStr != "" {
+		m, metsErr := strconv.ParseFloat(metsStr, 64)
+		if metsErr != nil || m < 0.9 || m > 25 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ค่า METs ต้องเป็นตัวเลขระหว่าง 0.9-25"})
+			return
+		}
+		wetMets = m
+	}
 	// mug_id (ถ้า form ส่งมา) ไม่ใช้แล้ว — weight_exercises.mug_id ถูก DROP ออกจาก DB (2026-09-04)
 	// กำหนดกล้ามเนื้อของท่าฝึกผ่าน endpoint exercise_muscle_details แยกต่างหากเท่านั้น (รองรับ
 	// หลักหลายมัด/รองได้ ต่างจาก mug_id เดิมที่เก็บได้แค่มัดเดียว)
@@ -229,6 +240,7 @@ func CreateWeightExercise(c *gin.Context) {
 		WetDifficulty:   int8(wetDiff),
 		WetEquipment:    int8(wetEquip),
 		WetExerciseType: int8(wetExerciseType),
+		WetMets:         wetMets,
 		WetImage:        imagePath,
 	}
 
@@ -281,6 +293,14 @@ func UpdateWeightExercise(c *gin.Context) {
 	if typeStr := c.PostForm("wet_exercise_type"); typeStr != "" {
 		t, _ := strconv.Atoi(typeStr)
 		exercise.WetExerciseType = int8(t)
+	}
+	if metsStr := c.PostForm("wet_mets"); metsStr != "" {
+		m, metsErr := strconv.ParseFloat(metsStr, 64)
+		if metsErr != nil || m < 0.9 || m > 25 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ค่า METs ต้องเป็นตัวเลขระหว่าง 0.9-25"})
+			return
+		}
+		exercise.WetMets = m
 	}
 	// mug_id (ถ้า form ส่งมา) ไม่ใช้แล้ว — เหตุผลเดียวกับ CreateWeightExercise ด้านบน
 

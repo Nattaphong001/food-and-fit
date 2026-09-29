@@ -334,15 +334,6 @@ class _DashboardViewState extends State<DashboardView>
   /// core/utils/health_calculations.dart แล้ว (ใช้ร่วมกับ nutrition_view.dart)
   (String, Color) _energyStatus(double caloriesIn, double target) => calc.energyBalanceStatus(caloriesIn, target);
 
-  String _intensityLabel(int? lvl) {
-    switch (lvl) {
-      case 1:  return 'เบา';
-      case 2:  return 'กลาง';
-      case 3:  return 'หนัก';
-      default: return '-';
-    }
-  }
-
 
   // ═══════════════════════════════════════════════════════════════════════════
   // BUILD
@@ -1734,12 +1725,12 @@ class _DashboardViewState extends State<DashboardView>
           ]),
           const SizedBox(height: 10),
           _simpleTable(
-            ['เซต', 'ครั้ง', 'น้ำหนัก', 'ความหนัก'],
+            ['เซต', 'ครั้ง', 'น้ำหนัก', 'ปริมาตร'],
             sets.map((s) => [
               '${s.setNo}',
               '${s.reps}',
               '${s.weight.toStringAsFixed(1)} kg',
-              _intensityLabel(s.intensityLevel),
+              '${(s.weight * s.reps).round()} kg',
             ]).toList(),
             flex: [1, 1, 2, 2],
           ),
@@ -1784,8 +1775,8 @@ class _DashboardViewState extends State<DashboardView>
                 fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textDark)),
             Text(
               c.distance > 0
-                  ? '${c.duration.toStringAsFixed(0)} นาที • ${c.distance.toStringAsFixed(1)} กม.'
-                  : '${c.duration.toStringAsFixed(0)} นาที',
+                  ? '${formatDurationMinutes(c.duration)} • ${c.distance.toStringAsFixed(1)} กม.'
+                  : formatDurationMinutes(c.duration),
               style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
             ),
           ])),

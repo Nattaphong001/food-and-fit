@@ -282,12 +282,17 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
 
   Future<void> _handleSaveExercise(
     Map<String, dynamic>? item,
-    String name, String desc, String technique, int diff, int equipment, int exerciseType, String videoLink,
+    String name, String desc, String technique, int diff, int equipment, int exerciseType, String mets, String videoLink,
     File? imageFile, Uint8List? imageBytes, String? imageFileName,
     File? loopVideoFile, Uint8List? loopVideoBytes, String? loopVideoFileName, {
     List<Map<String, dynamic>>? pendingFocus,
   }) async {
     if (name.trim().isEmpty) return;
+    final metsValue = double.tryParse(mets.trim());
+    if (metsValue == null || metsValue < 0.9 || metsValue > 25) {
+      _showSnackBar('ค่า METs ต้องเป็นตัวเลขระหว่าง 0.9-25');
+      return;
+    }
     final isEdit = item != null;
 
     // เช็คชื่อซ้ำจริงทำที่ฟอร์ม (เช็คสด ครอบทั้งระบบผ่าน API ไม่ใช่แค่หน้าปัจจุบัน — ดู
@@ -304,6 +309,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
         'wet_difficulty': diff.toString(),
         'wet_equipment': equipment.toString(),
         'wet_exercise_type': exerciseType.toString(),
+        'wet_mets': metsValue.toString(),
         'wet_video': videoLink,
         if (kIsWeb && imageBytes != null && imageFileName != null)
           'wet_image': MultipartFile.fromBytes(imageBytes, filename: imageFileName)
@@ -481,6 +487,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
         .toList();
     if (techniqueItemCtrls.isEmpty) techniqueItemCtrls.add(TextEditingController());
     final videoCtrl = TextEditingController(text: item?['wet_video'] ?? item?['WetVideo'] ?? '');
+    final metCtrl = TextEditingController(text: (item?['wet_mets'] ?? item?['WetMets'])?.toString() ?? '3.5');
     final bool isAdding = item == null;
     final int? lockedDiff = isAdding && _filterDiff != 0 ? _filterDiff : null;
     final bool showDiffSelector = lockedDiff == null;
@@ -877,6 +884,20 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                             ],
                           ),
                           const SizedBox(height: 14),
+                          const Text('ค่าความหนักของท่านี้ (METs) *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
+                          const SizedBox(height: 2),
+                          Text('อ้างอิง 2024 Adult Compendium of Physical Activities ใช้คำนวณพลังงานที่เผาผลาญ', style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600)),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: metCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(
+                              hintText: 'เช่น 3.5',
+                              prefixIcon: Icon(Icons.local_fire_department, color: Colors.orange, size: 18),
+                              contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
                           const Text('กล้ามเนื้อโฟกัส', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
                           const SizedBox(height: 2),
                           Text('เลือกกล้ามเนื้อที่ท่านี้ใช้งาน กำหนดเป็นหลัก/รองได้', style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600)),
@@ -1064,7 +1085,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                                         });
                                         return;
                                       }
-                                      _handleSaveExercise(item, nameCtrl.text, descCtrl.text, techniqueItemCtrls.map((c) => c.text.trim()).where((t) => t.isNotEmpty).join('\n'), selectedDiff, selectedEquipment, selectedExerciseType, videoCtrl.text, selectedImage, selectedImageBytes, selectedImageName, selectedLoopVideo, selectedLoopVideoBytes, selectedLoopVideoName, pendingFocus: wetId == null ? focusList : null);
+                                      _handleSaveExercise(item, nameCtrl.text, descCtrl.text, techniqueItemCtrls.map((c) => c.text.trim()).where((t) => t.isNotEmpty).join('\n'), selectedDiff, selectedEquipment, selectedExerciseType, metCtrl.text, videoCtrl.text, selectedImage, selectedImageBytes, selectedImageName, selectedLoopVideo, selectedLoopVideoBytes, selectedLoopVideoName, pendingFocus: wetId == null ? focusList : null);
                                     },
                               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                               child: const Text('บันทึกข้อมูล', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
@@ -1216,6 +1237,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
   static const double _thumbW = 60;
   static const double _diffW = 130;
   static const double _typeW = 120;
+  static const double _metW = 70;
   static const double _actionW = 90;
   static const double _nameMin = 220, _equipMin = 130, _muscleMin = 260;
 
@@ -1224,7 +1246,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     return LayoutBuilder(
       builder: (context, constraints) {
         const double reserve = 8; // กันขอบเส้นตาราง ไม่ให้ปัดเข้าโหมด scroll แนวนอนโดยไม่จำเป็น
-        final double flexAvailable = constraints.maxWidth - _thumbW - _diffW - _typeW - _actionW - reserve;
+        final double flexAvailable = constraints.maxWidth - _thumbW - _diffW - _typeW - _metW - _actionW - reserve;
         final double minFlexTotal = _nameMin + _equipMin + _muscleMin;
         final double flexTotal = flexAvailable < minFlexTotal ? minFlexTotal : flexAvailable;
         final double nameW = (flexTotal * 0.30) < _nameMin ? _nameMin : flexTotal * 0.30;
@@ -1241,6 +1263,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
           AdminDataColumn(key: 'diff', label: 'ระดับความยาก', width: _diffW),
           AdminDataColumn(key: 'equipment', label: 'อุปกรณ์', width: equipW),
           AdminDataColumn(key: 'type', label: 'ประเภทท่าฝึก', width: _typeW),
+          AdminDataColumn(key: 'met', label: 'METs', width: _metW, numeric: true),
           AdminDataColumn(key: 'muscles', label: 'กล้ามเนื้อโฟกัส', width: muscleW),
         ];
 
@@ -1257,6 +1280,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
             final String name = item['wet_name'] ?? item['WetName'] ?? '';
             final int equipment = (item['wet_equipment'] ?? item['WetEquipment']) ?? 5;
             final int exType = (item['wet_exercise_type'] ?? item['WetExerciseType']) ?? 1;
+            final double mets = ((item['wet_mets'] ?? item['WetMets']) as num?)?.toDouble() ?? 3.5;
             final List<Map<String, dynamic>> focusList = focusMap[wetId] ?? [];
 
             return Row(children: [
@@ -1277,6 +1301,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
               AdminDataCell(width: _diffW, child: _diffBadge(diff)),
               AdminDataCell(width: equipW, child: Text(_equipmentText(equipment), style: const TextStyle(fontSize: 12.5))),
               AdminDataCell(width: _typeW, child: _iconBadge(exType == 1 ? Icons.groups_outlined : Icons.person_outline, exType == 1 ? 'หลายกลุ่ม' : 'เฉพาะส่วน')),
+              AdminDataCell(width: _metW, numeric: true, child: Text(mets.toString(), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600))),
               AdminDataCell(
                 width: muscleW,
             child: SizedBox(
@@ -1535,6 +1560,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     final String desc = item['wet_description'] ?? item['WetDescription'] ?? '';
     final int equipment = (item['wet_equipment'] ?? item['WetEquipment']) ?? 5;
     final int exType = (item['wet_exercise_type'] ?? item['WetExerciseType']) ?? 1;
+    final double mets = ((item['wet_mets'] ?? item['WetMets']) as num?)?.toDouble() ?? 3.5;
     final List<Map<String, dynamic>> focusList = focusMap[wetId] ?? [];
 
     // การ์ดแนวตั้งขนาดใหญ่ (บรีฟรอบ 3 ข้อ 3.2) — รูปใหญ่เต็มความกว้างด้านบน แทนธัมบ์เนล 56x56 เดิม
@@ -1638,6 +1664,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                   _diffBadge(diff),
                   _iconBadge(Icons.fitness_center, _equipmentText(equipment)),
                   _iconBadge(exType == 1 ? Icons.groups_outlined : Icons.person_outline, exType == 1 ? 'หลายกลุ่ม' : 'เฉพาะส่วน'),
+                  _iconBadge(Icons.local_fire_department, '$mets METs'),
                 ]),
               ],
             ),
