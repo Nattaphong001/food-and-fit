@@ -140,34 +140,6 @@ func TestValidateCardioResult(t *testing.T) {
 	}
 }
 
-// WorkSeconds (wtrs_active_seconds, เพิ่มกลับมา 2026-09-20) ใช้กฎขอบเขตเดียวกับ RestSeconds
-// และผลรวมของทั้งสองต้องไม่เกินเวลารวมของเซสชัน
-func TestValidateWeightSession_WorkSeconds(t *testing.T) {
-	work := func(v int) *int { return &v }
-	withWork := func(reps int, workSec, restSec *int) WeightSetCheck {
-		return WeightSetCheck{Reps: reps, WeightKg: 40, WorkSeconds: workSec, RestSeconds: restSec}
-	}
-
-	cases := []struct {
-		name string
-		dur  int
-		sets []WeightSetCheck
-		want bool
-	}{
-		{"ไม่มี WorkSeconds (client เก่า)", 300, []WeightSetCheck{{Reps: 10, WeightKg: 40}}, true},
-		{"WorkSeconds ปกติ", 300, []WeightSetCheck{withWork(10, work(40), nil)}, true},
-		{"WorkSeconds ติดลบ", 300, []WeightSetCheck{withWork(10, work(-1), nil)}, false},
-		{"WorkSeconds มากกว่าเวลารวม", 300, []WeightSetCheck{withWork(10, work(301), nil)}, false},
-		{"WorkSeconds เท่าเวลารวมพอดี", 300, []WeightSetCheck{withWork(10, work(300), nil)}, true},
-		{"ผลรวม Work+Rest เกินเวลารวมเกินค่าเผื่อ", 100, []WeightSetCheck{withWork(10, work(60), func() *int { v := 60; return &v }())}, false},
-		{"ผลรวม Work+Rest อยู่ในค่าเผื่อ", 110, []WeightSetCheck{withWork(10, work(60), func() *int { v := 40; return &v }())}, true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			ok, msg := ValidateWeightSession(tc.dur, tc.sets)
-			if ok != tc.want {
-				t.Errorf("ValidateWeightSession(%d, ...) = (%v, %q), want ok=%v", tc.dur, ok, msg, tc.want)
-			}
-		})
-	}
-}
+// wtrs_active_seconds (WorkSeconds) ถูกตัดออกจาก WeightSetCheck แล้ว (2026-09-29, DROP column DB
+// จริง) — ไม่เคยเข้าสูตรคำนวณพลังงานเลยตั้งแต่ Two-Compartment Energy Model ถูกยกเลิก (2026-09-22)
+// ทดสอบ TestValidateWeightSession_WorkSeconds เดิมถูกลบไปพร้อมกัน (ดู git history ถ้าต้องการดูของเดิม)

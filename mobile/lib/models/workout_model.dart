@@ -145,7 +145,7 @@ class WorkoutResult {
   final int reps;
   final double weight;
   final double calories;
-  final int? intensityLevel;
+  final int? durationSeconds; // wtrs_duration — เวลารวมทั้งเซสชัน (ทุกเซตของเซสชันเดียวกันเก็บค่าเท่ากัน)
   final String? note;
   final String? exerciseName;
   final String? imageUrl;
@@ -159,7 +159,7 @@ class WorkoutResult {
     required this.reps,
     required this.weight,
     this.calories = 0,
-    this.intensityLevel,
+    this.durationSeconds,
     this.note,
     this.exerciseName,
     this.imageUrl,
@@ -174,8 +174,7 @@ class WorkoutResult {
         reps: json['wtrs_reps'] ?? json['reps'] ?? 0,
         weight: (json['wtrs_weight'] ?? json['weight'] ?? 0).toDouble(),
         calories: (json['wtrs_calories'] ?? json['calories'] ?? 0).toDouble(),
-        intensityLevel: json['wtrs_intensity_level'] as int?
-            ?? json['intensity_level'] as int?,
+        durationSeconds: (json['wtrs_duration'] ?? json['duration_seconds']) as int?,
         note: json['wtrs_note']?.toString() ?? json['note']?.toString(),
         exerciseName: (json['weight_exercise'] as Map?)?['wet_name']?.toString()
             ?? json['wet_name']?.toString() ?? json['exercise_name']?.toString(),
@@ -189,7 +188,6 @@ class WorkoutResult {
         'wtrs_set_no': setNo,
         'wtrs_reps': reps,
         'wtrs_weight': weight,
-        'wtrs_intensity_level': intensityLevel,
         'wtrs_note': note,
       };
 }
@@ -243,3 +241,37 @@ class CardioResult {
         'date': date,
       };
 }
+
+/// เวลาฝึกรวม (วินาที) ของเซตที่ให้มา — ทุกเซตของเซสชันเดียวกันเก็บ `wtrs_duration` ค่าเดียวกัน
+/// จึงนับแต่ละเซสชันครั้งเดียว (แถวที่ติดกันตาม wtrs_id และมีค่าเท่ากัน = เซสชันเดียวกัน)
+/// คืน 0 ถ้าไม่มีข้อมูลเวลา (ข้อมูลเก่า) — ผู้เรียกควรซ่อนช่องเวลาเมื่อได้ 0
+int sessionDurationSeconds(Iterable<WorkoutResult> sets) {
+  final ordered = sets.toList()..sort((a, b) => a.resultId.compareTo(b.resultId));
+  var total = 0;
+  int? prev;
+  for (final r in ordered) {
+    final d = r.durationSeconds;
+    if (d == null || d <= 0) {
+      prev = null;
+      continue;
+    }
+    if (d != prev) total += d;
+    prev = d;
+  }
+  return total;
+}
+
+/// แสดงเวลาจริงไม่ปัดขึ้น ใช้ร่วมกันทั้งเวทและคาร์ดิโอ:
+/// < 1 นาที `45 วินาที` · < 1 ชม. `2 นาที 50 วินาที` (วินาทีเป็น 0 → `3 นาที`) · ≥ 1 ชม. `1 ชม. 5 นาที`
+String formatDuration(int seconds) {
+  final s = seconds < 0 ? 0 : seconds;
+  if (s < 60) return '$s วินาที';
+  final h = s ~/ 3600;
+  final m = (s % 3600) ~/ 60;
+  final sec = s % 60;
+  if (h > 0) return m > 0 ? '$h ชม. $m นาที' : '$h ชม.';
+  return sec > 0 ? '$m นาที $sec วินาที' : '$m นาที';
+}
+
+/// สำหรับ `CardioResult.duration` ที่โมเดลแปลงจากวินาทีเป็นนาที (double) แล้ว
+String formatDurationMinutes(double minutes) => formatDuration((minutes * 60).round());

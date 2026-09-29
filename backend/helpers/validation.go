@@ -148,11 +148,11 @@ func ValidateCardioResult(durationSeconds int, distanceKm float64, hasDistance b
 }
 
 // ── ขอบเขตของข้อมูลเซสชันเวทเทรนนิ่ง (ValidateWeightSession) ──
-// เวลารวมคือตัวที่ทำให้ kcal เพี้ยนได้มากที่สุด: kcal เป็นเส้นตรงกับเวลารวมของเซสชัน (Session MET ตาม
-// ตาราง 2.2 — ดู services.CalculateWeightTrainingCalories, ../../CLAUDE.md ข้อ 7[B-1]) เวลาพักไม่ได้เลือก
-// MET แล้ว (เกณฑ์เดิมที่ใช้เวลาพักถูกตัดออกไปตั้งแต่ 2026-09-26 พร้อม Compendium Per-Set MET Matrix)
-// เหลือหน้าที่แค่ตรวจว่าค่าที่ส่งมาสมเหตุสมผลไหม ต้องกันค่าที่เป็นไปไม่ได้ตั้งแต่ชั้นรับข้อมูล ค่าเพดาน
-// ด้านล่างเป็นค่าที่ผู้พัฒนาเลือก ไม่ได้มาจากสเปกบทที่ 2
+// เวลารวมคือตัวที่ทำให้ kcal เพี้ยนได้มากที่สุด: kcal เป็นเส้นตรงกับเวลารวมของเซสชัน (METs คงที่ต่อท่า
+// — ดู services.CalculateWeightTrainingCalories, ../../CLAUDE.md ข้อ 7[B-1]) เวลาพักไม่ได้เข้าสูตร
+// เลือก MET เลย (ไม่มี MET ให้เลือกอีกต่อไป ท่านั้นๆ ใช้ wet_mets ค่าเดียวเสมอ) เหลือหน้าที่แค่ตรวจว่า
+// ค่าที่ส่งมาสมเหตุสมผลไหม ต้องกันค่าที่เป็นไปไม่ได้ตั้งแต่ชั้นรับข้อมูล ค่าเพดานด้านล่างเป็นค่าที่
+// ผู้พัฒนาเลือก ไม่ได้มาจากสเปกบทที่ 2
 const (
 	// เวลาต่ำสุดต่อเซต: 1 เซตที่บันทึกได้จริงต้องใช้เวลาอย่างน้อยกี่วินาที (กันข้อมูลขยะจากการกดรัว)
 	WeightSessionMinSecondsPerSet = 5
@@ -179,7 +179,6 @@ type WeightSetCheck struct {
 	Reps        int
 	WeightKg    float64
 	RestSeconds *int // nil = ไม่ทราบเวลาพัก (client เก่า) ไม่ตรวจ
-	WorkSeconds *int // nil = ไม่ทราบเวลาออกแรงจริง (client เก่า) ไม่ตรวจ
 }
 
 // ValidateWeightSession - ตรวจความสมเหตุสมผลของเวลาและเซตตอนบันทึกผลเวทเทรนนิ่ง (SaveWorkoutResult)
@@ -202,7 +201,7 @@ func ValidateWeightSession(totalDurationSeconds int, sets []WeightSetCheck) (boo
 	if totalDurationSeconds > len(sets)*WeightSessionMaxSecondsPerSet {
 		return false, fmt.Sprintf("เวลารวมยาวผิดปกติเมื่อเทียบกับจำนวนเซต (สูงสุด %d นาทีต่อเซต) อาจลืมกดจบการฝึกหรือช่องว่างระหว่างเซตนานเกินไป", WeightSessionMaxSecondsPerSet/60)
 	}
-	restSum, workSum := 0, 0
+	restSum := 0
 	for _, s := range sets {
 		if s.Reps < 1 || s.Reps > WeightSetMaxReps {
 			return false, fmt.Sprintf("จำนวนครั้งต้องอยู่ระหว่าง 1-%d", WeightSetMaxReps)
@@ -216,18 +215,11 @@ func ValidateWeightSession(totalDurationSeconds int, sets []WeightSetCheck) (boo
 			}
 			restSum += *s.RestSeconds
 		}
-		if s.WorkSeconds != nil {
-			if *s.WorkSeconds < 0 || *s.WorkSeconds > totalDurationSeconds {
-				return false, "เวลาออกแรงไม่ถูกต้อง (ติดลบหรือมากกว่าเวลารวม)"
-			}
-			workSum += *s.WorkSeconds
-		}
 	}
-	// ผลรวมเวลาออกแรง+เวลาพักต้องไม่เกินเวลารวมของเซสชัน (ทั้งสองเป็นส่วนย่อยของเวลาเดียวกัน) —
-	// client เก่าที่ไม่ส่ง WorkSeconds เลย workSum จะเป็น 0 เสมอ เช็คนี้จึงลดรูปกลับเป็นเช็ค restSum
-	// เดิมพอดี ไม่กระทบ client เก่า
-	if restSum+workSum > totalDurationSeconds+WeightRestSumToleranceSeconds {
-		return false, "ผลรวมเวลาออกแรง+เวลาพักมากกว่าเวลารวมของการฝึก"
+	// ผลรวมเวลาพักต้องไม่เกินเวลารวมของเซสชัน (เวลาพักเป็นส่วนย่อยของเวลาเดียวกัน) — ตัด WorkSeconds
+	// ออกจากเช็คนี้แล้ว (2026-09-29, ดู wtrs_active_seconds ใน models/exercise.go)
+	if restSum > totalDurationSeconds+WeightRestSumToleranceSeconds {
+		return false, "ผลรวมเวลาพักมากกว่าเวลารวมของการฝึก"
 	}
 	return true, ""
 }

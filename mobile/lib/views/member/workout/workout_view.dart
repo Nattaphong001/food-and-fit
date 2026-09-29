@@ -1661,7 +1661,7 @@ class _WorkoutViewState extends State<WorkoutView> with RouteAware {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      _chip('${r.duration.round()} นาที'),
+                      _chip(formatDurationMinutes(r.duration)),
                       if (r.distance > 0)
                         _chip('${r.distance.toStringAsFixed(1)} กม.'),
                     ],
@@ -1740,6 +1740,7 @@ class _WorkoutViewState extends State<WorkoutView> with RouteAware {
       builder: (ctx) {
         final totalCalories = sets.fold(0.0, (sum, r) => sum + r.calories);
         final totalVolume = calc.trainingVolume(sets.map((r) => (weight: r.weight, reps: r.reps)));
+        final totalSeconds = sessionDurationSeconds(sets);
         final maxSheetHeight = MediaQuery.of(ctx).size.height * 0.85;
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxSheetHeight),
@@ -1787,7 +1788,8 @@ class _WorkoutViewState extends State<WorkoutView> with RouteAware {
                             ),
                           ),
                           Text(
-                            '${sets.length} เซ็ต • ${totalCalories.round()} kcal • Volume ${totalVolume.round()} กก.',
+                            '${sets.length} เซ็ต • ${totalCalories.round()} kcal • Volume ${totalVolume.round()} กก.'
+                            '${totalSeconds > 0 ? ' • ${formatDuration(totalSeconds)}' : ''}',
                             style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.textMuted,
@@ -1923,7 +1925,7 @@ class _WorkoutViewState extends State<WorkoutView> with RouteAware {
             _cardioDetailRow(
               Icons.timer_outlined,
               'ระยะเวลา',
-              '${r.duration.round()} นาที',
+              formatDurationMinutes(r.duration),
               AppColors.cardioIcon,
             ),
             if (r.distance > 0) ...[

@@ -63,6 +63,9 @@ class Exercise {
   final List<int> muscleGroupIds;
   final int exerciseType;    // 1=หลายกลุ่ม, 2=เฉพาะส่วน
   final String muscleGroupName; // ชื่อกลุ่มกล้ามเนื้อหลัก เช่น ขา, อก
+  // METs คงที่ของท่านี้ (weight_exercises.wet_mets, เพิ่ม 2026-09-29) — แสดงผลอย่างเดียว backend
+  // เป็นเจ้าของค่าที่ใช้คำนวณพลังงานจริงเสมอ (เหมือน CardioType.mets)
+  final double mets;
 
   Exercise({
     required this.exerciseId,
@@ -78,6 +81,7 @@ class Exercise {
     this.muscleGroupIds = const [],
     this.exerciseType = 1,
     this.muscleGroupName = '',
+    this.mets = 3.5,
   });
 
   factory Exercise.fromJson(Map<String, dynamic> json) {
@@ -113,6 +117,7 @@ class Exercise {
       muscleGroupIds: groupIds,
       exerciseType: (json['wet_exercise_type'] ?? 1) as int,
       muscleGroupName: primary?['mug_name'] as String? ?? '',
+      mets: (json['wet_mets'] ?? 3.5).toDouble(),
     );
   }
 

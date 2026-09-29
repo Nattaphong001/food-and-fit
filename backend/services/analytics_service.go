@@ -37,9 +37,8 @@ type DailyAnalyticsMacros struct {
 
 // GetDailyAnalyticsData - สรุปพลังงานและโภชนาการรายวัน
 func GetDailyAnalyticsData(userID any, date string) DailyAnalyticsResult {
-	// 1. ดึงข้อมูล BMR/TDEE ที่ "มีผลใช้งานจริง ณ วันที่รายงาน" — แถวล่าสุดที่ mbh_record_date
-	//    ไม่เกินวันที่ query (ไม่ใช่แถวล่าสุดสุดของทั้งระบบ) มิฉะนั้นรายงานย้อนหลังจะใช้
-	//    BMR/TDEE ของวันนี้ไปคำนวณวันเก่าผิด — mbh_id desc เป็น tie-breaker กรณีแก้ไขวันเดียวกันหลายครั้ง
+	// 1. หา BMR/TDEE ที่ใช้งานจริงของ "วันที่กำลังดูรายงาน" (แถวล่าสุดที่บันทึกไว้ ณ วันนั้นหรือ
+	//    ก่อนหน้า ไม่ใช่ค่าล่าสุดสุดของระบบ กันรายงานวันเก่าใช้ BMR ของวันนี้ผิดๆ)
 	var bmrHistory models.MemberBmrHistory
 	config.DB.Where("mb_id = ? AND mbh_record_date <= ?", userID, date).
 		Order("mbh_record_date desc, mbh_id desc").Limit(1).Find(&bmrHistory)
@@ -81,9 +80,8 @@ func GetDailyAnalyticsData(userID any, date string) DailyAnalyticsResult {
 		Where("mb_id = ? AND wtrs_date = ?", userID, date).
 		Scan(&weightOut)
 
-	// 5. ดึงข้อมูลน้ำหนัก เป้าหมาย สำหรับ Water Intake และ Goal Label — ดึงจากแถว member_body_stats
-	//    ที่ bmrHistory ผูกไว้ตรงๆ (mbh.mbs_id) ให้ตรงกับ BMR/TDEE ของวันที่รายงานพอดี ไม่ใช่แถว
-	//    ล่าสุดสุดของทั้งระบบซึ่งอาจเป็นคนละช่วงเวลากับ bmrHistory ที่เลือกไว้ข้างบน
+	// 5. ดึงข้อมูลน้ำหนัก/เป้าหมาย — ใช้แถว member_body_stats ที่ bmrHistory ผูกไว้ตรงๆ ให้ตรงกับ
+	//    ช่วงเวลาเดียวกับ BMR/TDEE ที่เลือกไว้ข้างบน (ไม่ใช่แถวล่าสุดสุดของระบบซึ่งอาจคนละช่วงเวลา)
 	var bodyStat models.MemberBodyStat
 	if bmrHistory.MbsID != nil {
 		config.DB.Where("mbs_id = ?", *bmrHistory.MbsID).First(&bodyStat)
@@ -92,22 +90,18 @@ func GetDailyAnalyticsData(userID any, date string) DailyAnalyticsResult {
 		config.DB.Where("mb_id = ?", userID).Order("mbs_id desc").First(&bodyStat)
 	}
 
-	// 6. คำนวณ Total Daily Energy Output ตามสูตร:
-	//    Baseline (BMR × 1.2) + Exercise Burn (Cardio + Weight Training)
+	// 6. Total Daily Energy Output = Baseline (BMR × 1.2) + Exercise Burn (คาร์ดิโอ + เวท)
 	baseline := CalculateBaselineExpenditure(bmrHistory.MbhBmr)
 	exerciseBurn := cardioOut.Total + weightOut.Total
 	totalCalOut := baseline + exerciseBurn
 
-	// 7. Balance = Energy In - Total Energy Out
+	// 7. Energy Balance = พลังงานที่กินเข้า - พลังงานที่ใช้ไปทั้งหมด
 	balance := macros.TotalCal - totalCalOut
 
-	// 8. target_tdee — ใช้ค่าที่ CalculateGoals คำนวณและบันทึกไว้แล้วตอน UpdateBodyStats/
-	//    UpdateProfile (mbh_tdee_target) ตรงๆ ไม่คำนวณซ้ำมือที่นี่ (เดิมเขียนสูตร 20%/15%/clamp
-	//    ซ้ำอีกจุดหนึ่ง เสี่ยงเพี้ยนจาก CalculateGoals ถ้าแก้ % แค่จุดเดียว)
+	// 8. target_tdee: ใช้ค่าที่คำนวณไว้แล้วตอนตั้ง/แก้โปรไฟล์ (mbh_tdee_target) ตรงๆ ไม่คำนวณซ้ำที่นี่
 	targetTdee := bmrHistory.MbhTdeeTarget
 
-	// 9. สัดส่วนสารอาหารมหัพภาค (โปรตีน/คาร์บ/ไขมัน เป็นกรัม) จาก target_tdee + เป้าหมายของสมาชิก
-	//    (บทที่ 2.1.4.8) — goalType ที่ไม่ใช่ 1/2/3 ได้ 0 ทั้ง 3 ค่า ไม่เดาสัดส่วนแทนผู้ใช้
+	// 9. เป้าหมายโปรตีน/คาร์บ/ไขมัน (กรัม) จาก target_tdee ตามสัดส่วนของเป้าหมายที่สมาชิกเลือกไว้
 	targetProteinG, targetCarbsG, targetFatG := CalculateMacroTargets(targetTdee, bodyStat.MbsTarget)
 
 	return DailyAnalyticsResult{
@@ -145,26 +139,22 @@ type DailySum struct {
 	Protein     float64 `json:"protein"`
 	Carbs       float64 `json:"carbs"`
 	Fat         float64 `json:"fat"`
-	TargetTdee  float64 `json:"target_tdee"` // เป้าหมายที่มีผลใช้งานจริง ณ วันนั้น (ไม่ใช่เป้าหมายปัจจุบัน) ให้กราฟสลับเส้นตรงวันที่เปลี่ยนเป้าหมายได้จริง
+	TargetTdee  float64 `json:"target_tdee"` // เป้าหมายพลังงานที่ใช้งานจริงของวันนั้น (ไม่ใช่เป้าหมายปัจจุบัน) ให้กราฟสลับเส้นตรงตอนเปลี่ยนเป้าหมายได้จริง
 }
 
-// sqlConstReplacer แทนที่ placeholder {{...}} ใน SQL ด้วยค่าคงที่ของ Go (calculator.go) ตอนเริ่มโปรแกรม —
-// กันตัวเลขสูตร (×1.2) และค่าประมาณตอนไม่มีประวัติ BMR (1500/2000) ลอยอยู่ใน SQL แยกจาก constant จริง
-// (ค่ามาจาก constant เท่านั้น ไม่มี input จากผู้ใช้ จึงต่อ string ได้อย่างปลอดภัย)
+// sqlConstReplacer แทนที่ placeholder {{...}} ในข้อความ SQL ด้วยค่าคงที่จริงจาก calculator.go
+// ตอนเริ่มโปรแกรม — กันไม่ให้ตัวเลขสูตร (เช่น ×1.2, ค่าประมาณ BMR ตอนไม่มีประวัติ) ต้องพิมพ์ซ้ำเป็น
+// ตัวเลขดิบๆ ใน SQL (ค่ามาจาก constant เท่านั้น ไม่มี input จากผู้ใช้ปนเลย จึงต่อ string ได้ปลอดภัย)
 var sqlConstReplacer = strings.NewReplacer(
 	"{{SEDENTARY_COEFFICIENT}}", strconv.FormatFloat(SedentaryCoefficient, 'f', -1, 64),
 	"{{FALLBACK_BMR}}", strconv.FormatFloat(FallbackBmr, 'f', -1, 64),
 	"{{FALLBACK_TARGET_TDEE}}", strconv.FormatFloat(FallbackTargetTdee, 'f', -1, 64),
 )
 
-// dailySumBetweenSQL - สรุปรายวันของช่วงวันที่ระบุ (ใช้กับ weekly/monthly ที่เลือกเดือนได้)
-// baseline (BMR×1.2) และ target_tdee คำนวณต่อวันจาก member_bmr_history แถวที่ "มีผลใช้งานจริง
-// ณ วันนั้น" (mbh_record_date ล่าสุดที่ไม่เกิน date_list.date) แทนค่าคงที่ค่าเดียวแบบเดิม —
-// เดิมส่ง baseline เป็น parameter ตัวเลขเดียวคำนวณจาก BMR ล่าสุดสุด ทำให้ทุกวันในรายงานใช้ BMR
-// ของวันนี้ผิดๆ ถ้าผู้ใช้เพิ่งแก้น้ำหนัก/เป้าหมายเปลี่ยนกลางช่วงที่รายงาน
-// ลำดับพารามิเตอร์: mb_id(baseline subquery), mb_id(target subquery), mb_id(x3 ใน date_list),
-//
-//	mb_id(join dn), mb_id(cr_sum), mb_id(wt_sum), startDate, endDate
+// dailySumBetweenSQL สรุปพลังงานเข้า/ออกรายวันของช่วงวันที่ระบุ (ใช้กับกราฟ weekly/monthly)
+// แต่ละวันในผลลัพธ์ใช้ baseline (BMR×1.2) และ target_tdee ของ "วันนั้นๆ" เอง (หาแถว
+// member_bmr_history ล่าสุดที่ไม่เกินวันนั้น) ไม่ใช่ค่า BMR ปัจจุบันค่าเดียวลากยาวทั้งกราฟ —
+// ถ้าผู้ใช้แก้น้ำหนัก/เป้าหมายกลางช่วงที่ดูรายงาน แต่ละวันจะยังใช้ BMR ที่ถูกต้องของวันนั้น
 var dailySumBetweenSQL = sqlConstReplacer.Replace(`
 	SELECT date_list.date,
 		   COALESCE(SUM(dn.dntt_total_calories), 0) as calories_in,
@@ -229,13 +219,10 @@ type BodyPoint struct {
 
 // GetProgressReportData - รายงานความคืบหน้า (น้ำหนัก, พลังงานเฉลี่ย, จำนวนครั้งที่ซ้อม)
 func GetProgressReportData(userID any, days string) ProgressReportResult {
-	// 1. ประวัติน้ำหนักและ BMI — ใส่ activity_level/target ต่อจุดด้วย ให้ frontend detect วันที่
-	//    ผู้ใช้เปลี่ยนระดับกิจกรรม/เป้าหมาย เพื่อ mark จุดเปลี่ยนบนกราฟได้ (ไม่ใช่แค่เส้นเดียวลากยาว)
+	// 1. ประวัติน้ำหนักและ BMI — 1 วัน แสดงแค่ 1 จุด (เอาแถวล่าสุดของวันนั้นถ้าแก้หลายครั้งในวัน
+	//    เดียวกัน) พร้อมแนบ activity_level/target ต่อจุด ให้ frontend mark วันที่เปลี่ยนระดับ
+	//    กิจกรรม/เป้าหมายบนกราฟได้
 	var bodyHistory []BodyPoint
-	// เดิมดึงทุกแถว member_body_stats ในช่วง — ถ้าแก้ข้อมูลร่างกายหลายครั้งในวันเดียว (เช่น
-	// กรอกทดสอบแล้วแก้กลับ) จะได้หลายจุดซ้อนวันเดียวกัน กราฟกระโดด (spike) ไม่สื่อความหมาย
-	// mbs_recorded_date ตั้งใจให้ 1 แถวประวัติแทน 1 วัน (ฝั่งรายงาน BMR/TDEE ก็ยึดหลักนี้อยู่แล้ว
-	// ที่ dailySumBetweenSQL) จึงเลือกแถวล่าสุด (mbs_id มากสุด) ของแต่ละวันปฏิทินมาแสดงจุดเดียว
 	config.DB.Raw(`
 		SELECT bs.mbs_recorded_date as date, bs.mbs_weight as weight,
 			COALESCE(bh.mbh_bmi, 0) as bmi,
@@ -358,7 +345,7 @@ type MonthStat struct {
 	WorkoutDays  int     `gorm:"column:workout_days"`
 	AvgCardio    float64 `gorm:"column:avg_cardio"`
 	AvgWeight    float64 `gorm:"column:avg_weight"`
-	RecordedDays int     `gorm:"column:recorded_days"` // จำนวนวันที่มีบันทึกอาหารจริงในช่วง — คำสั่งที่ 19.2 (avg_cal หารด้วยตัวนี้ ไม่ใช่จำนวนวันปฏิทิน)
+	RecordedDays int     `gorm:"column:recorded_days"` // จำนวนวันที่มีบันทึกอาหารจริงในช่วง (avg_cal หารด้วยตัวนี้ ไม่ใช่จำนวนวันปฏิทิน)
 }
 
 type MonthlyComparisonResult struct {
@@ -394,9 +381,8 @@ func GetMonthlyComparisonData(userID any, refDate string) MonthlyComparisonResul
 		`, userID, userID, userID, userID, userID).Scan(&s)
 		return s
 	}
-	// เดือนที่จะเทียบ — รับจาก query ?month=YYYY-MM (เดือนที่ frontend กำลังเลื่อนดูอยู่)
-	// ไม่ส่งมา = ใช้เดือนปัจจุบันจริงเหมือนเดิม (บั๊กเดิม: ไม่รับ param นี้เลย ใช้ CURDATE() เสมอ
-	// ทำให้การ์ดนี้ไม่ผูกกับเดือนที่ผู้ใช้เลื่อนดูในกราฟ/ตารางด้านบน — พบจากทดสอบจริงบนเครื่อง 2026-08-21)
+	// เดือนที่จะเทียบ — มาจากพารามิเตอร์ refDate (เดือนที่ frontend กำลังเลื่อนดูอยู่)
+	// ไม่ส่งมา = ใช้เดือนปัจจุบันจริง
 	refDateExpr := "CURDATE()"
 	if refDate != "" {
 		refDateExpr = "'" + refDate + "'"
@@ -486,9 +472,8 @@ func GetAdminAnalyticsOverviewData(start, end string) AdminAnalyticsOverview {
 	config.DB.Raw(`SELECT COALESCE(SUM(dntt_total_calories), 0) as total
 		FROM daily_nutrition WHERE dntt_date BETWEEN ? AND ?`, start, end).Scan(&calIn)
 
-	// 3. พลังงานออก (Baseline BMR×1.2 ต่อวันที่มีกิจกรรม + คาร์ดิโอ + เวท) — ให้ตรงนิยาม
-	//    Total Daily Energy Output เดียวกับ GetDailyAnalytics (ข้อ 6 ด้านบน) ไม่ใช่แค่ผลรวม
-	//    exercise burn เฉยๆ เหมือนโค้ดเดิม (เคยขาด baseline ทำให้ตัวเลขแอดมินต่ำกว่าจริง)
+	// 3. พลังงานออก = Baseline (BMR×1.2 ต่อวันที่มีกิจกรรม ของแต่ละสมาชิก) + คาร์ดิโอ + เวท
+	//    (นิยามเดียวกับ Total Daily Energy Output ของ GetDailyAnalyticsData ข้อ 6 ด้านบน)
 	var cardioCalOut struct{ Total float64 }
 	config.DB.Raw(`SELECT COALESCE(SUM(cdors_calories), 0) as total
 		FROM cardio_result WHERE cdors_date BETWEEN ? AND ?`, start, end).Scan(&cardioCalOut)
@@ -497,9 +482,8 @@ func GetAdminAnalyticsOverviewData(start, end string) AdminAnalyticsOverview {
 	config.DB.Raw(`SELECT COALESCE(SUM(wtrs_calories), 0) as total
 		FROM weight_training_result WHERE wtrs_date BETWEEN ? AND ?`, start, end).Scan(&weightCalOut)
 
-	// Baseline รวมทุกคน = Σ (CalculateBaselineExpenditure(BMR ล่าสุดของสมาชิก) × จำนวนวันที่มีกิจกรรมในช่วง)
-	// BMR ล่าสุด fallback เป็น FallbackBmr เมื่อสมาชิกไม่เคยมี member_bmr_history เลย ตรงกับค่า fallback
-	// เดียวกับ GetDailyAnalytics (isBmrEstimated)
+	// Baseline รวมทุกคน = ผลรวมของ (Baseline ต่อวันของสมาชิกแต่ละคน × จำนวนวันที่คนนั้นมีกิจกรรมในช่วง)
+	// สมาชิกที่ไม่เคยมีประวัติ BMR เลย ใช้ FallbackBmr แทน (ค่าเดียวกับที่ GetDailyAnalyticsData ใช้)
 	type memberBaselineRow struct {
 		MbID uint    `gorm:"column:mb_id"`
 		Days int64   `gorm:"column:days"`
@@ -536,35 +520,30 @@ func GetAdminAnalyticsOverviewData(start, end string) AdminAnalyticsOverview {
 		SELECT DISTINCT mb_id, wtrs_date FROM weight_training_result
 		WHERE wtrs_date BETWEEN ? AND ?) t`, start, end).Scan(&weightSessions)
 
-	// นับแบบ DISTINCT mb_id+date เหมือน weightSessions ด้านบน — เดิมนับ COUNT(*) ตรงๆ ทำให้ถ้า
-	// สมาชิกคนเดียวบันทึกคาร์ดิโอหลายครั้งในวันเดียว จะถูกนับเป็นหลาย "ครั้ง" ขณะที่เวทยกกี่เซ็ต
-	// ในวันเดียวก็นับ 1 ครั้ง ทำให้วงกลมสัดส่วน weight/cardio เทียบกันคนละหน่วย
+	// นับแบบ DISTINCT mb_id+date เหมือน weightSessions ด้านบน (นับเป็น "1 ครั้ง" ต่อคนต่อวัน
+	// เหมือนกัน ไม่ว่าจะบันทึกกี่รอบในวันนั้น) ให้หน่วยนับตรงกันทั้งเวทและคาร์ดิโอ
 	var cardioSessions struct{ Count int64 }
 	config.DB.Raw(`SELECT COUNT(*) as count FROM (
 		SELECT DISTINCT mb_id, cdors_date FROM cardio_result
 		WHERE cdors_date BETWEEN ? AND ?) t`, start, end).Scan(&cardioSessions)
 
 	totalWorkouts := weightSessions.Count + cardioSessions.Count
-	// ฐานของ weight_percent/cardio_percent คือ "จำนวนครั้งที่บันทึก" (session count) ไม่ใช่พลังงาน
-	// หรือเวลา — เจตนา เพราะ weight_training_result ไม่มีฟิลด์เวลา (ดูข้อ 5 ด้านล่าง totalDuration
-	// นับเฉพาะคาร์ดิโอ) จึงไม่มีฐานเวลาที่ใช้เทียบทั้งสองประเภทกิจกรรมได้ session count เป็นค่าเดียว
-	// ที่มีครบทั้งคู่โดยไม่ต้องพึ่งฟิลด์ที่ขาด
+	// สัดส่วน weight/cardio คิดจาก "จำนวนครั้งที่บันทึก" ไม่ใช่พลังงานหรือเวลา (เวทเทรนนิ่งไม่มี
+	// ฟิลด์เก็บเวลา จึงใช้จำนวนครั้งเป็นหน่วยเดียวที่เทียบกันได้ทั้งสองกิจกรรม)
 	weightPercent, cardioPercent := 0.0, 0.0
 	if totalWorkouts > 0 {
 		weightPercent = float64(weightSessions.Count) / float64(totalWorkouts) * 100
 		cardioPercent = float64(cardioSessions.Count) / float64(totalWorkouts) * 100
 	}
 
-	// 5. เวลาออกกำลังกายรวม (นาที) จากคาร์ดิโอ — cdors_duration เก็บเป็นวินาที (เปลี่ยนจากนาที
-	// 2026-09-14) SUM ได้วินาทีรวม ต้องหาร 60 ก่อนส่งออกเป็น total_duration_minutes ด้านล่าง
+	// 5. เวลาออกกำลังกายรวม (นาที) จากคาร์ดิโอ — cdors_duration เก็บเป็นวินาทีในฐานข้อมูล
+	// ต้องหาร 60 ก่อนแปลงเป็นนาที
 	var totalDuration struct{ Total int64 }
 	config.DB.Raw(`SELECT COALESCE(SUM(cdors_duration), 0) as total
 		FROM cardio_result WHERE cdors_date BETWEEN ? AND ?`, start, end).Scan(&totalDuration)
 	totalDurationMinutes := int64(math.Round(float64(totalDuration.Total) / 60.0))
 
-	// 6. Chart data (รายวัน)
-	// calories_out = คาร์ดิโอ + เวท (Exercise Burn เต็มนิยาม บทที่ 2 หัวข้อ 2.1.4.6) — เดิมนับ
-	// แค่คาร์ดิโอ ทำให้กราฟไม่รวมพลังงานจากเวทเทรนนิ่งเลย
+	// 6. Chart data (รายวัน) — calories_out รวมทั้งคาร์ดิโอและเวทเทรนนิ่ง (Exercise Burn เต็มนิยาม)
 	var chartData []DayPoint
 	config.DB.Raw(`
 		SELECT DATE_FORMAT(d.date, '%Y-%m-%d') AS date,
@@ -596,7 +575,7 @@ func GetAdminAnalyticsOverviewData(start, end string) AdminAnalyticsOverview {
 		start, end, start, end, start, end, start, end, start, end, start, end,
 	).Scan(&chartData)
 
-	// 7. Weekly data — cal_out นับคาร์ดิโอ+เวทเช่นเดียวกับ chart_data ด้านบน
+	// 7. Weekly data — cal_out รวมคาร์ดิโอ+เวทเหมือน chart_data ด้านบน จัดกลุ่มเป็นรายสัปดาห์
 	var weeklyData []WeekPoint
 	config.DB.Raw(`
 		SELECT DATE_FORMAT(MIN(d.date), '%d/%m') AS label,
@@ -629,8 +608,8 @@ func GetAdminAnalyticsOverviewData(start, end string) AdminAnalyticsOverview {
 		start, end, start, end, start, end, start, end, start, end, start, end,
 	).Scan(&weeklyData)
 
-	// 8. Popular menus (Top 10) — sort count DESC, ชื่อเท่ากันให้เรียง ก-ฮ ต่อ (deterministic
-	//    กันผลลัพธ์สลับลำดับไปมาทุกครั้งที่ export เมื่อ count เท่ากันหลายแถว)
+	// 8. เมนูยอดนิยม 10 อันดับแรก — เรียงจำนวนครั้งมากไปน้อย ชื่อเท่ากันเรียง ก-ฮ ต่อ (กันลำดับสลับ
+	//    ไปมาเวลา count เท่ากันหลายแถว)
 	var popularMenus []MenuEntry
 	config.DB.Raw(`
 		SELECT COALESCE(n.ntt_food_name, dn.dntt_food_name, 'อื่นๆ') AS name,

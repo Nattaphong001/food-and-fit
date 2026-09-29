@@ -853,9 +853,6 @@ type WeightSessionSetInput struct {
 	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป — optional, nil เมื่อมือถือยังไม่ส่งมา เก็บลง DB
 	// ตรงๆ เท่านั้น ไม่เข้าสูตรคำนวณพลังงานแล้ว (สูตรเวทถูกลบออก 2026-09-22 รอกำหนดสูตรใหม่)
 	WtrsRestSeconds *int `json:"wtrs_rest_seconds"`
-	// เวลาออกแรงจริงของเซตนี้ (วินาที) — optional, nil เมื่อมือถือยังไม่ส่งมา เก็บลง DB ตรงๆ เท่านั้น
-	// ไม่เข้าสูตรคำนวณพลังงานแล้ว (สูตรเวทถูกลบออก 2026-09-22 รอกำหนดสูตรใหม่)
-	WtrsActiveSeconds *int `json:"wtrs_active_seconds"`
 }
 
 // WeightSessionRequest - บันทึกผลเวทเทรนนิ่งทั้งเซสชันในคำขอเดียว (แทนที่ของเดิมที่ยิงทีละเซต
@@ -897,8 +894,8 @@ const abnormalOneRepMaxJumpRatio = 1.2
 // SaveWorkoutResult บันทึกผลเวทเทรนนิ่งทั้งเซสชัน — รับทั้งเซสชันครั้งเดียว (ไม่ใช่ยิงทีละเซต) กัน
 // เน็ตหลุดกลางทางแล้วได้ข้อมูลครึ่งๆ
 //
-// สูตรคำนวณพลังงาน: Session MET ตามตาราง 2.2 + RIR (Reps in Reserve) (แก้ 2026-09-27 แทนที่ Effort
-// Ratio ≥ 0.90 — ดู services.CalculateWeightTrainingCalories และ ../../CLAUDE.md ข้อ 7[B-1])
+// สูตรคำนวณพลังงาน: METs คงที่ต่อท่า (weight_exercises.wet_mets, แก้ 2026-09-29 แทนที่ Session MET +
+// RIR — ดู services.CalculateWeightTrainingCalories และ ../../CLAUDE.md ข้อ 7[B-1])
 func SaveWorkoutResult(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -913,11 +910,11 @@ func SaveWorkoutResult(c *gin.Context) {
 		return
 	}
 
-	// ตรวจเวลารวม/เวลาพัก/เซต ก่อนแตะ DB — เวลารวมคูณ kcal ตรงๆ (Session MET × เวลารวม ไม่มีเพดานในสูตร)
+	// ตรวจเวลารวม/เวลาพัก/เซต ก่อนแตะ DB — เวลารวมคูณ kcal ตรงๆ (METs ของท่า × เวลารวม ไม่มีเพดานในสูตร)
 	// จึงต้องปฏิเสธค่าที่เป็นไปไม่ได้ที่นี่ ไม่แก้ค่าเงียบๆ (ดู helpers.ValidateWeightSession)
 	checks := make([]helpers.WeightSetCheck, 0, len(req.Sets))
 	for _, s := range req.Sets {
-		checks = append(checks, helpers.WeightSetCheck{Reps: s.WtrsReps, WeightKg: s.WtrsWeight, RestSeconds: s.WtrsRestSeconds, WorkSeconds: s.WtrsActiveSeconds})
+		checks = append(checks, helpers.WeightSetCheck{Reps: s.WtrsReps, WeightKg: s.WtrsWeight, RestSeconds: s.WtrsRestSeconds})
 	}
 	if ok, msg := helpers.ValidateWeightSession(req.TotalDurationSeconds, checks); !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
@@ -976,7 +973,8 @@ func SaveWorkoutResult(c *gin.Context) {
 	}
 
 	// 1RM ที่ดีที่สุดจากประวัติเดิม (ไม่รวมเซสชันนี้, Reps 1-10 เท่านั้น — ดู GetBestOneRepMax) —
-	// เข้าสูตรพลังงานจริงแล้ว (RIR ระดับเซสชัน) ไม่ใช่แค่แสดงผลอย่างเดียวเหมือนก่อน 2026-09-26
+	// ไม่เข้าสูตรพลังงานแล้ว (2026-09-29 เปลี่ยนเป็น METs คงที่ต่อท่า ดู ../../CLAUDE.md ข้อ 7[B-1])
+	// ใช้แค่เตือน (ไม่ block) เมื่อ 1RM ที่ประเมินได้ในเซสชันนี้กระโดดผิดปกติจากประวัติ
 	oneRepMax, _, _, _, _ := services.GetBestOneRepMax(uid, req.WetID)
 
 	// เลขเซ็ทนับต่อเนื่องทั้งวันจาก DB จริง ไม่ใช้เลขเซ็ทจาก client ตรงๆ — client (หน้าจอฝึก) นับ
@@ -1003,12 +1001,8 @@ func SaveWorkoutResult(c *gin.Context) {
 		return
 	}
 
-	checksForCalc := make([]helpers.WeightSetCheck, len(validSets))
-	for i, s := range validSets {
-		checksForCalc[i] = helpers.WeightSetCheck{Reps: s.WtrsReps, WeightKg: s.WtrsWeight, RestSeconds: s.WtrsRestSeconds, WorkSeconds: s.WtrsActiveSeconds}
-	}
-	kcalPerSet, totalKcal, sessionMET, intensityLevel := services.CalculateWeightTrainingCalories(
-		exercise.WetEquipment, bodyWeight, oneRepMax, req.TotalDurationSeconds, checksForCalc,
+	kcalPerSet, totalKcal := services.CalculateWeightTrainingCalories(
+		exercise.WetMets, bodyWeight, req.TotalDurationSeconds, len(validSets),
 	)
 
 	rows := make([]models.WeightTrainingResult, 0, len(validSets))
@@ -1018,18 +1012,16 @@ func SaveWorkoutResult(c *gin.Context) {
 	for i, s := range validSets {
 		duration := req.TotalDurationSeconds
 		rows = append(rows, models.WeightTrainingResult{
-			WtrsDate:           today,
-			WtrsSetNo:          nextSetNo,
-			WtrsReps:           s.WtrsReps,
-			WtrsWeight:         s.WtrsWeight,
-			WtrsDuration:       &duration,
-			WtrsRestSeconds:    s.WtrsRestSeconds,
-			WtrsActiveSeconds:  s.WtrsActiveSeconds,
-			WtrsIntensityLevel: intensityLevel,
-			WtrsCalories:       kcalPerSet[i],
-			MbID:               uid,
-			WetID:              &req.WetID,
-			WschID:             req.WschID,
+			WtrsDate:          today,
+			WtrsSetNo:         nextSetNo,
+			WtrsReps:          s.WtrsReps,
+			WtrsWeight:        s.WtrsWeight,
+			WtrsDuration:      &duration,
+			WtrsRestSeconds:   s.WtrsRestSeconds,
+			WtrsCalories:      kcalPerSet[i],
+			MbID:              uid,
+			WetID:             &req.WetID,
+			WschID:            req.WschID,
 		})
 		nextSetNo++
 
@@ -1063,8 +1055,7 @@ func SaveWorkoutResult(c *gin.Context) {
 		"calculation": gin.H{
 			"one_rep_max_used": oneRepMax,
 			"body_weight_kg":   bodyWeight,
-			"session_met":      sessionMET,
-			"intensity_level":  intensityLevel,
+			"mets":             exercise.WetMets,
 		},
 	}
 	recentWeightSessions.Complete(submission, http.StatusOK, body)
