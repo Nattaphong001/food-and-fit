@@ -1,14 +1,16 @@
 package helpers
 
 import (
+	"crypto/rand"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // ========================================
@@ -50,12 +52,33 @@ func ValidateOTP(otp string) (bool, string) {
 
 // GenerateOTPCode - สุ่มรหัส OTP 6 หลัก (000000-999999) ใช้ร่วมกันทั้งสมัครสมาชิก (Register),
 // ส่ง OTP ใหม่ (ResendOTP) และขอรีเซ็ตรหัสผ่าน (RequestOTP) — เดิมโค้ดสุ่มนี้อินไลน์ซ้ำ 3 จุด
-// (บางจุดใช้ math/rand global เฉยๆ บางจุดสร้าง rand.Source เองจาก time.Now().UnixNano() —
-// Go 1.20+ auto-seed math/rand global อยู่แล้ว ความสุ่มเทียบเท่ากัน ไม่ต่างกันจริง) รวมมาไว้จุดเดียว
+// รวมมาไว้จุดเดียว ใช้ crypto/rand (ไม่ใช้ math/rand ที่เดาค่าถัดไปได้ถ้ารู้ state — OTP เป็นความลับ
+// ที่ใช้ยืนยันตัวตน/รีเซ็ตรหัสผ่าน ต้องสุ่มแบบ cryptographically secure)
 // อายุ OTP (5 นาทีสำหรับรีเซ็ตรหัสผ่าน, 10 นาทีสำหรับสมัคร/ยืนยันอีเมล) ยังกำหนดแยกที่ caller เอง
 // เพราะแตกต่างกันจริงตามการออกแบบเดิม ไม่ใช่ความไม่สอดคล้องที่ต้องรวม
 func GenerateOTPCode() string {
-	return fmt.Sprintf("%06d", rand.Intn(1000000))
+	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err != nil {
+		panic("crypto/rand unavailable: " + err.Error())
+	}
+	return fmt.Sprintf("%06d", n.Int64())
+}
+
+// HashOTPCode - hash รหัส OTP ด้วย bcrypt ก่อนเก็บลง mb_otp (แก้ 2026-09-29 จากเดิมเก็บ plaintext
+// ตรงๆ — DB หลุดแล้วมี OTP ที่ยังไม่หมดอายุคือยืนยันตัวตน/รีเซ็ตรหัสผ่านได้ทันที) ใช้ bcrypt แทน hash
+// เร็วแบบ SHA-256 เพราะ OTP มีแค่ 1,000,000 ค่าที่เป็นไปได้ (6 หลัก) ไล่ hash เร็วครบภายในเสี้ยววินาที
+// bcrypt ช้าพอที่จะทำให้ไล่ครบไม่ทันก่อน OTP หมดอายุ (5-10 นาที)
+func HashOTPCode(otp string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
+	return string(hash), err
+}
+
+// CompareOTPCode - เทียบรหัส OTP ที่ผู้ใช้กรอกกับ hash ที่เก็บไว้ใน mb_otp
+func CompareOTPCode(hashedOtp, otp string) bool {
+	if hashedOtp == "" {
+		return false
+	}
+	return bcrypt.CompareHashAndPassword([]byte(hashedOtp), []byte(otp)) == nil
 }
 
 // ValidateGender - ตรวจสอบเพศ (1=ชาย, 2=หญิง เท่านั้น)

@@ -13,7 +13,7 @@ type Member struct {
 	MbBirthDate    time.Time  `gorm:"column:mb_birth_date;type:date"`
 	MbProfilePic   string     `gorm:"column:mb_profile_pic;type:varchar(255)"`
 	MbIsVerified   int        `gorm:"column:mb_is_verified;type:tinyint;default:0"`
-	MbOtp          string     `gorm:"column:mb_otp;type:varchar(6)"`
+	MbOtp          string     `gorm:"column:mb_otp;type:varchar(60)" json:"-"` // bcrypt hash ไม่ใช่ plaintext (แก้ 2026-09-29)
 	MbOtpExpired   *time.Time `gorm:"column:mb_otp_expired;type:datetime"`
 	MbCreatedAt    time.Time  `gorm:"column:mb_created_at;autoCreateTime"`
 	MbUpdatedAt    time.Time  `gorm:"column:mb_updated_at;autoUpdateTime"`

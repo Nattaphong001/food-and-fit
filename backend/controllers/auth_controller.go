@@ -59,6 +59,11 @@ func Register(c *gin.Context) {
 	}
 
 	otpCode := helpers.GenerateOTPCode()
+	otpHash, err := helpers.HashOTPCode(otpCode)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถสร้างรหัส OTP ได้"})
+		return
+	}
 	expiration := time.Now().Add(10 * time.Minute)
 
 	var existingUser models.Member
@@ -71,7 +76,7 @@ func Register(c *gin.Context) {
 		if err := config.DB.Model(&existingUser).Updates(map[string]interface{}{
 			"mb_password_hash": string(hashedPassword),
 			"mb_full_name":     req.FullName,
-			"mb_otp":           otpCode,
+			"mb_otp":           otpHash,
 			"mb_otp_expired":   expiration,
 		}).Error; err != nil {
 			slog.Error("Register: update existing user failed", "err", err)
@@ -91,7 +96,7 @@ func Register(c *gin.Context) {
 		MbEmail:        req.Email,
 		MbPasswordHash: string(hashedPassword),
 		MbFullName:     req.FullName,
-		MbOtp:          otpCode,
+		MbOtp:          otpHash,
 		MbOtpExpired:   &expiration,
 		MbIsVerified:   0,
 		MbGender:       1,
@@ -253,7 +258,7 @@ func VerifyEmail(c *gin.Context) {
 		return
 	}
 
-	if member.MbOtp != req.Otp {
+	if !helpers.CompareOTPCode(member.MbOtp, req.Otp) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "รหัส OTP ไม่ถูกต้อง"})
 		return
 	}
@@ -307,10 +312,15 @@ func ResendOTP(c *gin.Context) {
 	}
 
 	newOtp := helpers.GenerateOTPCode()
+	newOtpHash, err := helpers.HashOTPCode(newOtp)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถสร้าง OTP ใหม่ได้"})
+		return
+	}
 	expiration := time.Now().Add(10 * time.Minute)
 
 	if err := config.DB.Model(&member).Updates(map[string]interface{}{
-		"mb_otp":         newOtp,
+		"mb_otp":         newOtpHash,
 		"mb_otp_expired": expiration,
 	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถสร้าง OTP ใหม่ได้"})
