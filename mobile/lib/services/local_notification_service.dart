@@ -12,10 +12,12 @@ class LocalNotificationService {
   final _storage = GetStorage();
 
   static const int _idInactivity     = 4;
+  static const int _idCardioProgress = 5;
 
-  static const _chWelcome = 'food_fit_welcome';
-  static const _chNudge   = 'food_fit_nudge';
-  static const chSmart    = 'food_fit_smart'; // ใช้โดย DailyNotificationEngine
+  static const _chWelcome        = 'food_fit_welcome';
+  static const _chNudge          = 'food_fit_nudge';
+  static const chSmart           = 'food_fit_smart'; // ใช้โดย DailyNotificationEngine
+  static const _chCardioProgress = 'food_fit_cardio_progress';
 
   Future<void> init() async {
     await AwesomeNotifications().initialize(
@@ -40,6 +42,14 @@ class LocalNotificationService {
           channelDescription: 'Meal and workout reminders based on today\'s progress',
           importance: NotificationImportance.High,
           playSound: true,
+          enableVibration: true,
+        ),
+        NotificationChannel(
+          channelKey: _chCardioProgress,
+          channelName: 'Cardio Progress',
+          channelDescription: 'แจ้งเตือน+สั่นเบาๆ เป็นระยะระหว่างออกกำลังกายคาร์ดิโอ กันลืมกดจบเมื่อพับ/ล็อกจอ',
+          importance: NotificationImportance.Default,
+          playSound: false,
           enableVibration: true,
         ),
       ],
@@ -145,6 +155,26 @@ class LocalNotificationService {
       }
     }
     await _resetInactivityNudge();
+  }
+
+  // ── ระหว่างฝึกคาร์ดิโอ — เรียกเป็นระยะจาก CardioActivityExerciseView ─────────
+  // ใช้ id เดิมซ้ำทุกครั้ง (ไม่สุ่ม id ใหม่) เพื่อให้แจ้งเตือนอัปเดตทับของเก่าตัวเดียว
+  // (โชว์เวลาล่าสุดเหมือนโน้ตแอปเพลง) แทนที่จะเด้งซ้อนกันเป็นตั้งทุก 5 นาที
+  Future<void> showCardioProgress(int elapsedMinutes) async {
+    await AwesomeNotifications().createNotification(
+      content: NotificationContent(
+        id: _idCardioProgress,
+        channelKey: _chCardioProgress,
+        title: '🏃 กำลังออกกำลังกาย',
+        body: 'ผ่านไปแล้ว $elapsedMinutes นาที แตะเพื่อกลับไปหน้าออกกำลังกาย',
+        payload: {'route': 'workout'},
+        autoDismissible: true,
+      ),
+    );
+  }
+
+  Future<void> cancelCardioProgress() async {
+    await AwesomeNotifications().cancel(_idCardioProgress);
   }
 
   // ── ยกเลิกทั้งหมดตอน logout ─────────────────────────────────────────────

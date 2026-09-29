@@ -14,6 +14,7 @@ import '../../../core/widgets/cached_image.dart';
 import '../../../core/widgets/expandable_session_sheet.dart';
 import '../../../core/widgets/top_flash.dart';
 import '../../../core/widgets/workout_timer.dart';
+import '../../../services/local_notification_service.dart';
 import '../../../services/member_service.dart';
 import '../../../services/workout_service.dart';
 
@@ -150,6 +151,7 @@ class _CardioActivityExerciseViewState extends State<CardioActivityExerciseView>
     _countdownTimer?.cancel();
     _globalTimer?.cancel();
     _restTimer?.cancel();
+    LocalNotificationService.to.cancelCardioProgress();
     _distanceController.dispose();
     _videoController?.dispose();
     super.dispose();
@@ -181,7 +183,20 @@ class _CardioActivityExerciseViewState extends State<CardioActivityExerciseView>
     _globalTimer?.cancel();
     _globalTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() => _globalSeconds++);
+      _checkProgressReminder();
     });
+  }
+
+  // แจ้งเตือน+สั่นเบาๆ ทุก _progressReminderIntervalSeconds ระหว่างออกกำลังกายจริง (ไม่นับตอนพัก
+  // เพราะ _globalTimer หยุดเดินอยู่แล้วช่วงนั้น — ดู _startRest/_endRest) กันลืมกดจบเมื่อพับ/ล็อกจอไว้
+  // นาน ค่า 5 นาทีเป็นค่าที่ผู้พัฒนาเลือกเอง ไม่ใช่ตัวเลขจากสเปกบทที่ 2 ปรับได้ตามความเหมาะสม
+  static const int _progressReminderIntervalSeconds = 5 * 60;
+
+  void _checkProgressReminder() {
+    if (_globalSeconds > 0 && _globalSeconds % _progressReminderIntervalSeconds == 0) {
+      HapticFeedback.lightImpact();
+      LocalNotificationService.to.showCardioProgress(_globalSeconds ~/ 60);
+    }
   }
 
   void _startRest() {
