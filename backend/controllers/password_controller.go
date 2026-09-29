@@ -97,11 +97,16 @@ func RequestOTP(c *gin.Context) {
 
 	// สร้างรหัส OTP 6 หลัก
 	otpCode := helpers.GenerateOTPCode()
+	otpHash, hashErr := helpers.HashOTPCode(otpCode)
+	if hashErr != nil {
+		helpers.RespondInternalError(c, "เกิดข้อผิดพลาดในการสร้างรหัส OTP")
+		return
+	}
 	expiredAt := time.Now().Add(5 * time.Minute)
 
 	// อัปเดต OTP ลงในตาราง member_profile
 	err := config.DB.Model(&member).Updates(map[string]interface{}{
-		"mb_otp":         otpCode,
+		"mb_otp":         otpHash,
 		"mb_otp_expired": expiredAt,
 	}).Error
 
@@ -141,8 +146,14 @@ func ResetPassword(c *gin.Context) {
 	}
 
 	var member models.Member
-	// ค้นหาคนที่มี Email และ OTP ตรงกันในฐานข้อมูล
-	if err := config.DB.Where("mb_email = ? AND mb_otp = ?", req.Email, req.OtpCode).First(&member).Error; err != nil {
+	// mb_otp เก็บเป็น bcrypt hash แล้ว (แก้ 2026-09-29) เทียบตรงๆ ใน SQL ไม่ได้ ต้อง SELECT ด้วย
+	// email อย่างเดียวก่อนแล้วค่อย bcrypt.CompareHashAndPassword — ข้อความ error ต้องเหมือนกันทั้ง
+	// "ไม่พบอีเมล" กับ "OTP ผิด" เพื่อไม่ให้เดาได้ว่าอีเมลนี้มีในระบบหรือไม่ (เดิมออกแบบไว้แบบนี้อยู่แล้ว)
+	if err := config.DB.Where("mb_email = ?", req.Email).First(&member).Error; err != nil {
+		helpers.RespondBadRequest(c, "otp", "รหัส OTP ไม่ถูกต้อง")
+		return
+	}
+	if !helpers.CompareOTPCode(member.MbOtp, req.OtpCode) {
 		helpers.RespondBadRequest(c, "otp", "รหัส OTP ไม่ถูกต้อง")
 		return
 	}
