@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -116,7 +115,7 @@ func UpdateNutritionCategoryImage(c *gin.Context) {
 		return
 	}
 	if category.NttcImage != "" {
-		os.Remove("./" + category.NttcImage)
+		helpers.RemoveOldFile("./" + category.NttcImage)
 	}
 	category.NttcImage = newPath
 
@@ -296,7 +295,7 @@ func UpdateFood(c *gin.Context) {
 		if newPath != "" {
 			// ลบรูปเก่าทิ้งเพื่อประหยัดพื้นที่
 			if food.NttFoodImage != "" {
-				os.Remove("./" + food.NttFoodImage)
+				helpers.RemoveOldFile("./" + food.NttFoodImage)
 			}
 			// อัปเดต Path เป็นรูปใหม่
 			food.NttFoodImage = newPath
@@ -341,7 +340,7 @@ func DeleteFood(c *gin.Context) {
 	var food models.Nutrition
 	if err := config.DB.First(&food, id).Error; err == nil {
 		if food.NttFoodImage != "" {
-			os.Remove("./" + food.NttFoodImage)
+			helpers.RemoveOldFile("./" + food.NttFoodImage)
 		}
 	}
 

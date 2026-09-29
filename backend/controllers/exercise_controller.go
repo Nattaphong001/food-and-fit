@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 
 	"food_and_fit_api/config"
@@ -57,7 +56,7 @@ func CreateMuscleGroup(c *gin.Context) {
 	// *หมายเหตุ: ตรวจสอบชื่อตัวแปร MugName, MugZone, MugImage ให้ตรงกับที่กำหนดไว้ใน models.MuscleGroup
 	muscle := models.MuscleGroup{
 		MugName:  mugName,
-		MugZone:  int8(mugZone),
+		MugZone:  int8(mugZone), // #nosec G115 -- validated by ValidateMuscleGroupZone (1-3) above
 		MugImage: imagePath,
 	}
 
@@ -96,7 +95,7 @@ func UpdateMuscleGroup(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 			return
 		}
-		muscle.MugZone = int8(mugZone)
+		muscle.MugZone = int8(mugZone) // #nosec G115 -- validated by ValidateMuscleGroupZone (1-3) above
 	}
 
 	// จัดการรูปภาพ (ถ้ามีการส่งไฟล์ใหม่มา)
@@ -109,7 +108,7 @@ func UpdateMuscleGroup(c *gin.Context) {
 		if newPath != "" {
 			// ลบไฟล์เก่าทิ้งเพื่อประหยัดพื้นที่ (ถ้าไม่ใช่ไฟล์ default)
 			if muscle.MugImage != "" && muscle.MugImage != "images/default.png" {
-				os.Remove("./" + muscle.MugImage)
+				helpers.RemoveOldFile("./" + muscle.MugImage)
 			}
 			// อัปเดต Path เป็นรูปใหม่
 			muscle.MugImage = newPath
@@ -144,7 +143,7 @@ func DeleteMuscleGroup(c *gin.Context) {
 	var muscle models.MuscleGroup
 	if err := config.DB.First(&muscle, id).Error; err == nil {
 		if muscle.MugImage != "" && muscle.MugImage != "images/default.png" {
-			os.Remove("./" + muscle.MugImage)
+			helpers.RemoveOldFile("./" + muscle.MugImage)
 		}
 	}
 
@@ -237,9 +236,9 @@ func CreateWeightExercise(c *gin.Context) {
 		WetTechnique:    wetTechnique,
 		WetVideo:        wetVideo,
 		WetLoopVideo:    loopVideoPath,
-		WetDifficulty:   int8(wetDiff),
-		WetEquipment:    int8(wetEquip),
-		WetExerciseType: int8(wetExerciseType),
+		WetDifficulty:   int8(wetDiff),         // #nosec G115 -- validated by ValidateWeightExerciseCodes above
+		WetEquipment:    int8(wetEquip),        // #nosec G115 -- validated by ValidateWeightExerciseCodes above
+		WetExerciseType: int8(wetExerciseType), // #nosec G115 -- validated by ValidateWeightExerciseCodes above
 		WetMets:         wetMets,
 		WetImage:        imagePath,
 	}
@@ -282,16 +281,31 @@ func UpdateWeightExercise(c *gin.Context) {
 		return
 	}
 	exercise.WetVideo = wetVideo
+	// เดิม 3 จุดนี้ Atoi แล้ว cast เป็น int8 ตรงๆ ไม่เช็คช่วงเหมือนฝั่ง Create (ที่มี
+	// ValidateWeightExerciseCodes กันอยู่แล้ว) — ค่านอกช่วง (เช่นพิมพ์ "300") จะ wrap เงียบๆ กลาย
+	// เป็นเลขผิดแทนที่จะ error (gosec G115) เพิ่มเช็คช่วงเดียวกับ Create ให้ตรงกัน
 	if diffStr := c.PostForm("wet_difficulty"); diffStr != "" {
-		diff, _ := strconv.Atoi(diffStr)
+		diff, err := strconv.Atoi(diffStr)
+		if err != nil || diff < 1 || diff > 3 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ระดับความยากต้องเป็น 1, 2 หรือ 3 เท่านั้น"})
+			return
+		}
 		exercise.WetDifficulty = int8(diff)
 	}
 	if equipStr := c.PostForm("wet_equipment"); equipStr != "" {
-		equip, _ := strconv.Atoi(equipStr)
+		equip, err := strconv.Atoi(equipStr)
+		if err != nil || equip < 1 || equip > 5 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "อุปกรณ์ต้องเป็นค่า 1-5 เท่านั้น"})
+			return
+		}
 		exercise.WetEquipment = int8(equip)
 	}
 	if typeStr := c.PostForm("wet_exercise_type"); typeStr != "" {
-		t, _ := strconv.Atoi(typeStr)
+		t, err := strconv.Atoi(typeStr)
+		if err != nil || t < 1 || t > 2 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ประเภทท่าฝึกต้องเป็น 1 หรือ 2 เท่านั้น"})
+			return
+		}
 		exercise.WetExerciseType = int8(t)
 	}
 	if metsStr := c.PostForm("wet_mets"); metsStr != "" {
@@ -317,7 +331,7 @@ func UpdateWeightExercise(c *gin.Context) {
 		}
 		if newPath != "" {
 			if exercise.WetImage != "" {
-				os.Remove("./" + exercise.WetImage)
+				helpers.RemoveOldFile("./" + exercise.WetImage)
 			}
 			exercise.WetImage = newPath
 		}
@@ -332,7 +346,7 @@ func UpdateWeightExercise(c *gin.Context) {
 		}
 		if newPath != "" {
 			if exercise.WetLoopVideo != "" {
-				os.Remove("./" + exercise.WetLoopVideo)
+				helpers.RemoveOldFile("./" + exercise.WetLoopVideo)
 			}
 			exercise.WetLoopVideo = newPath
 		}
@@ -384,10 +398,10 @@ func DeleteWeightExercise(c *gin.Context) {
 	var exercise models.WeightExercise
 	if err := config.DB.First(&exercise, id).Error; err == nil {
 		if exercise.WetImage != "" {
-			os.Remove("./" + exercise.WetImage)
+			helpers.RemoveOldFile("./" + exercise.WetImage)
 		}
 		if exercise.WetLoopVideo != "" {
-			os.Remove("./" + exercise.WetLoopVideo)
+			helpers.RemoveOldFile("./" + exercise.WetLoopVideo)
 		}
 	}
 
@@ -583,7 +597,7 @@ func CreateCardioExercise(c *gin.Context) {
 		CdoVideo:       cdoVideo,
 		CdoImage:       imagePath,
 		CdoLoopVideo:   loopVideoPath,
-		CdoHasDistance: int8(cdoHasDistance),
+		CdoHasDistance: int8(cdoHasDistance), // #nosec G115 -- validated as 0/1 above
 		CdcID:          uint(cdcID),
 	}
 
@@ -661,7 +675,7 @@ func UpdateCardioExercise(c *gin.Context) {
 		}
 		if newPath != "" {
 			if cardio.CdoImage != "" {
-				os.Remove("./" + cardio.CdoImage)
+				helpers.RemoveOldFile("./" + cardio.CdoImage)
 			}
 			cardio.CdoImage = newPath
 		}
@@ -676,7 +690,7 @@ func UpdateCardioExercise(c *gin.Context) {
 		}
 		if newPath != "" {
 			if cardio.CdoLoopVideo != "" {
-				os.Remove("./" + cardio.CdoLoopVideo)
+				helpers.RemoveOldFile("./" + cardio.CdoLoopVideo)
 			}
 			cardio.CdoLoopVideo = newPath
 		}
@@ -708,7 +722,7 @@ func DeleteCardioExercise(c *gin.Context) {
 	var cardio models.Cardio
 	if err := config.DB.First(&cardio, id).Error; err == nil {
 		if cardio.CdoImage != "" {
-			os.Remove("./" + cardio.CdoImage)
+			helpers.RemoveOldFile("./" + cardio.CdoImage)
 		}
 	}
 
@@ -806,7 +820,7 @@ func UpdateCardioCategoryImage(c *gin.Context) {
 		return
 	}
 	if category.CdcImage != "" {
-		os.Remove("./" + category.CdcImage)
+		helpers.RemoveOldFile("./" + category.CdcImage)
 	}
 	category.CdcImage = newPath
 

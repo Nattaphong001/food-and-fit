@@ -9,7 +9,6 @@ import (
 	"food_and_fit_api/services"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -79,7 +78,7 @@ func CreateWorkoutPlan(c *gin.Context) {
 		WptName:        wptName,
 		WptDaysPerWeek: wptDays,
 		WptDescription: wptDesc,
-		WptDifficulty:  int8(wptDiff),
+		WptDifficulty:  int8(wptDiff), // #nosec G115 -- validated by ValidateWorkoutPlanTemplate above
 		WptImage:       imagePath,
 	}
 
@@ -398,7 +397,7 @@ func CreatePersonalPlan(c *gin.Context) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	c.ShouldBindJSON(&req)
+	_ = c.ShouldBindJSON(&req) // #nosec G104 -- body ว่าง/parse ไม่ได้ก็ตั้งใจปล่อยผ่าน ใช้ชื่อ default แทน
 	name := req.Name
 	if name == "" {
 		name = "แผนส่วนตัวของฉัน"
@@ -1224,15 +1223,25 @@ func UpdateWorkoutPlan(c *gin.Context) {
 	if v := c.PostForm("wpt_name"); v != "" {
 		plan.WptName = v
 	}
+	// เดิม 2 จุดนี้ไม่เช็คช่วงเหมือนฝั่ง Create (ที่มี ValidateWorkoutPlanTemplate กันอยู่แล้ว) —
+	// ค่านอกช่วงจะเก็บผิดๆ ลง DB เงียบๆ หรือ wrap ตอน cast เป็น int8 (gosec G115)
 	if v := c.PostForm("wpt_days_per_week"); v != "" {
-		d, _ := strconv.Atoi(v)
+		d, err := strconv.Atoi(v)
+		if err != nil || d < 1 || d > 7 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "จำนวนวันฝึกต่อสัปดาห์ต้องอยู่ระหว่าง 1-7"})
+			return
+		}
 		plan.WptDaysPerWeek = d
 	}
 	if v := c.PostForm("wpt_description"); v != "" {
 		plan.WptDescription = v
 	}
 	if v := c.PostForm("wpt_difficulty"); v != "" {
-		d, _ := strconv.Atoi(v)
+		d, err := strconv.Atoi(v)
+		if err != nil || d < 1 || d > 3 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ระดับความยากต้องเป็น 1, 2 หรือ 3 เท่านั้น"})
+			return
+		}
 		plan.WptDifficulty = int8(d)
 	}
 
@@ -1244,7 +1253,7 @@ func UpdateWorkoutPlan(c *gin.Context) {
 		}
 		if newPath != "" {
 			if plan.WptImage != "" {
-				os.Remove("./" + plan.WptImage)
+				helpers.RemoveOldFile("./" + plan.WptImage)
 			}
 			plan.WptImage = newPath
 		}
