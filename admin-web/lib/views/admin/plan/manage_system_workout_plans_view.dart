@@ -153,15 +153,13 @@ class _ManageSystemWorkoutPlansViewState extends State<ManageSystemWorkoutPlansV
     try {
       final isEdit = oldItem != null;
       final path = isEdit ? '$_path/${oldItem['wpt_id']}' : _path;
+      final wptImageField = await ApiClient.buildUploadField(file: imageFile, bytes: imageBytes, fileName: imageFileName);
       final formData = dio.FormData.fromMap({
         'wpt_name': planName.trim(),
         'wpt_days_per_week': daysPerWeek.toString(),
         'wpt_difficulty': difficulty.toString(),
         'wpt_description': description.trim(),
-        if (kIsWeb && imageBytes != null && imageFileName != null)
-          'wpt_image': dio.MultipartFile.fromBytes(imageBytes, filename: imageFileName)
-        else if (!kIsWeb && imageFile != null)
-          'wpt_image': await dio.MultipartFile.fromFile(imageFile.path),
+        if (wptImageField != null) 'wpt_image': wptImageField,
       });
 
       final response = isEdit ? await _api.put(path, formData) : await _api.post(path, formData);

@@ -213,11 +213,9 @@ class _ManageNutritionCategoriesViewState extends State<ManageNutritionCategorie
   }
 
   Future<void> _uploadCategoryImage(int catId, File? imageFile, Uint8List? imageBytes, String? imageFileName) async {
+    final nttcImageField = await ApiClient.buildUploadField(file: imageFile, bytes: imageBytes, fileName: imageFileName);
     final formData = dio.FormData.fromMap({
-      if (kIsWeb && imageBytes != null && imageFileName != null)
-        'nttc_image': dio.MultipartFile.fromBytes(imageBytes, filename: imageFileName)
-      else if (!kIsWeb && imageFile != null)
-        'nttc_image': await dio.MultipartFile.fromFile(imageFile.path),
+      if (nttcImageField != null) 'nttc_image': nttcImageField,
     });
     await _api.put('$_path/$catId/image', formData);
   }

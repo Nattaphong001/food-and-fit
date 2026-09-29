@@ -238,13 +238,11 @@ class _ManageMuscleGroupViewState extends State<ManageMuscleGroupView> {
 
     try {
       final path = oldItem == null ? _path : '$_path/${oldItem['mug_id'] ?? oldItem['MugID']}';
+      final mugImageField = await ApiClient.buildUploadField(file: imageFile, bytes: imageBytes, fileName: imageFileName);
       final formData = dio.FormData.fromMap({
         'mug_name': name,
         'mug_zone': zone.isEmpty ? '1' : zone,
-        if (kIsWeb && imageBytes != null && imageFileName != null)
-          'mug_image': dio.MultipartFile.fromBytes(imageBytes, filename: imageFileName)
-        else if (!kIsWeb && imageFile != null)
-          'mug_image': await dio.MultipartFile.fromFile(imageFile.path),
+        if (mugImageField != null) 'mug_image': mugImageField,
       });
 
       final response = oldItem == null ? await _api.post(path, formData) : await _api.put(path, formData);

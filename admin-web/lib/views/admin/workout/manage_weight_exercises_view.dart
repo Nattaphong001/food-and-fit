@@ -302,6 +302,8 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     try {
       final path = isEdit ? "/exercises/weights/${item['wet_id'] ?? item['WetID']}" : "/exercises/weights";
 
+      final wetImageField = await ApiClient.buildUploadField(file: imageFile, bytes: imageBytes, fileName: imageFileName);
+      final wetLoopVideoField = await ApiClient.buildUploadField(file: loopVideoFile, bytes: loopVideoBytes, fileName: loopVideoFileName);
       final formData = FormData.fromMap({
         'wet_name': name.trim(),
         'wet_description': desc,
@@ -311,14 +313,8 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
         'wet_exercise_type': exerciseType.toString(),
         'wet_mets': metsValue.toString(),
         'wet_video': videoLink,
-        if (kIsWeb && imageBytes != null && imageFileName != null)
-          'wet_image': MultipartFile.fromBytes(imageBytes, filename: imageFileName)
-        else if (!kIsWeb && imageFile != null)
-          'wet_image': await MultipartFile.fromFile(imageFile.path),
-        if (kIsWeb && loopVideoBytes != null && loopVideoFileName != null)
-          'wet_loop_video': MultipartFile.fromBytes(loopVideoBytes, filename: loopVideoFileName)
-        else if (!kIsWeb && loopVideoFile != null)
-          'wet_loop_video': await MultipartFile.fromFile(loopVideoFile.path),
+        if (wetImageField != null) 'wet_image': wetImageField,
+        if (wetLoopVideoField != null) 'wet_loop_video': wetLoopVideoField,
       });
 
       final response = isEdit ? await _api.put(path, formData) : await _api.post(path, formData);

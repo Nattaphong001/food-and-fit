@@ -694,6 +694,7 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
       task: () async {
         try {
           final path = isEdit ? '/nutrition/foods/${oldItem['ntt_id']}' : '/nutrition/foods';
+          final nttFoodImageField = await ApiClient.buildUploadField(file: imageFile, bytes: imageBytes, fileName: imageFileName);
           final formData = FormData.fromMap({
             'ntt_food_name': name,
             'nttc_id': catId.toString(),
@@ -703,10 +704,7 @@ class _ManageFoodItemsViewState extends State<ManageFoodItemsView> {
             'ntt_fat': parsedFat.toString(),
             'ntt_serving_weight': parsedServingWeight.toString(),
             'ntt_unit': unit.isEmpty ? 'กรัม' : unit,
-            if (kIsWeb && imageBytes != null && imageFileName != null)
-              'ntt_food_image': MultipartFile.fromBytes(imageBytes, filename: imageFileName)
-            else if (!kIsWeb && imageFile != null)
-              'ntt_food_image': await MultipartFile.fromFile(imageFile.path),
+            if (nttFoodImageField != null) 'ntt_food_image': nttFoodImageField,
           });
 
           response = isEdit ? await _api.put(path, formData) : await _api.post(path, formData);
