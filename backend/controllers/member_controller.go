@@ -293,7 +293,7 @@ func UploadProfileImage(c *gin.Context) {
 	}
 
 	uploadDir := "uploads/profiles"
-	if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+	if err := os.MkdirAll(uploadDir, 0750); err != nil {
 		helpers.RespondInternalError(c, "ไม่สามารถสร้างแฟ้มจัดเก็บรูปภาพได้")
 		return
 	}

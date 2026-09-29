@@ -15,6 +15,13 @@ const (
 // 1. ฟังก์ชันส่งรหัส OTP สำหรับเปลี่ยนรหัสผ่าน (Forgot Password)
 // =====================================================================
 func SendResetPasswordEmail(targetEmail string, otp string) error {
+	// ตรวจซ้ำที่นี่ (defense-in-depth) แม้ caller ทุกจุด validate email ก่อนเรียกอยู่แล้ว —
+	// gosec G707 (SMTP header/command injection): net/smtp.SendMail เองก็ reject CR/LF ใน
+	// recipient อยู่แล้ว (validateLine ใน stdlib) แต่เช็คตรงนี้ด้วยให้ SAST เห็นชัดว่า sink นี้
+	// sanitize แล้วจริงๆ ไม่ใช่แค่พึ่ง caller
+	if !ValidateEmail(targetEmail) {
+		return fmt.Errorf("invalid target email")
+	}
 	subject := "Subject: Food & Fit - รหัสยืนยันการเปลี่ยนรหัสผ่าน\n"
 	mime := "MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\n\n"
 	body := fmt.Sprintf(`
@@ -35,13 +42,17 @@ func SendResetPasswordEmail(targetEmail string, otp string) error {
 	}
 	auth := smtp.PlainAuth("", smtpEmail, smtpPassword, smtpHost)
 
-	return smtp.SendMail(smtpHost+":"+smtpPort, auth, smtpEmail, []string{targetEmail}, message)
+	return smtp.SendMail(smtpHost+":"+smtpPort, auth, smtpEmail, []string{targetEmail}, message) // #nosec G707 -- targetEmail validated above (ValidateEmail regex rejects CR/LF), net/smtp also rejects CR/LF in recipients itself
 }
 
 // =====================================================================
 // 2. ฟังก์ชันส่งรหัส OTP สำหรับยืนยันการสมัครสมาชิกใหม่ (Register)
 // =====================================================================
 func SendWelcomeOTPEmail(targetEmail string, otp string) error {
+	// เหตุผลเดียวกับ SendResetPasswordEmail — เช็คซ้ำที่นี่กัน SAST flag G707
+	if !ValidateEmail(targetEmail) {
+		return fmt.Errorf("invalid target email")
+	}
 	subject := "Subject: ยินดีต้อนรับสู่ Food & Fit - รหัสยืนยันการสมัครสมาชิก\n"
 	mime := "MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\n\n"
 	body := fmt.Sprintf(`
@@ -65,5 +76,5 @@ func SendWelcomeOTPEmail(targetEmail string, otp string) error {
 	}
 	auth := smtp.PlainAuth("", smtpEmail, smtpPassword, smtpHost)
 
-	return smtp.SendMail(smtpHost+":"+smtpPort, auth, smtpEmail, []string{targetEmail}, message)
+	return smtp.SendMail(smtpHost+":"+smtpPort, auth, smtpEmail, []string{targetEmail}, message) // #nosec G707 -- same as SendResetPasswordEmail above
 }

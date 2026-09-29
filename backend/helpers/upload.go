@@ -3,6 +3,7 @@ package helpers
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -84,7 +85,9 @@ func SaveUploadedImage(c *gin.Context, file *multipart.FileHeader, uploadDir, pu
 	if verr := ValidateImageUpload(file); verr != nil {
 		return "", verr
 	}
-	os.MkdirAll(uploadDir, os.ModePerm)
+	if err := os.MkdirAll(uploadDir, 0750); err != nil {
+		return "", err
+	}
 	extension := filepath.Ext(file.Filename)
 	newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), extension)
 	savePath := filepath.Join(uploadDir, newFileName)
@@ -101,7 +104,9 @@ func SaveUploadedVideo(c *gin.Context, file *multipart.FileHeader, uploadDir, pu
 	if verr := ValidateVideoUpload(file); verr != nil {
 		return "", verr
 	}
-	os.MkdirAll(uploadDir, os.ModePerm)
+	if err := os.MkdirAll(uploadDir, 0750); err != nil {
+		return "", err
+	}
 	extension := filepath.Ext(file.Filename)
 	newFileName := fmt.Sprintf("%d_loop%s", time.Now().UnixNano(), extension)
 	savePath := filepath.Join(uploadDir, newFileName)
@@ -109,6 +114,16 @@ func SaveUploadedVideo(c *gin.Context, file *multipart.FileHeader, uploadDir, pu
 		return "", nil
 	}
 	return publicDir + "/" + newFileName, nil
+}
+
+// RemoveOldFile - ลบไฟล์รูป/วิดีโอเก่าตอนแก้ไข/ลบข้อมูล (แทนที่ os.Remove เปล่าๆ ที่เคยเมิน error
+// ทิ้งไป 15+ จุด — gosec G104) ไฟล์ไม่มีอยู่แล้วไม่ต้อง log (เคสปกติ เช่นข้อมูลเก่าไม่มีรูป) ส่วน error
+// อื่น (permission, disk) log ไว้เป็น warning เพื่อให้ orphan file ที่ลบไม่ได้จริงถูกสังเกตเห็น ไม่ error
+// กลับไปหา caller เพราะพฤติกรรมเดิมตั้งใจให้ลบรูปเก่าล้มเหลวไม่บล็อกการบันทึกข้อมูลใหม่
+func RemoveOldFile(path string) {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("could not remove old upload file", "path", path, "err", err)
+	}
 }
 
 var youtubeURLPattern = regexp.MustCompile(`^https://(www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)`)

@@ -3,7 +3,6 @@ package controllers
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -197,7 +196,7 @@ func BulkDeleteNutritionFoods(c *gin.Context) {
 		}
 
 		if food.NttFoodImage != "" {
-			os.Remove("./" + food.NttFoodImage)
+			helpers.RemoveOldFile("./" + food.NttFoodImage)
 		}
 		helpers.LogAdminMutation(c, "delete", "nutrition", id, food, nil)
 		succeeded = append(succeeded, bulkSucceededItem{ID: id, Name: food.NttFoodName})
