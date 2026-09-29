@@ -195,6 +195,8 @@ const (
 	WeightSetMaxWeightKg = 999.99
 	// ผลรวมเวลาพักทุกเซตต้องไม่เกินเวลารวม (ช่วงพักเป็นส่วนหนึ่งของเวลาเซสชัน) เผื่อคลาดเคลื่อนจากการปัดวินาที
 	WeightRestSumToleranceSeconds = 10
+	// weight_exercises.wet_equipment ของท่าบอดี้เวท (1=Barbell 2=Dumbbell 3=Machine 4=Cable 5=Bodyweight)
+	EquipmentBodyweight = 5
 )
 
 // WeightSetCheck - ข้อมูลต่อเซตที่ ValidateWeightSession ตรวจ (ประกาศแยกจาก controller กัน import วน)
@@ -207,8 +209,10 @@ type WeightSetCheck struct {
 // ValidateWeightSession - ตรวจความสมเหตุสมผลของเวลาและเซตตอนบันทึกผลเวทเทรนนิ่ง (SaveWorkoutResult)
 // ตอบ false พร้อมข้อความเมื่อค่าเป็นไปไม่ได้ ไม่แก้ค่าเงียบๆ (ต่างจากการตัดเพดานในสูตร) เพื่อไม่ให้ผลคำนวณ
 // ถูกปรับโดยที่ผู้ใช้ไม่รู้ — ลำดับ: จำนวนเซต → เวลารวม → แต่ละเซต → ผลรวมเวลาพัก
+// ท่าบอดี้เวท (bodyweight=true) ไม่มีช่องกรอกน้ำหนัก/จำนวนครั้งในแอป — ทุกเซตต้องเป็น Reps 0 และน้ำหนัก 0
+// (0 = ไม่ได้บันทึก ไม่ใช่ "ทำ 0 ครั้ง") พลังงานคิดจาก METs ของท่า × เวลารวมอย่างเดียวอยู่แล้ว
 // [USED] workout_controller.go (SaveWorkoutResult)
-func ValidateWeightSession(totalDurationSeconds int, sets []WeightSetCheck) (bool, string) {
+func ValidateWeightSession(totalDurationSeconds int, sets []WeightSetCheck, bodyweight bool) (bool, string) {
 	if len(sets) < 1 {
 		return false, "ต้องมีอย่างน้อย 1 เซต"
 	}
@@ -226,7 +230,11 @@ func ValidateWeightSession(totalDurationSeconds int, sets []WeightSetCheck) (boo
 	}
 	restSum := 0
 	for _, s := range sets {
-		if s.Reps < 1 || s.Reps > WeightSetMaxReps {
+		if bodyweight {
+			if s.Reps != 0 || s.WeightKg != 0 {
+				return false, "ท่าบอดี้เวทไม่ต้องบันทึกน้ำหนักและจำนวนครั้ง"
+			}
+		} else if s.Reps < 1 || s.Reps > WeightSetMaxReps {
 			return false, fmt.Sprintf("จำนวนครั้งต้องอยู่ระหว่าง 1-%d", WeightSetMaxReps)
 		}
 		if s.WeightKg < 0 || s.WeightKg > WeightSetMaxWeightKg {

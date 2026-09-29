@@ -80,7 +80,7 @@ func TestValidateWeightSession(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ok, msg := ValidateWeightSession(tc.duration, tc.sets)
+			ok, msg := ValidateWeightSession(tc.duration, tc.sets, false)
 			if ok != tc.want {
 				t.Errorf("ValidateWeightSession(%d, ...) = (%v, %q), want ok=%v", tc.duration, ok, msg, tc.want)
 			}
@@ -95,9 +95,26 @@ func TestValidateWeightSession(t *testing.T) {
 			kg   float64
 			want bool
 		}{{0, true}, {999.99, true}, {1000, false}, {-1, false}} {
-			ok, _ := ValidateWeightSession(540, []WeightSetCheck{{Reps: 10, WeightKg: tc.kg}})
+			ok, _ := ValidateWeightSession(540, []WeightSetCheck{{Reps: 10, WeightKg: tc.kg}}, false)
 			if ok != tc.want {
 				t.Errorf("weight %.2f → ok=%v, want %v", tc.kg, ok, tc.want)
+			}
+		}
+	})
+
+	t.Run("ท่าบอดี้เวท", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			set  WeightSetCheck
+			want bool
+		}{
+			{"ไม่มีน้ำหนักและจำนวนครั้ง", WeightSetCheck{Reps: 0, WeightKg: 0}, true},
+			{"ส่งจำนวนครั้งมา", WeightSetCheck{Reps: 10, WeightKg: 0}, false},
+			{"ส่งน้ำหนักมา", WeightSetCheck{Reps: 0, WeightKg: 10}, false},
+		} {
+			ok, _ := ValidateWeightSession(540, []WeightSetCheck{tc.set, tc.set, tc.set}, true)
+			if ok != tc.want {
+				t.Errorf("%s → ok=%v, want %v", tc.name, ok, tc.want)
 			}
 		}
 	})

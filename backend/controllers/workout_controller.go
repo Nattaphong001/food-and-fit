@@ -847,7 +847,8 @@ func GetUserSchedules(c *gin.Context) {
 // _completedSets)
 type WeightSessionSetInput struct {
 	WtrsSetNo  int     `json:"wtrs_set_no" binding:"required,gt=0"`
-	WtrsReps   int     `json:"wtrs_reps" binding:"required,gt=0"`
+	// 0 ได้เฉพาะท่าบอดี้เวท (ไม่มีช่องกรอก) — ท่าอื่นบังคับ 1 ขึ้นไปที่ helpers.ValidateWeightSession
+	WtrsReps   int     `json:"wtrs_reps" binding:"gte=0"`
 	WtrsWeight float64 `json:"wtrs_weight"`
 	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป — optional, nil เมื่อมือถือยังไม่ส่งมา เก็บลง DB
 	// ตรงๆ เท่านั้น ไม่เข้าสูตรคำนวณพลังงานแล้ว (สูตรเวทถูกลบออก 2026-09-22 รอกำหนดสูตรใหม่)
@@ -911,11 +912,19 @@ func SaveWorkoutResult(c *gin.Context) {
 
 	// ตรวจเวลารวม/เวลาพัก/เซต ก่อนแตะ DB — เวลารวมคูณ kcal ตรงๆ (METs ของท่า × เวลารวม ไม่มีเพดานในสูตร)
 	// จึงต้องปฏิเสธค่าที่เป็นไปไม่ได้ที่นี่ ไม่แก้ค่าเงียบๆ (ดู helpers.ValidateWeightSession)
+	// โหลดท่าก่อนตรวจ — กติกา Reps/น้ำหนักต่างกันระหว่างท่าบอดี้เวทกับท่าที่ใช้อุปกรณ์
+	var exercise models.WeightExercise
+	if err := config.DB.First(&exercise, req.WetID).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่พบท่าฝึกนี้ในระบบ"})
+		return
+	}
+	isBodyweight := int(exercise.WetEquipment) == helpers.EquipmentBodyweight
+
 	checks := make([]helpers.WeightSetCheck, 0, len(req.Sets))
 	for _, s := range req.Sets {
 		checks = append(checks, helpers.WeightSetCheck{Reps: s.WtrsReps, WeightKg: s.WtrsWeight, RestSeconds: s.WtrsRestSeconds})
 	}
-	if ok, msg := helpers.ValidateWeightSession(req.TotalDurationSeconds, checks); !ok {
+	if ok, msg := helpers.ValidateWeightSession(req.TotalDurationSeconds, checks, isBodyweight); !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
@@ -959,12 +968,6 @@ func SaveWorkoutResult(c *gin.Context) {
 		}
 	}()
 
-	var exercise models.WeightExercise
-	if err := config.DB.First(&exercise, req.WetID).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่พบท่าฝึกนี้ในระบบ"})
-		return
-	}
-
 	var bodyStat models.MemberBodyStat
 	bodyWeight := 70.0 // default fallback
 	if err := config.DB.Where("mb_id = ?", uid).Order("mbs_recorded_date desc").First(&bodyStat).Error; err == nil {
@@ -989,9 +992,10 @@ func SaveWorkoutResult(c *gin.Context) {
 
 	// กรองเฉพาะเซตที่สมบูรณ์ (Reps > 0) ก่อนเข้าสูตรพลังงาน — ลำดับต้องตรงกับ rows ด้านล่างเป๊ะ
 	// เพราะ services.CalculateWeightTrainingCalories คืน kcalPerSet ตามลำดับ index เดียวกับ validSets
+	// ท่าบอดี้เวทนับทุกเซต (Reps เป็น 0 เสมอ เพราะไม่มีช่องกรอก)
 	validSets := make([]WeightSessionSetInput, 0, len(req.Sets))
 	for _, s := range req.Sets {
-		if s.WtrsReps > 0 {
+		if isBodyweight || s.WtrsReps > 0 {
 			validSets = append(validSets, s)
 		}
 	}
