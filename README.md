@@ -92,7 +92,10 @@
 
 ค่า METs ของคาร์ดิโออ้างอิงจาก 2011 Compendium of Physical Activities (Ainsworth et al.) และยืนยันซ้ำว่าตรงกับ 2024 Adult Compendium ฉบับล่าสุด
 
-**ต่อยอด — Smart Auto Calorie (เวทเทรนนิ่ง):** เดิมให้ผู้ใช้เลือกความหนัก 3 ระดับเอง (เบา/กลาง/หนัก) เพื่อกำหนด METs แต่ตรวจสอบแล้วพบว่าฟีเจอร์นี้ไม่เคยทำงานจริง — แอปมือถือไม่เคยส่งค่าที่เลือกขึ้น API เลย เปลี่ยนมาให้ระบบอนุมาน METs อัตโนมัติแทน โดยไม่ต้องพึ่งสายรัดวัดหัวใจ: ใช้ **Dynamic METs Logic Matrix** (บทที่ 2 ข้อ 2.1.4.12) เลือก METs ต่อเซตจากหมวดท่าฝึก (แรงต้าน/น้ำหนักตัว) ประเภทท่า (Compound/Isolation) เวลาพักหลังเซตนั้น และ Reps — ค่า METs ทั้ง 6 ระดับ (3.5/5.0/6.0 สำหรับแรงต้าน, 2.8–3.5/3.8/8.0 สำหรับน้ำหนักตัว) ตรงกับรหัสใน 2011 Compendium of Physical Activities (Ainsworth et al., 2554) แล้วเฉลี่ยเป็น Session MET ของทั้งเซสชัน ก่อนเข้าสูตร net METs ด้านบนตรงๆ — เกณฑ์แปลงคำบรรยายระดับของสเปกเป็นตัวเลข (เช่น "หนักมาก" = Reps < 8) เป็นการตีความของผู้วิจัย รายละเอียดใน `docs/compendium-2011-met-check.md` — %1RM เทียบสถิติที่ดีที่สุดของสมาชิกยังคำนวณไว้แสดงเป็น label ความหนัก (เบา/กลาง/หนัก) เท่านั้น ไม่มีผลต่อพลังงานที่คำนวณได้
+**Weight training METs:** ใช้ค่า METs คงที่ต่อท่า (`weight_exercises.wet_mets`, กำหนดโดยแอดมิน) อ้างอิง
+2024 Adult Compendium of Physical Activities (Herrmann et al., 2567) — ประวัติโมเดลก่อนหน้าที่ตัดออก
+แล้วทั้งหมด (Session MET+RIR, Effort Ratio, Compendium Per-Set MET Matrix, Two-Compartment Energy
+Model, Dynamic METs Logic Matrix ฯลฯ) → `docs/formula_history_weight_training.md`
 
 ---
 
