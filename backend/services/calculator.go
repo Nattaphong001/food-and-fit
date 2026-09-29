@@ -1,8 +1,3 @@
-// สูตรคำนวณสุขภาพทั้งหมดของระบบ (BMI/BMR/TDEE/Target, มาโคร, 1RM, พลังงานคาร์ดิโอ/เวท) — จุดเดียว
-// ที่มีสูตรพวกนี้ ห้ามคำนวณซ้ำที่อื่น (ดู root CLAUDE.md ข้อ 7 = ตัวเลขที่ถูกต้อง ห้ามแก้)
-//
-// คอมเมนต์ในไฟล์นี้อธิบายแค่ "แต่ละส่วนทำอะไร" เท่านั้น — เหตุผล/ประวัติการตัดสินใจ/อ้างอิงงานวิจัย
-// ย้ายไปเก็บที่ .claude/skills/formula-guard/formula-comments-history.md แล้ว (2026-09-28)
 package services
 
 import (
@@ -73,10 +68,10 @@ func CalculateBaselineExpenditure(bmr float64) float64 {
 // ═══════════════════════════════════════════════════════════════════════
 // 2b. สัดส่วนสารอาหารมหัพภาค (Macronutrient Distribution) — CalculateMacroTargets
 // ═══════════════════════════════════════════════════════════════════════
-// สัดส่วนโปรตีน:คาร์บ:ไขมัน คงที่ต่อเป้าหมาย (ประวัติการย้ายจาก Dart มา Go → ดู formula-comments-history.md)
+// สัดส่วนโปรตีน:คาร์บ:ไขมัน คงที่ต่อเป้าหมาย
 type macroPercent struct{ protein, carb, fat float64 }
 
-// สัดส่วน % ต่อเป้าหมาย goalType: 1=ลดน้ำหนัก, 2=เพิ่มน้ำหนัก, 3=รักษาน้ำหนัก (ตรงกับ mbs_target ใน DB)
+// สัดส่วน % ต่อเป้าหมาย goalType: 1=ลดน้ำหนัก, 2=เพิ่มน้ำหนัก, 3=รักษาน้ำหนัก
 var macroPercentByGoal = map[int]macroPercent{
 	1: {protein: 0.40, carb: 0.35, fat: 0.25},
 	2: {protein: 0.30, carb: 0.50, fat: 0.20},
@@ -109,12 +104,12 @@ func EstimateOneRepMax(weightKg float64, reps int) float64 {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// 4. พลังงานคาร์ดิโอ — NetEnergyKcal / CalculateCardioCalories
+// NetEnergyKcal คือสูตรแกนกลาง (ACSM) — จุดคำนวณพลังงานเพียงจุดเดียวของทั้งระบบ
 // ═══════════════════════════════════════════════════════════════════════
-
-// NetEnergyKcal คำนวณพลังงานสุทธิที่เผาผลาญจริง (ไม่รวมพลังงานพักนิ่งที่ Baseline BMR×1.2 นับไปแล้ว)
+// คาร์ดิโอ เเละ เวทเทรนนิ่ง จะใช้ Net Energy Kcal ร่วมกัน
+//
+// Net Energy Kcal คำนวณพลังงานสุทธิที่เผาผลาญจริง (ไม่รวมพลังงานพักนิ่งที่ Baseline BMR × 1.2 นับไปแล้ว)
 // สูตร ACSM: Kcal (NET) = [(METs − 1) × 3.5 × น้ำหนักตัว(kg) / 200] × ระยะเวลา(นาที)
-// ใช้ร่วมกันทั้งคาร์ดิโอและเวทเทรนนิ่ง (ดู CalculateCardioCalories / CalculateWeightTrainingCalories)
 func NetEnergyKcal(mets, bodyWeightKg, minutes float64) float64 {
 	const metOxygenMlPerKgPerMin = 3.5 // ออกซิเจนที่ใช้ตอนพัก (1 MET) หน่วย ml/kg/นาที
 	const metKcalDivisor = 200.0       // ตัวหารแปลงเป็น kcal/นาที
@@ -127,35 +122,23 @@ func NetEnergyKcal(mets, bodyWeightKg, minutes float64) float64 {
 	return (netMets * metOxygenMlPerKgPerMin * bodyWeightKg / metKcalDivisor) * minutes
 }
 
-// CalculateCardioCalories คำนวณพลังงานสุทธิของคาร์ดิโอ 1 ครั้ง — mets มาจากตาราง cardio (cdo_mets)
-// ตัวแปร: mets=ค่า METs ของกิจกรรม, bodyWeightKg=น้ำหนักตัว(kg), durationSeconds=เวลาที่ทำ(วินาที)
-func CalculateCardioCalories(mets, bodyWeightKg float64, durationSeconds int) float64 {
-	return NetEnergyKcal(mets, bodyWeightKg, float64(durationSeconds)/60.0)
+// ═══════════════════════════════════════════════════════════════════════
+// 4. พลังงานคาร์ดิโอ
+// ═══════════════════════════════════════════════════════════════════════
+// CalculateCardioCalories คำนวณพลังงานสุทธิของคาร์ดิโอ 1 ครั้ง — mets มาจากตาราง cardio
+func CalculateCardioCalories(
+	mets float64, // METs ของท่านี้
+	bodyWeightKg float64, // น้ำหนักของผู้ออกกำลังกาย
+	// เวลาที่ฝึก (วินาที)
+	durationSeconds int) float64 {
+	// ส่งค่าเข้าสูตร Net Energy Kcal : แปลงวินาที → นาที ก่อนส่ง แล้วปัดผลลัพธ์ 2 ตำแหน่ง
+	return math.Round(NetEnergyKcal(mets, bodyWeightKg, float64(durationSeconds)/60.0)*100) / 100
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// 5. พลังงานเวทเทรนนิ่ง — METs คงที่ต่อท่า (แบบเดียวกับคาร์ดิโอ)
+// 5. พลังงานเวทเทรนนิ่ง
 // ═══════════════════════════════════════════════════════════════════════
-//
-// เปลี่ยนจาก Session MET + RIR เดิม (2026-09-27 ถึง 2026-09-29 — ดูประวัติ/เหตุผลที่เปลี่ยน →
-// root CLAUDE.md ข้อ 7[B-1]) มาเป็น METs คงที่ต่อท่า เก็บไว้ที่ weight_exercises.wet_mets
-// (กำหนดโดยแอดมิน อ้างอิง 2024 Adult Compendium of Physical Activities เหมือนที่ cardio.cdo_mets ใช้)
-//
-// วิธีคำนวณ:
-//  1. เวลาที่ใช้ = เวลาทั้งเซสชัน (เริ่มเซตแรกถึงจบเซตสุดท้าย รวมเวลาพักด้วย)
-//  2. เอา wet_mets ของท่านั้น + น้ำหนักตัว + เวลา เข้าสูตรพลังงานเดียวกับคาร์ดิโอ (NetEnergyKcal)
-//  3. พลังงานที่ได้ทั้งเซสชัน หารเฉลี่ยแจกให้ทุกเซตเท่าๆ กัน (ไม่ได้แยกคำนวณเป็นรายเซต)
-
-// CalculateWeightTrainingCalories คำนวณพลังงานที่เผาผลาญของเซสชันเวทเทรนนิ่ง 1 ท่า
-//
-// mets: METs ของท่านี้ (weight_exercises.wet_mets)
-// bodyWeightKg: น้ำหนักตัวสมาชิก ณ ตอนนี้
-// totalDurationSeconds: เวลารวมทั้งเซสชัน (เริ่มเซตแรกถึงจบเซตสุดท้าย รวมเวลาพักด้วย)
-// setCount: จำนวนเซตที่จะบันทึกจริงในเซสชันนี้
-//
-// คืนค่า:
-//   - kcalPerSet: พลังงานที่แจกให้แต่ละเซต (หารเท่ากันทุกเซตจาก totalKcal)
-//   - totalKcal: พลังงานรวมทั้งเซสชัน (ปัด 2 ตำแหน่ง)
+// CalculateWeightTrainingCalories คำนวณพลังงานที่เผาผลาญของเซสชันเวทเทรนนิ่ง 1 ท่า — mets มาจากตาราง weight_exercises
 func CalculateWeightTrainingCalories(
 	mets float64, // METs ของท่านี้ (wet_mets)
 	bodyWeightKg float64, // น้ำหนักของผู้ออกกำลังกาย
@@ -167,9 +150,11 @@ func CalculateWeightTrainingCalories(
 		return kcalPerSet, 0 // ไม่มีเซตให้คำนวณ
 	}
 
-	// 1. เอา MET ของท่า + น้ำหนักตัว + เวลารวมทั้งเซสชัน เข้าสูตรพลังงานเดียวกับคาร์ดิโอ
+	// 1. เอา MET ของท่า , น้ำหนักตัว , เวลารวมทั้งเซสชัน เข้าสูตร Net Energy Kcal
 	minutes := float64(totalDurationSeconds) / 60.0 // แปลงวินาทีเป็นนาที ให้ตรงหน่วยของสูตร
+	// ส่งค่าเข้าสูตรแกนกลาง NetEnergyKcal
 	totalKcal = math.Round(NetEnergyKcal(mets, bodyWeightKg, minutes)*100) / 100
+	// เรียกฟังก์ชันพร้อมส่งค่าเข้าไป → รับค่าที่ return กลับมา → ปัด 2 ตำแหน่ง → เก็บใส่ totalKcal
 
 	// 2. หารพลังงานรวมเฉลี่ยเท่ากันทุกเซต (perSetShare = พลังงานต่อ 1 เซต)
 	perSetShare := totalKcal / float64(setCount)
@@ -177,5 +162,5 @@ func CalculateWeightTrainingCalories(
 		kcalPerSet[i] = perSetShare
 	}
 
-	return kcalPerSet, totalKcal
+	return kcalPerSet, totalKcal // ค่าพลังงานต่อเซต เเละ พลังงานรวมทั้งหมด
 }

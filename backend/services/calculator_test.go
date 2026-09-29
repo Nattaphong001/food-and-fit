@@ -105,13 +105,14 @@ func TestNetEnergyKcal(t *testing.T) {
 
 // cdors_duration เก็บเป็นวินาที (ตั้งแต่ 2026-09-14) — 1800 วินาที = 30 นาที ต้องได้ค่าเท่ากับ NetEnergyKcal 30 นาที
 func TestCalculateCardioCalories_DurationInSeconds(t *testing.T) {
+	// ผลดิบจาก NetEnergyKcal คือ 268.275 — CalculateCardioCalories ปัด 2 ตำแหน่งก่อนคืนค่า (เหมือนเวทเทรนนิ่ง) → 268.28
 	got := CalculateCardioCalories(8.3, 70, 30*60)
-	if !almostEqual(got, 268.275, 0.001) {
-		t.Errorf("CalculateCardioCalories(8.3, 70, 1800s) = %.4f, want 268.275", got)
+	if !almostEqual(got, 268.28, 0.001) {
+		t.Errorf("CalculateCardioCalories(8.3, 70, 1800s) = %.4f, want 268.28", got)
 	}
-	// ว่ายน้ำ 6.0 METs (METs ต่ำสุดของตาราง cardio) 45 นาที 65 กก. = 5×1.13750×45 = 255.9375
-	if got := CalculateCardioCalories(6.0, 65, 45*60); !almostEqual(got, 255.9375, 0.001) {
-		t.Errorf("CalculateCardioCalories(6.0, 65, 2700s) = %.4f, want 255.9375", got)
+	// ว่ายน้ำ 6.0 METs (METs ต่ำสุดของตาราง cardio) 45 นาที 65 กก. ผลดิบ = 255.9375 → ปัด 2 ตำแหน่ง = 255.94
+	if got := CalculateCardioCalories(6.0, 65, 45*60); !almostEqual(got, 255.94, 0.001) {
+		t.Errorf("CalculateCardioCalories(6.0, 65, 2700s) = %.4f, want 255.94", got)
 	}
 }
 
