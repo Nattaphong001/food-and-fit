@@ -197,9 +197,11 @@ class _ManageMembersViewState extends State<ManageMembersView> {
     }
 
     // loading จริง (ยังไม่เคยมีข้อมูล) หรือ error → skeleton shimmer เฉพาะในการ์ด (ไม่ลากทั้งบล็อกหาย)
-    // ส่วนตอนพิมพ์ค้นหาแล้ว fetch ใหม่ (_isLoading=true แต่เคยมี _total ก่อนหน้าแล้ว) ให้โชว์ตัวเลขเดิม
-    // ค้างไว้ก่อนแทนสั่น/กระพริบทุกคีย์สโตรก พอผลค้นหาใหม่มาถึงค่อยอัปเดตทันที
-    final showSkeleton = (_isLoading && _total == 0) || _hasError;
+    // ส่วนตอนพิมพ์ค้นหาแล้ว fetch ใหม่ (_isLoading=true แต่เคยโหลดสำเร็จมาก่อนแล้ว) ให้โชว์ตัวเลขเดิม
+    // ค้างไว้ก่อนแทนสั่น/กระพริบทุกคีย์สโตรก พอผลค้นหาใหม่มาถึงค่อยอัปเดตทันที — เดิมเช็ค `_total == 0`
+    // เป็นตัวแทน "ยังไม่เคยโหลด" ซึ่งพังตอนค้นหาแล้วผลลัพธ์จริงๆ ว่างเปล่า (_total กลับมาเป็น 0
+    // เหมือนกันทุกครั้งที่พิมพ์ต่อ) ใช้ _hasLoadedOnce ตรงๆ เหมือนจุดอื่นด้านล่างแทน
+    final showSkeleton = (_isLoading && !_hasLoadedOnce) || _hasError;
 
     final content = showSkeleton
         ? cardShell(
