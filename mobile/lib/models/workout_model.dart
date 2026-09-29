@@ -243,20 +243,26 @@ class CardioResult {
 }
 
 /// เวลาฝึกรวม (วินาที) ของเซตที่ให้มา — ทุกเซตของเซสชันเดียวกันเก็บ `wtrs_duration` ค่าเดียวกัน
-/// จึงนับแต่ละเซสชันครั้งเดียว (แถวที่ติดกันตาม wtrs_id และมีค่าเท่ากัน = เซสชันเดียวกัน)
-/// คืน 0 ถ้าไม่มีข้อมูลเวลา (ข้อมูลเก่า) — ผู้เรียกควรซ่อนช่องเวลาเมื่อได้ 0
+/// จึงนับแต่ละเซสชันครั้งเดียว เดิมเช็ค "duration เท่ากับแถวก่อนหน้าไหม" เพื่อสรุปว่าเป็นเซสชัน
+/// เดียวกัน แต่ 2 เซสชันคนละรอบวันเดียวกัน (ท่าเดิม รอบเช้า/เย็น) มี duration บังเอิญเท่ากันได้
+/// (โดยเฉพาะเซตสั้นๆ ที่จับเวลาใกล้เคียงกัน) ทำให้รวมเวลาขาดไปทั้งเซสชัน — ไม่มี session id จริง
+/// ส่งมาจาก backend ให้ใช้ตรงๆ (wtrs_set_no เดินต่อเนื่องข้ามรอบในวันเดียวกัน ไม่รีเซ็ต)
+/// เปลี่ยนมาเช็ค resultId (wtrs_id, auto-increment) ติดกันแทน — เซตของเซสชันเดียวกันถูกบันทึกในคำขอ
+/// เดียวกัน (1 transaction) จึงได้ id ต่อเนื่องกันเป๊ะเสมอ ส่วนเซสชันที่แยกกันจริงจะมี activity อื่น
+/// ของระบบ (ผู้ใช้คนอื่น/ท่าอื่น) แทรกกลาง id เกือบทุกครั้ง ทนทานกว่าการเทียบค่า duration ที่บังเอิญ
+/// ตรงกันได้ คืน 0 ถ้าไม่มีข้อมูลเวลา (ข้อมูลเก่า) — ผู้เรียกควรซ่อนช่องเวลาเมื่อได้ 0
 int sessionDurationSeconds(Iterable<WorkoutResult> sets) {
   final ordered = sets.toList()..sort((a, b) => a.resultId.compareTo(b.resultId));
   var total = 0;
-  int? prev;
+  int? prevId;
   for (final r in ordered) {
     final d = r.durationSeconds;
     if (d == null || d <= 0) {
-      prev = null;
+      prevId = null;
       continue;
     }
-    if (d != prev) total += d;
-    prev = d;
+    if (prevId == null || r.resultId != prevId + 1) total += d;
+    prevId = r.resultId;
   }
   return total;
 }

@@ -391,6 +391,10 @@ class _WeightTrainingExerciseViewState
   // ─────────────────────────────────────────────────────────────────────────────
 
   void _endWorkout() {
+    // จบ workout ระหว่างพักได้ (เช่นจาก _promptIfIdle ตอน rest เกิน _idlePromptAfter) — ต้อง
+    // cancel _restTimer/_alertTimer และเคลียร์ _isResting ก่อนเสมอ ไม่งั้น timer ค้างรันต่อ
+    // เบื้องหลังหลังจอสรุปผลขึ้นแล้ว (เคย fix ตกไป ไม่มีจุดไหนเรียก _endRest ให้)
+    if (_isResting) _endRest();
     HapticFeedback.mediumImpact();
     _globalTimer?.cancel();
     _videoController?.pause();
