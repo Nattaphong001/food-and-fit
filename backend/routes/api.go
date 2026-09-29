@@ -117,7 +117,13 @@ func SetupRouter() *gin.Engine {
 			if sqlDB, err := config.DB.DB(); err != nil || sqlDB.Ping() != nil {
 				dbOk = false
 			}
-			c.JSON(200, gin.H{"success": true, "message": "", "data": gin.H{"status": "ok", "db": dbOk}})
+			// "service" เพิ่ม 2026-09-29 — mobile ใช้ /health สแกนหา backend เองทั้ง subnet LAN
+			// (autoDetectServer, dev-only ผ่าน --dart-define=DEVICE=real) เดิมเช็คแค่ statusCode==200
+			// ใครก็ตอบ 200 บน port 8081 ในวง LAN เดียวกันก็ถูกเข้าใจว่าเป็น backend ตัวจริงได้ (เช่น
+			// WiFi หอพัก/สาธารณะ) เพิ่ม field นี้ให้ mobile เช็คประกอบ ไม่ใช่ auth จริงจัง (secret อยู่ใน
+			// public repo อยู่ดี) แค่กันการเชื่อมต่อผิดพลาด/บังเอิญแบบไม่ได้ตั้งใจโจมตี ไม่ได้แก้
+			// ช่องโหว่ MITM แบบเจาะจงร้อยเปอร์เซ็นต์
+			c.JSON(200, gin.H{"success": true, "message": "", "data": gin.H{"status": "ok", "db": dbOk, "service": "food_and_fit_api"}})
 		})
 
 		// จำกัด rate เข้มกว่าเฉลี่ยเพราะเป็นจุดเสี่ยง brute-force/spam OTP

@@ -84,10 +84,20 @@ class ApiClient {
     receiveTimeout: const Duration(milliseconds: 350),
   ));
 
+  /// เช็ค statusCode==200 อย่างเดียวเดิม ใครก็ตอบ 200 บน port 8081 ในวง LAN เดียวกันก็ผ่านได้
+  /// (เช่น WiFi หอพัก/สาธารณะที่มีคนอื่นรัน service อื่นบน port เดียวกันโดยบังเอิญ) เพิ่มเช็ค field
+  /// "service" ที่ backend ใส่มาด้วย — กันการเชื่อมต่อผิดพลาด/บังเอิญ ไม่ใช่ auth จริงจัง (ค่านี้อยู่ใน
+  /// public repo คนตั้งใจปลอมเจาะจงแอปนี้ยังทำได้อยู่ดี) ฟีเจอร์นี้ใช้เฉพาะตอน dev
+  /// (--dart-define=DEVICE=real) ไม่ได้อยู่ใน production build
   static Future<bool> _probe(String ip) async {
     try {
       final res = await _probeDio.get('http://$ip:$_port/api/health');
-      return res.statusCode == 200;
+      if (res.statusCode != 200) return false;
+      final data = res.data;
+      if (data is Map && data['data'] is Map) {
+        return (data['data'] as Map)['service'] == 'food_and_fit_api';
+      }
+      return false;
     } catch (_) {
       return false;
     }
