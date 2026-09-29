@@ -130,7 +130,7 @@ func UpdateProfile(c *gin.Context) {
 	})
 
 	if err != nil {
-		slog.Error("UpdateProfile: transaction failed", "err", err)
+		slog.Error("UpdateProfile: transaction failed", "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่"})
 		return
 	}

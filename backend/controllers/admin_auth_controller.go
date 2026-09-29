@@ -24,7 +24,7 @@ func AdminLogout(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		slog.Error("AdminLogout: revoke token failed", "err", err)
+		slog.Error("AdminLogout: revoke token failed", "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ออกจากระบบไม่สำเร็จ กรุณาลองใหม่"})
 		return
 	}

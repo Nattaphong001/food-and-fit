@@ -116,9 +116,10 @@ func RequestOTP(c *gin.Context) {
 	}
 
 	// ส่งอีเมลจริงผ่าน Gmail SMTP helper (async กันไม่ให้ request ค้างรอ SMTP handshake)
+	reqID := c.GetString("request_id") // capture ก่อนเข้า goroutine — c ถูก gin recycle หลัง handler return
 	go func() {
 		if err := helpers.SendResetPasswordEmail(req.Email, otpCode); err != nil {
-			slog.Warn("could not send reset password email", "email", req.Email, "err", err)
+			slog.Warn("could not send reset password email", "email", req.Email, "err", err, "request_id", reqID)
 		}
 	}()
 
@@ -253,7 +254,7 @@ func ChangePassword(c *gin.Context) {
 	// ไม่ได้ revoke session อื่นที่อาจ login ค้างอยู่เครื่องอื่น เพราะระบบนี้ track แค่ jti ที่ revoke แล้ว
 	// ไม่มีตาราง list token ที่ยัง active ของแต่ละ user ให้ revoke ทั้งหมดได้) — best-effort ไม่ block response
 	if _, err := helpers.RevokeCurrentToken(c); err != nil {
-		slog.Error("ChangePassword: revoke token failed", "err", err)
+		slog.Error("ChangePassword: revoke token failed", "err", err, "request_id", c.GetString("request_id"))
 	}
 
 	helpers.LogAudit(c, "member", member.MbID, "change_password_success", "")
