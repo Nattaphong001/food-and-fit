@@ -754,15 +754,6 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
   double? get _trend =>
       _dates.length < 2 ? null : _latestMax - _sessionMax(_dates[1]);
 
-  String _intensityLabel(int? level) {
-    switch (level) {
-      case 1: return 'เบา';
-      case 2: return 'กลาง';
-      case 3: return 'หนัก';
-      default: return '-';
-    }
-  }
-
   // wet_difficulty ใน DB เป็น tinyint 1=ง่าย/2=กลาง/3=ยาก แต่ Exercise.difficulty
   // เก็บเป็น String มาจากทั้ง 2 รูปแบบ (เลขหรือ 'beginner' fallback) — กันไว้ทั้งคู่
   String _difficultyLabel(String raw) {
@@ -1227,7 +1218,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
           final isPR = _overallMax > 0 && maxW >= _overallMax;
           final volume = _sessionVolume(date);
           final calories = _sessionCalories(date);
-          final intensity = _intensityLabel(sets.first.intensityLevel);
+          final seconds = sessionDurationSeconds(sets);
           const green = Color(0xFF00C978);
 
           return Container(
@@ -1256,8 +1247,14 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
               ]),
               const SizedBox(height: 4),
               Text(
-                '${sets.length} เซ็ต · สูงสุด ${maxW.toStringAsFixed(0)} กก. · ปริมาตร ${volume.toStringAsFixed(0)} กก. · '
-                '${calories.toStringAsFixed(0)} kcal · ระดับ$intensity',
+                '${sets.length} เซ็ต · สูงสุด ${maxW.toStringAsFixed(0)} กก. · '
+                '${seconds > 0 ? '${formatDuration(seconds)} · ' : ''}'
+                '${calories.toStringAsFixed(0)} kcal',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'ปริมาตร ${volume.toStringAsFixed(0)} กก.',
                 style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
               ),
               const SizedBox(height: 8),

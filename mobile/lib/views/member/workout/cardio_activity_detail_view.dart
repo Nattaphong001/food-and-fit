@@ -709,7 +709,7 @@ class _CardioHistorySheetState extends State<_CardioHistorySheet> {
                                                         children: [
                                                           const Icon(Icons.timer_outlined, size: 14, color: Colors.black54),
                                                           const SizedBox(width: 4),
-                                                          Text('${r.duration.toInt()} นาที',
+                                                          Text(formatDurationMinutes(r.duration),
                                                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                                                         ],
                                                       ),
@@ -813,8 +813,8 @@ class _CardioHistorySheetState extends State<_CardioHistorySheet> {
         ]),
         const SizedBox(height: 10),
         Row(children: [
-          _statCard(label: 'เวลาสะสม', value: _totalDuration > 0 ? _totalDuration.toStringAsFixed(0) : '—',
-              unit: 'นาที', icon: Icons.timer_outlined, iconColor: Colors.deepPurple.shade300),
+          _statCard(label: 'เวลาสะสม', value: _totalDuration > 0 ? formatDurationMinutes(_totalDuration) : '—',
+              unit: '', icon: Icons.timer_outlined, iconColor: Colors.deepPurple.shade300),
           const SizedBox(width: 10),
           _statCard(label: 'พลังงานสะสม', value: _totalCalories > 0 ? _totalCalories.toStringAsFixed(0) : '—',
               unit: 'kcal', icon: Icons.local_fire_department_rounded, iconColor: Colors.orange.shade400),
@@ -825,14 +825,14 @@ class _CardioHistorySheetState extends State<_CardioHistorySheet> {
             _statCard(label: 'ระยะทางสะสม', value: _totalDistance > 0 ? _totalDistance.toStringAsFixed(1) : '—',
                 unit: 'กม.', icon: Icons.straighten_rounded, iconColor: const Color(0xFF64B5F6)),
             const SizedBox(width: 10),
-            _statCard(label: 'นานสุด/ไกลสุด', value: _maxDuration > 0 ? '${_maxDuration.toStringAsFixed(0)} น.' : '—',
+            _statCard(label: 'นานสุด/ไกลสุด', value: _maxDuration > 0 ? formatDurationMinutes(_maxDuration) : '—',
                 unit: _maxDistance > 0 ? '/ ${_maxDistance.toStringAsFixed(1)} กม.' : '', icon: Icons.emoji_events_rounded, iconColor: Colors.amber.shade600),
           ]),
         ] else ...[
           const SizedBox(height: 10),
           Row(children: [
-            _statCard(label: 'นานสุด', value: _maxDuration > 0 ? _maxDuration.toStringAsFixed(0) : '—',
-                unit: 'นาที', icon: Icons.emoji_events_rounded, iconColor: Colors.amber.shade600),
+            _statCard(label: 'นานสุด', value: _maxDuration > 0 ? formatDurationMinutes(_maxDuration) : '—',
+                unit: '', icon: Icons.emoji_events_rounded, iconColor: Colors.amber.shade600),
             const SizedBox(width: 10),
             const Expanded(child: SizedBox()),
           ]),
