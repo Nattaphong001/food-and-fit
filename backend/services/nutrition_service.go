@@ -10,9 +10,9 @@ type NutrientTotals struct {
 	Fat      float64
 }
 
-// CalculateNutrientTotals คำนวณค่าที่เก็บลง daily_nutrition (dntt_total_*) = ค่าต่อ 1 หน่วยเสิร์ฟใน
-// ตาราง nutrition (ntt_*) × จำนวนหน่วยที่กิน (dntt_quantity) ครบทั้ง 4 ค่าพร้อมกัน — จุดเดียวที่มีสูตรนี้
-// (AddDailyNutrition และ UpdateDailyNutrition เรียกที่นี่ เดิมเขียนซ้ำ 2 จุดใน controller)
+// CalculateNutrientTotals คำนวณพลังงาน/สารอาหารรวมของอาหาร 1 รายการที่กิน
+// = ค่าต่อ 1 หน่วย (จากตาราง nutrition) × จำนวนหน่วยที่กิน (quantity)
+// จุดเดียวที่มีสูตรนี้ — เรียกจากทั้ง AddDailyNutrition และ UpdateDailyNutrition
 func CalculateNutrientTotals(food models.Nutrition, quantity float64) NutrientTotals {
 	return NutrientTotals{
 		Calories: food.NttCalories * quantity,
