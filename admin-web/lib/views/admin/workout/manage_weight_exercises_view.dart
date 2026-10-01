@@ -282,7 +282,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
 
   Future<void> _handleSaveExercise(
     Map<String, dynamic>? item,
-    String name, String desc, String technique, int diff, int equipment, int exerciseType, String mets, String videoLink,
+    String name, String desc, String technique, int diff, int equipment, int exerciseType, String mets, bool isTimed, String videoLink,
     File? imageFile, Uint8List? imageBytes, String? imageFileName,
     File? loopVideoFile, Uint8List? loopVideoBytes, String? loopVideoFileName, {
     List<Map<String, dynamic>>? pendingFocus,
@@ -312,6 +312,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
         'wet_equipment': equipment.toString(),
         'wet_exercise_type': exerciseType.toString(),
         'wet_mets': metsValue.toString(),
+        'wet_is_timed': isTimed.toString(),
         'wet_video': videoLink,
         if (wetImageField != null) 'wet_image': wetImageField,
         if (wetLoopVideoField != null) 'wet_loop_video': wetLoopVideoField,
@@ -491,6 +492,8 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
     int selectedDiff = lockedDiff ?? (item?['wet_difficulty'] ?? item?['WetDifficulty']) ?? 1;
     int selectedEquipment = (item?['wet_equipment'] ?? item?['WetEquipment']) ?? 5;
     int selectedExerciseType = (item?['wet_exercise_type'] ?? item?['WetExerciseType']) ?? 1;
+    // ท่าค้างเวลา (เช่น Plank) — ไม่มีจำนวนครั้งให้กรอกในแอป แยกจากอุปกรณ์บอดี้เวท (ดู ../../../../../CLAUDE.md ข้อ 7)
+    bool selectedIsTimed = (item?['wet_is_timed'] ?? item?['WetIsTimed']) == true;
 
     File? selectedImage;
     Uint8List? selectedImageBytes;
@@ -893,6 +896,19 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                               contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                             ),
                           ),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(10)),
+                            child: Row(children: [
+                              const Icon(Icons.timer_outlined, color: AppColors.primaryGreen, size: 18),
+                              const Expanded(child: Padding(
+                                padding: EdgeInsets.only(left: 10),
+                                child: Text('ท่าค้างเวลา (เช่น Plank) — ไม่มีจำนวนครั้งให้กรอกในแอป', style: TextStyle(fontSize: 13, color: Colors.black87)),
+                              )),
+                              Switch(value: selectedIsTimed, activeThumbColor: AppColors.primaryGreen, onChanged: (v) => setModalState(() => selectedIsTimed = v)),
+                            ]),
+                          ),
                           const SizedBox(height: 14),
                           const Text('กล้ามเนื้อโฟกัส', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
                           const SizedBox(height: 2),
@@ -1081,7 +1097,7 @@ class _ManageWeightExercisesViewState extends State<ManageWeightExercisesView> {
                                         });
                                         return;
                                       }
-                                      _handleSaveExercise(item, nameCtrl.text, descCtrl.text, techniqueItemCtrls.map((c) => c.text.trim()).where((t) => t.isNotEmpty).join('\n'), selectedDiff, selectedEquipment, selectedExerciseType, metCtrl.text, videoCtrl.text, selectedImage, selectedImageBytes, selectedImageName, selectedLoopVideo, selectedLoopVideoBytes, selectedLoopVideoName, pendingFocus: wetId == null ? focusList : null);
+                                      _handleSaveExercise(item, nameCtrl.text, descCtrl.text, techniqueItemCtrls.map((c) => c.text.trim()).where((t) => t.isNotEmpty).join('\n'), selectedDiff, selectedEquipment, selectedExerciseType, metCtrl.text, selectedIsTimed, videoCtrl.text, selectedImage, selectedImageBytes, selectedImageName, selectedLoopVideo, selectedLoopVideoBytes, selectedLoopVideoName, pendingFocus: wetId == null ? focusList : null);
                                     },
                               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                               child: const Text('บันทึกข้อมูล', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
