@@ -9,6 +9,8 @@
 //   • Cardio Burn      → cardioNetKcal() (ตรงกับ services.CalculateCardioCalories เป๊ะ)
 //   • สถานะ Energy Balance ±10% → energyBalanceStatus()
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 
@@ -54,11 +56,22 @@ const double kEnergyBalanceTolerance = 0.10;
   return ('ตามเป้า', AppColors.primaryGreen);
 }
 
-// Estimated 1RM (Epley) = weight × (1 + reps/30) — แม่นยำเฉพาะช่วง reps 2-10 (บทที่ 2 ข้อ 2.1.4.13)
+// Estimated 1RM แบบ Dual-Formula (บทที่ 2 ข้อ 2.1.4.12, แก้ 2026-10-01 จาก Epley อย่างเดียว) — ตัวเลข
+// ต้องตรงกับ services.EstimateOneRepMax ฝั่ง Go เป๊ะ (มีเทสต์ 2 ฝั่งล็อกค่าเดียวกัน):
+//   reps 1-10  → Epley: weight × (1 + reps/30)
+//   reps 11-20 → Desgorces: 100 × weight / (83.7677 × e^(−0.0338 × reps) + 17.6846)
+//   reps > 20, reps < 1 หรือน้ำหนัก ≤ 0 → 0 (ประเมินไม่ได้ — ผู้เรียกต้องซ่อน/ข้ามค่า 0)
 // แสดงผลอย่างเดียว ไม่บันทึก DB (กฎเหล็กข้อ 8.2) — เดิมเขียนสูตรนี้ซ้ำ 3 จุดใน
 // weight_training_detail_view.dart/weight_training_exercise_view.dart รวมมาไว้จุดเดียว
+const int kEpleyMaxReps = 10;
+const int kDesgorcesMaxReps = 20;
+
 double estimateOneRepMax(double weightKg, int reps) {
-  return double.parse((weightKg * (1 + reps / 30)).toStringAsFixed(2));
+  if (weightKg <= 0 || reps < 1 || reps > kDesgorcesMaxReps) return 0;
+  final double est = reps <= kEpleyMaxReps
+      ? weightKg * (1 + reps / 30)
+      : 100 * weightKg / (83.7677 * math.exp(-0.0338 * reps) + 17.6846);
+  return double.parse(est.toStringAsFixed(2));
 }
 
 // Training Volume = Σ (น้ำหนักที่ยก × Reps) ต่อเซต (บทที่ 2 ข้อ 2.1.4.13) — แสดงผลอย่างเดียว ไม่บันทึก DB

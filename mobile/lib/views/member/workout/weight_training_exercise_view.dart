@@ -27,7 +27,8 @@ class WeightTrainingExerciseView extends StatefulWidget {
   // 2 กฎแยกกันไม่ทับซ้อน (ดู models.WeightExercise.WetIsTimed ฝั่ง backend):
   //   hasWeight=false (wet_equipment=5 Bodyweight) → ไม่มีช่องกรอกน้ำหนัก
   //   hasReps=false (wet_is_timed=true เช่น Plank) → ไม่มีช่องกรอกจำนวนครั้ง กด "จบการพัก" = บันทึก 1 เซต
-  // ช่องที่ไม่มีให้กรอกจะส่งเป็น 0 ขึ้น backend (บังคับ) — พลังงานคิดจาก METs ของท่า × เวลารวมอยู่แล้ว
+  // ช่องที่ไม่มีให้กรอกจะส่งเป็น 0 ขึ้น backend (บังคับ) — ท่าที่ไม่มีน้ำหนักหรือจำนวนครั้งไม่มี 1RM จึงได้
+  // METs 3.0 คงที่ × เวลาของแต่ละเซต (ดู ../../../../../CLAUDE.md ข้อ 7[B-1])
   final bool hasWeight;
   final bool hasReps;
 
@@ -715,8 +716,9 @@ class _WeightTrainingExerciseViewState
   }
 
   // (2026-09-08) เปลี่ยนจากยิง loop ทีละเซตเป็นส่งทั้งเซสชันในคำขอเดียว (ดู backend
-  // controllers.SaveWorkoutResult) — METs ของท่านี้คงที่อยู่แล้ว (wet_mets) แต่ยังต้องรู้จำนวนเซต +
-  // เวลารวมทั้งเซสชันพร้อมกันเพื่อคำนวณพลังงานและหารแจกต่อเซต ผลพลอยได้: กันเน็ตหลุดกลางทาง loop
+  // controllers.SaveWorkoutResult) — backend ต้องเห็นทุกเซตพร้อมกัน (น้ำหนัก/reps/เวลารายเซต) เพื่อเลือก
+  // METs รายเซตตาม %1RM และหา e1RM สูงสุดของเซสชันเมื่อยังไม่มี PR (แก้ 2026-10-01 — เดิม METs คงที่ต่อท่า
+  // wet_mets หารพลังงานรวมแจกเท่ากันทุกเซต) ผลพลอยได้: กันเน็ตหลุดกลางทาง loop
   // แล้วได้ข้อมูลครึ่งๆ — ตอนนี้สำเร็จหรือไม่สำเร็จทั้งหมด
   Future<void> _saveWorkoutToApi() async {
     // เหมือน cardio_activity_exercise_view.dart (_submitWorkoutData เช็ค < 1 นาที) — เตือนแทน
@@ -786,8 +788,10 @@ class _WeightTrainingExerciseViewState
       final volume = calc.trainingVolume(parsedSets);
       final caloriesBurned = (result['calories_burned'] as num?)?.round();
       final caloriesPart = caloriesBurned != null ? ' • เผาผลาญ $caloriesBurned kcal' : '';
+      // 1RM ประเมินไม่ได้ (reps > 20 ทุกเซต — Dual-Formula คืน 0) ไม่ต้องแสดง "1RM 0 กก."
+      final oneRmPart = best1RM > 0 ? ' • 1RM โดยประมาณ ${best1RM.round()} กก.' : '';
       message = widget.hasWeight
-          ? 'บันทึกแล้ว • Volume ${volume.round()} กก. • 1RM โดยประมาณ ${best1RM.round()} กก.$caloriesPart'
+          ? 'บันทึกแล้ว • Volume ${volume.round()} กก.$oneRmPart$caloriesPart'
           : 'บันทึกแล้ว • ${validSets.length} เซต$caloriesPart';
       type = AppAlertType.success;
     } else {

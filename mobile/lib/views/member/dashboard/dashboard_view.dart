@@ -1710,10 +1710,10 @@ class _DashboardViewState extends State<DashboardView>
       final volume = calc.trainingVolume(sets.map((w) => (weight: w.weight, reps: w.reps)));
       // สูตร 1RM อยู่ที่ core/utils/health_calculations.dart แล้ว (ใช้ร่วมกับอีก 4 จุดใน
       // frontend + backend) — ไม่จำกัด reps เป็นค่าคำนวณแสดงผลเท่านั้น ไม่บันทึกลงฐานข้อมูล
+      // Dual-Formula คืน 0 เมื่อประเมินไม่ได้ (reps > 20 / ไม่มีน้ำหนัก) — ทุกเซตได้ 0 แสดง "-" แทน 0.0
       final validRepSets = sets.where((w) => w.reps > 0);
-      final est1rm = validRepSets.isEmpty
-          ? null
-          : validRepSets.fold(0.0, (m, w) => math.max(m, calc.estimateOneRepMax(w.weight, w.reps)));
+      final best1rm = validRepSets.fold(0.0, (m, w) => math.max(m, calc.estimateOneRepMax(w.weight, w.reps)));
+      final est1rm = best1rm > 0 ? best1rm : null;
       final calories = sets.fold(0.0, (s, w) => s + w.calories);
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),

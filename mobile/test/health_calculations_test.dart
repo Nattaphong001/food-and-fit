@@ -34,9 +34,22 @@ void main() {
     });
   });
 
-  group('estimateOneRepMax (Epley)', () {
-    test('60 กก. × 10 ครั้ง = 80.00', () {
+  // ค่าเดียวกับ TestEstimateOneRepMax ฝั่ง Go (backend/services/calculator_test.go)
+  group('estimateOneRepMax (Dual-Formula: Epley 1-10, Desgorces 11-20)', () {
+    test('Epley: 100 × 5 = 116.67, 60 × 10 = 80.00', () {
+      expect(estimateOneRepMax(100, 5), 116.67);
       expect(estimateOneRepMax(60, 10), 80.0);
+    });
+
+    test('Desgorces: 100 × 11 = 132.55, 100 × 15 = 146.76', () {
+      expect(estimateOneRepMax(100, 11), 132.55);
+      expect(estimateOneRepMax(100, 15), 146.76);
+    });
+
+    test('ประเมินไม่ได้ได้ 0: reps > 20, reps 0, น้ำหนัก 0', () {
+      expect(estimateOneRepMax(100, 21), 0);
+      expect(estimateOneRepMax(100, 0), 0);
+      expect(estimateOneRepMax(0, 8), 0);
     });
   });
 

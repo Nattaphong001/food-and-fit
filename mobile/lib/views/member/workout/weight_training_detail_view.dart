@@ -38,9 +38,6 @@ class WeightTrainingDetailView extends StatefulWidget {
   final EquipmentType equipment;
   // ท่าค้างเวลา (wet_is_timed) — ไม่มีจำนวนครั้งให้กรอก แยกจาก equipment==bodyweight (ดู Exercise.isTimed)
   final bool isTimed;
-  // METs คงที่ของท่านี้ (weight_exercises.wet_mets) — แสดงผลอย่างเดียว เหมือน CardioType.mets
-  // ในหน้ารายละเอียดคาร์ดิโอ (cardio_activity_detail_view.dart)
-  final double mets;
   final int? wschId;    // wsch_id จริงจาก workout_schedules ถ้าท่านี้อยู่ในแผน
 
   const WeightTrainingDetailView({
@@ -60,7 +57,6 @@ class WeightTrainingDetailView extends StatefulWidget {
     this.muscleGroupName = '',
     this.equipment = EquipmentType.bodyweight,
     this.isTimed = false,
-    this.mets = 3.5,
     this.wschId,
   });
 
@@ -217,7 +213,7 @@ class _WeightTrainingDetailViewState extends State<WeightTrainingDetailView>
                     () {
                       final type = widget.exerciseType == 2 ? 'เฉพาะส่วน' : 'หลายกลุ่ม';
                       final group = widget.muscleGroupName.isNotEmpty ? ' • ${widget.muscleGroupName}' : '';
-                      return '$type$group • MET ${widget.mets.toStringAsFixed(1)}';
+                      return '$type$group';
                     }(),
                     style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Colors.white),
                   ),
@@ -631,7 +627,6 @@ class _WeightTrainingDetailViewState extends State<WeightTrainingDetailView>
         exerciseType: widget.exerciseType,
         equipment: widget.equipment,
         isTimed: widget.isTimed,
-        mets: widget.mets,
         difficulty: widget.difficulty,
       ),
     );
@@ -647,7 +642,6 @@ class _ExerciseHistorySheet extends StatefulWidget {
   final int exerciseType; // 1=หลายกลุ่ม, 2=เฉพาะส่วน
   final EquipmentType equipment;
   final bool isTimed;
-  final double mets;
   final String difficulty;
 
   const _ExerciseHistorySheet({
@@ -657,7 +651,6 @@ class _ExerciseHistorySheet extends StatefulWidget {
     this.exerciseType = 1,
     this.equipment = EquipmentType.bodyweight,
     this.isTimed = false,
-    this.mets = 3.5,
     this.difficulty = '',
   });
 
@@ -859,7 +852,6 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
                   _infoChip(widget.equipment.label, Icons.fitness_center_rounded),
                   if (widget.difficulty.isNotEmpty)
                     _infoChip(_difficultyLabel(widget.difficulty), Icons.speed_rounded),
-                  _infoChip('MET ${widget.mets.toStringAsFixed(1)}', Icons.local_fire_department_rounded),
                 ],
               ),
             ),
@@ -1047,7 +1039,9 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
                     style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF00C978))),
               ]),
               const Spacer(),
-              const Text('weight × (1 + reps/30)',
+              // Dual-Formula (calc.estimateOneRepMax): Epley 1-10 ครั้ง, Desgorces 11-20 ครั้ง
+              const Text('Epley 1-10 ครั้ง\nDesgorces 11-20 ครั้ง',
+                  textAlign: TextAlign.right,
                   style: TextStyle(fontSize: 10, color: Colors.grey)),
             ]),
           ),
