@@ -100,7 +100,7 @@ func CalculateMacroTargets(targetCalories float64, goalType int) (proteinG, carb
 // 1RM = น้ำหนักสูงสุดที่ยกได้ 1 ครั้ง (ประมาณจากเซตที่ยกหลายครั้ง)
 // weightKg=น้ำหนักที่ยก, reps=จำนวนครั้งที่ทำได้
 func EstimateOneRepMax(weightKg float64, reps int) float64 {
-	return math.Round(weightKg*(1+float64(reps)/30.0)*100) / 100
+	return math.Round(weightKg*(1+float64(reps)/30.0)*100) / 100 
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -145,7 +145,7 @@ func CalculateWeightTrainingCalories(
 	totalDurationSeconds int, // เวลารวมทั้งเซสชัน (วินาที)
 	setCount int, // จำนวนเซตที่บันทึก
 ) (kcalPerSet []float64, totalKcal float64) {
-	kcalPerSet = make([]float64, setCount)
+	kcalPerSet = make([]float64, setCount) 
 	if setCount == 0 {
 		return kcalPerSet, 0 // ไม่มีเซตให้คำนวณ
 	}
