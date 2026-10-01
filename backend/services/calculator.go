@@ -203,6 +203,63 @@ type WeightSetEnergyInput struct {
 	WeightKg float64 // น้ำหนักที่ยก (kg)
 	Reps     int     // จำนวนครั้ง
 	Seconds  int     // เวลาของเซตนี้ = เวลาทำเซต + เวลาพักหลังเซต (วินาที)
+	// ผู้ใช้ยืนยันว่าเซตนี้ยกจนใกล้หมดแรง (เหลือแรงยกต่อได้ไม่เกิน 2-3 ครั้ง) — ใช้เฉพาะเลือกตัวอ้างอิงตอนไม่มี PR
+	NearFailure bool
+}
+
+// SessionReferenceOneRepMax คือ 1RM อ้างอิงชั่วคราวของเซสชันแรกที่ยังไม่มีประวัติ PR (2026-10-02)
+// = Estimated 1RM สูงสุดของ "เซตที่ผู้ใช้ยืนยัน NearFailure" ด้วย EstimateOneRepMax ตัวเดิม (Dual-Formula
+// reps 1-20, เซตที่ reps > 20 หรือน้ำหนัก ≤ 0 หรือไม่ยืนยัน ไม่นับ) คืน 0 ถ้าไม่มีเซตที่นับได้ → ทุกเซตได้
+// MetsEndurance เซตที่ยืนยันจะได้ %1RM ตามจำนวนครั้ง (เช่น 10 ครั้ง ≈ 75%, 5 ครั้ง ≈ 86%) ตรงช่วงตารางที่ 2.2
+// ส่วนเซตอื่นเทียบด้วยน้ำหนักจริง (ข้อจำกัด: คำตอบเป็นการประเมินของผู้ใช้เอง ต้องระบุในเล่ม)
+func SessionReferenceOneRepMax(sets []WeightSetEnergyInput) float64 {
+	best := 0.0
+	for _, s := range sets {
+		if s.WeightKg <= 0 || !s.NearFailure {
+			continue
+		}
+		if est := EstimateOneRepMax(s.WeightKg, s.Reps); est > best {
+			best = est
+		}
+	}
+	return best
+}
+
+// ReferenceOneRepMax แหล่งที่มาของ 1RM อ้างอิง (ตรงกับ response calculation.reference_source)
+const (
+	ReferenceHistory         = "history"          // PR ก่อนเซสชันนี้
+	ReferenceSession         = "session"          // e1RM สูงสุดของเซตที่ผู้ใช้ยืนยันว่ายกใกล้หมดแรง
+	ReferenceSessionDeclined = "session_declined" // ไม่มี PR และผู้ใช้ไม่ยืนยัน/ไม่ตอบ → ไม่ใช้ตัวอ้างอิง
+	ReferenceNone            = "none"             // ไม่มีเซตที่ประเมิน 1RM ได้ (ทุกเซต reps > 20)
+	ReferenceNotApplicable   = "not_applicable"   // บอดี้เวท/ท่าค้างเวลา
+)
+
+// ResolveReferenceOneRepMax เลือก 1RM อ้างอิงของ %1RM (แก้ 2026-10-02 รอบ 3 — ถามรายเซต)
+//   - มี PR (history > 0) → ใช้ PR
+//   - ยังไม่มี PR และมีเซตที่ผู้ใช้ยืนยัน NearFailure → e1RM สูงสุดของเซตที่ยืนยันเหล่านั้น
+//   - ยังไม่มี PR และไม่มีเซตไหนยืนยัน → 0 ทุกเซตได้ MetsEndurance (กันเซสชันแรกที่ยกเบาแล้วหยุดทั้งที่ยังไหว
+//     ได้ 6.0 เกินจริง — ระบบแยกเองไม่ได้ จึงถามผู้ใช้ ค่าที่ได้เป็นการประเมินของผู้ใช้เอง)
+func ResolveReferenceOneRepMax(history float64, sets []WeightSetEnergyInput, hasWeight, hasReps bool) (float64, string) {
+	if !hasWeight || !hasReps {
+		return 0, ReferenceNotApplicable
+	}
+	if history > 0 {
+		return history, ReferenceHistory
+	}
+	flagged := false
+	for _, s := range sets {
+		if s.NearFailure && s.WeightKg > 0 {
+			flagged = true
+			break
+		}
+	}
+	if !flagged {
+		return 0, ReferenceSessionDeclined
+	}
+	if ref := SessionReferenceOneRepMax(sets); ref > 0 {
+		return ref, ReferenceSession
+	}
+	return 0, ReferenceNone
 }
 
 // CalculateWeightTrainingCalories คำนวณพลังงานสุทธิรายเซตของเซสชันเวทเทรนนิ่ง 1 ท่า

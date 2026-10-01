@@ -856,6 +856,9 @@ type WeightSessionSetInput struct {
 	// เวลาพักหลังเซตนี้ (วินาที) — nil = เซตสุดท้าย หรือไม่เคยกดปุ่มพัก (ช่วงนั้นนับรวมใน work แล้ว)
 	// เวลารวม = Σ(work + rest) ใช้ทั้งเข้าสูตรพลังงานและเก็บ DB
 	WtrsRestSeconds *int `json:"wtrs_rest_seconds"`
+	// ผู้ใช้ยืนยันว่าเซตนี้ยกจนใกล้หมดแรง (เหลือแรงยกต่อได้ไม่เกิน 2-3 ครั้ง) — mobile ถามรายเซตเฉพาะท่าที่ยังไม่มี PR
+	// (ดู services.ResolveReferenceOneRepMax) nil/false = ไม่ได้ถาม/ตอบว่ายังเหลือแรง
+	NearFailure *bool `json:"near_failure"`
 }
 
 // WeightSessionRequest - บันทึกผลเวทเทรนนิ่งทั้งเซสชันในคำขอเดียว (แทนที่ของเดิมที่ยิงทีละเซต
@@ -866,7 +869,7 @@ type WeightSessionRequest struct {
 	Date                 string                  `json:"date" binding:"required"`
 	WschID               *uint                   `json:"wsch_id"`
 	WetID                uint                    `json:"wet_id" binding:"required,gt=0"`
-	Sets                 []WeightSessionSetInput `json:"sets" binding:"required,min=1,dive"`
+	Sets               []WeightSessionSetInput `json:"sets" binding:"required,min=1,dive"`
 }
 
 // CardioResultRequest - บันทึกผล Cardio (ไม่ต้องมี schedule)
@@ -1014,18 +1017,14 @@ func SaveWorkoutResult(c *gin.Context) {
 	energySets := make([]services.WeightSetEnergyInput, 0, len(validSets))
 	for _, s := range validSets {
 		seconds := helpers.WeightSessionTotalSeconds([]helpers.WeightSetCheck{{WorkSeconds: s.WtrsWorkSeconds, RestSeconds: s.WtrsRestSeconds}})
-		energySets = append(energySets, services.WeightSetEnergyInput{WeightKg: s.WtrsWeight, Reps: s.WtrsReps, Seconds: seconds})
+		energySets = append(energySets, services.WeightSetEnergyInput{WeightKg: s.WtrsWeight, Reps: s.WtrsReps, Seconds: seconds, NearFailure: s.NearFailure != nil && *s.NearFailure})
 	}
 
-	// 1RM อ้างอิง: PR ก่อนเซสชันนี้เท่านั้น — ยังไม่เคยมีประวัติท่านี้ → ไม่มีตัวอ้างอิง ทุกเซตที่มีน้ำหนักได้
-	// METs ความทนทาน 3.5 (ไม่เดา %1RM จากจำนวนครั้ง เพราะสมการ 1RM สมมติว่ายกจนเกือบหมดแรง ครั้งแรกที่ยกเบา
-	// 10 ครั้งจะถูกประเมินสูงเกินจริง) ท่าบอดี้เวท/ท่าค้างเวลาไม่ใช้ 1RM เลย (METs 3.0 คงที่)
-	reference1RM, referenceSource := oneRepMax, "history"
-	if !hasWeight || !hasReps {
-		reference1RM, referenceSource = 0, "not_applicable"
-	} else if reference1RM <= 0 {
-		referenceSource = "none"
-	}
+	// 1RM อ้างอิง: มี PR ก่อนเซสชันนี้ → ใช้ PR (history) · ยังไม่เคยมีประวัติท่านี้ → ใช้ e1RM สูงสุดของเซตใน
+	// เซสชันนี้ (session, แก้ 2026-10-02 — เดิมไม่มีตัวอ้างอิงแล้วทุกเซตได้ 3.5) ไม่มีเซตที่ประเมินได้
+	// (ทุกเซต reps > 20) → none ท่าบอดี้เวท/ท่าค้างเวลาไม่ใช้ 1RM เลย (METs 3.0 คงที่)
+	// แก้รอบ 3: ไม่มี PR → ตัวอ้างอิง = e1RM สูงสุดของ "เซตที่ผู้ใช้ยืนยัน near_failure" เท่านั้น (ถามรายเซต)
+	reference1RM, referenceSource := services.ResolveReferenceOneRepMax(oneRepMax, energySets, hasWeight, hasReps)
 
 	kcalPerSet, metsPerSet, totalKcal := services.CalculateWeightTrainingCalories(
 		energySets, reference1RM, bodyWeight, hasWeight, hasReps,
@@ -1079,7 +1078,7 @@ func SaveWorkoutResult(c *gin.Context) {
 		"warnings":        warnings, // plausibility warning เท่านั้น ไม่ block การบันทึก (เหมือน UpdateBodyStats)
 		"calculation": gin.H{
 			"reference_1rm":    reference1RM,
-			"reference_source": referenceSource, // history | none | not_applicable
+			"reference_source": referenceSource, // history | session | none | not_applicable
 			"body_weight_kg":   bodyWeight,
 			"mets_per_set":     metsPerSet,
 		},
