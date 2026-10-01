@@ -94,17 +94,15 @@ func TestCalculateWeightTrainingCalories_EmptySets(t *testing.T) {
 	}
 }
 
-// Fallback ไม่มีประวัติ: 1RM อ้างอิง = e1RM สูงสุดของเซสชันนี้ (Dual-Formula)
-func TestSessionBestOneRepMax(t *testing.T) {
-	sets := []WeightSetEnergyInput{
-		{80, 5, 60},  // Epley 80 × (1 + 5/30) = 93.33
-		{60, 12, 60}, // Desgorces ≈ 81.61
-		{40, 25, 60}, // reps > 20 ประเมินไม่ได้
+// ฝึกครั้งแรก (ไม่มี PR, reference1RM = 0): ทุกเซตที่มีน้ำหนักได้ 3.5 ไม่ว่าจะหนักหรือเบา —
+// ไม่เดา %1RM จากจำนวนครั้ง ท่าที่ไม่มีน้ำหนักยังได้ 3.0
+func TestCalculateWeightTrainingCalories_FirstSessionNoHistory(t *testing.T) {
+	sets := []WeightSetEnergyInput{{90, 3, 120}, {30, 10, 120}, {0, 8, 120}}
+	_, mets, _ := CalculateWeightTrainingCalories(sets, 0, 70, true, true)
+	if mets[0] != MetsEndurance || mets[1] != MetsEndurance {
+		t.Errorf("ไม่มีประวัติ ทุกเซตที่มีน้ำหนักต้อง 3.5 ได้ %v", mets)
 	}
-	if got := SessionBestOneRepMax(sets); !almostEqual(got, 93.33, 0.005) {
-		t.Errorf("SessionBestOneRepMax = %v, want 93.33", got)
-	}
-	if got := SessionBestOneRepMax([]WeightSetEnergyInput{{40, 25, 60}, {0, 10, 60}}); got != 0 {
-		t.Errorf("ไม่มีเซตประเมินได้ต้องได้ 0 ได้ %v", got)
+	if mets[2] != MetsBodyweight {
+		t.Errorf("เซตน้ำหนัก 0 ต้อง 3.0 ได้ %v", mets[2])
 	}
 }

@@ -1017,17 +1017,14 @@ func SaveWorkoutResult(c *gin.Context) {
 		energySets = append(energySets, services.WeightSetEnergyInput{WeightKg: s.WtrsWeight, Reps: s.WtrsReps, Seconds: seconds})
 	}
 
-	// 1RM อ้างอิง: PR ก่อนเซสชันนี้ — ยังไม่เคยมีประวัติ ใช้ e1RM สูงสุดของเซสชันนี้เองแทน (Dual-Formula)
-	// ไม่มีเซตไหนประเมินได้ (เช่น reps > 20 ทุกเซต) → ไม่มีตัวอ้างอิง เซตที่มีน้ำหนักได้ METs ความทนทาน
-	// ท่าบอดี้เวท/ท่าค้างเวลาไม่ใช้ 1RM เลย (METs 3.0 คงที่)
+	// 1RM อ้างอิง: PR ก่อนเซสชันนี้เท่านั้น — ยังไม่เคยมีประวัติท่านี้ → ไม่มีตัวอ้างอิง ทุกเซตที่มีน้ำหนักได้
+	// METs ความทนทาน 3.5 (ไม่เดา %1RM จากจำนวนครั้ง เพราะสมการ 1RM สมมติว่ายกจนเกือบหมดแรง ครั้งแรกที่ยกเบา
+	// 10 ครั้งจะถูกประเมินสูงเกินจริง) ท่าบอดี้เวท/ท่าค้างเวลาไม่ใช้ 1RM เลย (METs 3.0 คงที่)
 	reference1RM, referenceSource := oneRepMax, "history"
 	if !hasWeight || !hasReps {
 		reference1RM, referenceSource = 0, "not_applicable"
 	} else if reference1RM <= 0 {
-		reference1RM, referenceSource = services.SessionBestOneRepMax(energySets), "session"
-		if reference1RM <= 0 {
-			referenceSource = "none"
-		}
+		referenceSource = "none"
 	}
 
 	kcalPerSet, metsPerSet, totalKcal := services.CalculateWeightTrainingCalories(
@@ -1082,7 +1079,7 @@ func SaveWorkoutResult(c *gin.Context) {
 		"warnings":        warnings, // plausibility warning เท่านั้น ไม่ block การบันทึก (เหมือน UpdateBodyStats)
 		"calculation": gin.H{
 			"reference_1rm":    reference1RM,
-			"reference_source": referenceSource, // history | session | none | not_applicable
+			"reference_source": referenceSource, // history | none | not_applicable
 			"body_weight_kg":   bodyWeight,
 			"mets_per_set":     metsPerSet,
 		},

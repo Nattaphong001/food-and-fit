@@ -205,18 +205,6 @@ type WeightSetEnergyInput struct {
 	Seconds  int     // เวลาของเซตนี้ = เวลาทำเซต + เวลาพักหลังเซต (วินาที)
 }
 
-// SessionBestOneRepMax e1RM สูงสุดจากเซตของเซสชันนี้ (Dual-Formula) — ใช้เป็น 1RM อ้างอิงแทน
-// เมื่อสมาชิกยังไม่เคยมีประวัติท่านี้ คืน 0 ถ้าไม่มีเซตไหนประเมินได้ (น้ำหนัก 0 หรือ reps > 20 ทุกเซต)
-func SessionBestOneRepMax(sets []WeightSetEnergyInput) float64 {
-	best := 0.0
-	for _, s := range sets {
-		if est := EstimateOneRepMax(s.WeightKg, s.Reps); est > best {
-			best = est
-		}
-	}
-	return best
-}
-
 // CalculateWeightTrainingCalories คำนวณพลังงานสุทธิรายเซตของเซสชันเวทเทรนนิ่ง 1 ท่า
 //
 //	kcal ของเซต i = NetEnergyKcal(METs_i, น้ำหนักตัว, เวลาเซต_i(นาที))
@@ -224,7 +212,7 @@ func SessionBestOneRepMax(sets []WeightSetEnergyInput) float64 {
 //
 // แต่ละเซตได้ METs ตามความหนักของตัวเอง (WeightSetMets) — ยกหนักกับยกเบาที่ใช้เวลาเท่ากันจึงได้
 // พลังงานต่างกัน kcalPerSet ปัด 2 ตำแหน่งก่อนรวม เพื่อให้ SUM(wtrs_calories) ใน DB เท่ากับ totalKcal พอดี
-// reference1RM = 1RM อ้างอิง (PR ก่อนเซสชันนี้ หรือ SessionBestOneRepMax ถ้าไม่มีประวัติ)
+// reference1RM = 1RM อ้างอิง (PR ก่อนเซสชันนี้) — 0 = ยังไม่มีประวัติ ทุกเซตที่มีน้ำหนักได้ MetsEndurance
 func CalculateWeightTrainingCalories(
 	sets []WeightSetEnergyInput,
 	reference1RM float64,
