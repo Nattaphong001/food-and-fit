@@ -147,6 +147,20 @@ func TestDailySumBetweenSQL_ConstantsSubstituted(t *testing.T) {
 	}
 }
 
+// OneRepMaxSQL — นิพจน์ SQL Dual-Formula (analytics_service.go) ต้องใช้ตัวเลขเดียวกับ EstimateOneRepMax
+// และ query ทั้ง 2 ตัวที่ใช้นิพจน์นี้ต้องไม่เหลือ placeholder
+func TestOneRepMaxSQL_MatchesGoFormula(t *testing.T) {
+	want := "(CASE WHEN r <= 10 THEN w * (1 + r / 30) ELSE 100 * w / (83.7677 * EXP(-0.0338 * r) + 17.6846) END)"
+	if got := OneRepMaxSQL("w", "r"); got != want {
+		t.Errorf("OneRepMaxSQL = %s\nwant %s", got, want)
+	}
+	for name, sql := range map[string]string{"get1RMHistorySQL": get1RMHistorySQL, "bestOneRepMaxSQL": bestOneRepMaxSQL} {
+		if strings.Contains(sql, "{{") || !strings.Contains(sql, "EXP(-0.0338") {
+			t.Errorf("%s ไม่ได้ใช้นิพจน์ Dual-Formula ครบ: %s", name, sql)
+		}
+	}
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // CalculateBaselineExpenditure — สูตรอยู่ใน calculator.go หมวด 2 — Baseline = BMR × 1.2 (Sedentary,
 // IOM 2548) ห้ามแก้ตัวเลข
@@ -195,8 +209,9 @@ func TestCalculateMacroTargets(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// EstimateOneRepMax — สูตรอยู่ใน calculator.go หมวด 3 — Epley: weight × (1 + reps/30) (บทที่ 2 ข้อ
-// 2.1.4.13) ห้ามแก้ตัวเลข
+// EstimateOneRepMax — สูตรอยู่ใน calculator.go หมวด 3 — Dual-Formula (บทที่ 2 ข้อ 2.1.4.12)
+// Epley reps 1-10: W × (1 + r/30) · Desgorces reps 11-20: 100W / (83.7677 × e^(−0.0338r) + 17.6846)
+// ห้ามแก้ตัวเลข
 // ─────────────────────────────────────────────────────────────────────────
 
 func TestEstimateOneRepMax(t *testing.T) {
@@ -205,10 +220,13 @@ func TestEstimateOneRepMax(t *testing.T) {
 		reps     int
 		want     float64
 	}{
-		{100, 5, 116.67}, // 100 * (1 + 5/30) = 116.666... -> 116.67
-		{60, 10, 80},     // 60 * (1 + 10/30) = 80
-		{0, 8, 0},        // ท่า bodyweight น้ำหนัก 0
-		{100, 0, 100},    // reps=0 -> ไม่คูณเพิ่ม (นอกช่วงแม่นยำ 2-10 แต่สูตรยังคำนวณได้)
+		{100, 5, 116.67},  // Epley: 100 * (1 + 5/30) = 116.666... -> 116.67
+		{60, 10, 80},      // Epley ขอบบน: 60 * (1 + 10/30) = 80
+		{100, 11, 132.55}, // Desgorces ขอบล่าง: 10000 / (83.7677 e^-0.3718 + 17.6846) = 132.55
+		{100, 15, 146.76}, // Desgorces: 10000 / (83.7677 e^-0.507 + 17.6846) = 146.76
+		{100, 21, 0},      // reps > 20 -> ประเมินไม่ได้
+		{0, 8, 0},         // ท่า bodyweight น้ำหนัก 0
+		{100, 0, 0},       // reps=0 -> ประเมินไม่ได้
 	}
 	for _, tc := range cases {
 		if got := EstimateOneRepMax(tc.weightKg, tc.reps); !almostEqual(got, tc.want, 0.005) {

@@ -3,6 +3,7 @@ package services
 import (
 	"food_and_fit_api/config"
 	"food_and_fit_api/models"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -150,6 +151,19 @@ var sqlConstReplacer = strings.NewReplacer(
 	"{{FALLBACK_BMR}}", strconv.FormatFloat(FallbackBmr, 'f', -1, 64),
 	"{{FALLBACK_TARGET_TDEE}}", strconv.FormatFloat(FallbackTargetTdee, 'f', -1, 64),
 )
+
+// OneRepMaxSQL นิพจน์ SQL ของ Estimated 1RM แบบ Dual-Formula — ตรงกับ EstimateOneRepMax (calculator.go)
+// ทุกตัวเลข (Epley reps ≤ 10, Desgorces reps 11-20) ใช้ใน query ที่ต้องหาเซต 1RM สูงสุดในคำสั่งเดียว
+// ผู้เรียกต้องกรอง reps BETWEEN 1 AND DesgorcesMaxReps เอง (เกิน 20 ไม่ประเมิน) — weightCol/repsCol
+// เป็นชื่อคอลัมน์ที่ส่งจากโค้ดเท่านั้น ไม่มี input จากผู้ใช้
+func OneRepMaxSQL(weightCol, repsCol string) string {
+	f := func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+	return fmt.Sprintf(
+		"(CASE WHEN %[2]s <= %[3]d THEN %[1]s * (1 + %[2]s / %[4]s) ELSE %[5]s * %[1]s / (%[6]s * EXP(-%[7]s * %[2]s) + %[8]s) END)",
+		weightCol, repsCol, EpleyMaxReps, f(EpleyDivisor),
+		f(DesgorcesNumerator), f(DesgorcesA), f(DesgorcesB), f(DesgorcesC),
+	)
+}
 
 // dailySumBetweenSQL สรุปพลังงานเข้า/ออกรายวันของช่วงวันที่ระบุ (ใช้กับกราฟ weekly/monthly)
 // แต่ละวันในผลลัพธ์ใช้ baseline (BMR×1.2) และ target_tdee ของ "วันนั้นๆ" เอง (หาแถว
@@ -322,20 +336,23 @@ type RMPoint struct {
 	BestReps   int     `gorm:"column:best_reps"  json:"best_reps"`
 }
 
+var get1RMHistorySQL = strings.NewReplacer("{{E1RM}}", OneRepMaxSQL("wtrs_weight", "wtrs_reps")).Replace(`
+	SELECT wtrs_date as date,
+	       ROUND(MAX({{E1RM}}), 2) as best_1rm,
+	       SUBSTRING_INDEX(GROUP_CONCAT(wtrs_weight ORDER BY {{E1RM}} DESC),',',1)+0 as best_weight,
+	       CAST(SUBSTRING_INDEX(GROUP_CONCAT(wtrs_reps ORDER BY {{E1RM}} DESC),',',1) AS UNSIGNED) as best_reps
+	FROM weight_training_result
+	WHERE mb_id = ? AND wet_id = ? AND wtrs_weight > 0 AND wtrs_reps BETWEEN 1 AND ?
+	  AND wtrs_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+	GROUP BY wtrs_date
+	ORDER BY wtrs_date ASC
+`)
+
 // Get1RMHistoryData - ประวัติ 1RM รายวัน สำหรับท่าฝึกที่ระบุ
 func Get1RMHistoryData(userID any, wetID string, days string) []RMPoint {
 	var rows []RMPoint
-	config.DB.Raw(`
-		SELECT wtrs_date as date,
-		       MAX(wtrs_weight * (1 + wtrs_reps / 30.0)) as best_1rm,
-		       SUBSTRING_INDEX(GROUP_CONCAT(wtrs_weight ORDER BY wtrs_weight*(1+wtrs_reps/30.0) DESC),',',1)+0 as best_weight,
-		       CAST(SUBSTRING_INDEX(GROUP_CONCAT(wtrs_reps ORDER BY wtrs_weight*(1+wtrs_reps/30.0) DESC),',',1) AS UNSIGNED) as best_reps
-		FROM weight_training_result
-		WHERE mb_id = ? AND wet_id = ? AND wtrs_weight > 0 AND wtrs_reps > 0
-		  AND wtrs_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
-		GROUP BY wtrs_date
-		ORDER BY wtrs_date ASC
-	`, userID, wetID, days).Scan(&rows)
+	// 1RM แบบ Dual-Formula (OneRepMaxSQL) — เซต reps > 20 ประเมินไม่ได้ จึงกรองออก
+	config.DB.Raw(get1RMHistorySQL, userID, wetID, DesgorcesMaxReps, days).Scan(&rows)
 	return rows
 }
 

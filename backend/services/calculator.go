@@ -96,11 +96,39 @@ func CalculateMacroTargets(targetCalories float64, goalType int) (proteinG, carb
 // 3. Estimated 1RM — EstimateOneRepMax
 // ═══════════════════════════════════════════════════════════════════════
 
-// EstimateOneRepMax - สูตร Epley: weight × (1 + reps/30) แม่นยำเฉพาะช่วง reps 2-10
+// ระบบสลับสมการแบบไดนามิก (Dynamic Dual-Formula Model, บทที่ 2 ข้อ 2.1.4.12) — ใช้ร่วมกันทั้ง Go และ SQL
+// (ผ่าน OneRepMaxSQL ใน analytics_service.go) ห้ามพิมพ์ตัวเลขซ้ำที่อื่น
+const (
+	EpleyMaxReps     = 10 // Epley ใช้กับ reps 1-10 (ช่วงจำนวนครั้งต่ำถึงปานกลาง)
+	DesgorcesMaxReps = 20 // Desgorces ใช้กับ reps 11-20 (ช่วงจำนวนครั้งสูง) เกิน 20 ไม่ประเมิน 1RM
+
+	EpleyDivisor = 30.0 // Epley: W × (1 + r/30)
+
+	// Desgorces et al. (2553): 1RM = 100W / (83.7677 × e^(−0.0338r) + 17.6846)
+	DesgorcesNumerator = 100.0
+	DesgorcesA         = 83.7677
+	DesgorcesB         = 0.0338
+	DesgorcesC         = 17.6846
+)
+
+// EstimateOneRepMax - Estimated 1RM แบบ Dual-Formula
+//   - reps 1-10  → สมการเอพลีย์ (Epley): W × (1 + r/30)
+//   - reps 11-20 → สมการเดสกอร์ส (Desgorces): 100W / (83.7677 × e^(−0.0338r) + 17.6846)
+//   - reps > 20, reps < 1 หรือน้ำหนัก ≤ 0 → 0 (ประเมินไม่ได้)
+//
 // 1RM = น้ำหนักสูงสุดที่ยกได้ 1 ครั้ง (ประมาณจากเซตที่ยกหลายครั้ง)
 // weightKg=น้ำหนักที่ยก, reps=จำนวนครั้งที่ทำได้
 func EstimateOneRepMax(weightKg float64, reps int) float64 {
-	return math.Round(weightKg*(1+float64(reps)/30.0)*100) / 100 
+	if weightKg <= 0 || reps < 1 || reps > DesgorcesMaxReps {
+		return 0
+	}
+	var est float64
+	if reps <= EpleyMaxReps {
+		est = weightKg * (1 + float64(reps)/EpleyDivisor)
+	} else {
+		est = DesgorcesNumerator * weightKg / (DesgorcesA*math.Exp(-DesgorcesB*float64(reps)) + DesgorcesC)
+	}
+	return math.Round(est*100) / 100
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -136,31 +164,82 @@ func CalculateCardioCalories(
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// 5. พลังงานเวทเทรนนิ่ง
+// 5. พลังงานเวทเทรนนิ่ง — Dynamic METs ตาม %1RM (บทที่ 2 ข้อ 2.1.4.12 ตารางที่ 2.3)
 // ═══════════════════════════════════════════════════════════════════════
-// CalculateWeightTrainingCalories คำนวณพลังงานที่เผาผลาญของเซสชันเวทเทรนนิ่ง 1 ท่า — mets มาจากตาราง weight_exercises
+
+// ค่า METs จาก 2024 Adult Compendium of Physical Activities (Herrmann et al., 2567) ตามตารางที่ 2.3
+const (
+	MetsBodyweight = 3.0 // ไม่มี 1RM (บอดี้เวท / ท่าค้างเวลา / ไม่มีน้ำหนักถ่วง) — ความเข้มข้นทั่วไป/เบา
+	MetsEndurance  = 3.5 // ความทนทานของกล้ามเนื้อ (%1RM < 70) หรือ reps > 20
+	MetsHeavy      = 6.0 // เพิ่มขนาดกล้ามเนื้อ/ความแข็งแรง (%1RM ≥ 70)
+
+	// เกณฑ์ตัดระดับความหนัก: ตาราง 2.3 แบ่ง 60-70% / 70-80% / 85-90% ไม่ครอบคลุมช่วงอื่น (เช่น < 60%,
+	// 80-85%, > 90%) ระบบจึงตัดที่ 70% จุดเดียว — ต่ำกว่า = ความทนทาน, ตั้งแต่ 70% ขึ้นไป = หนัก
+	HeavyIntensityPercent = 70.0
+	MaxIntensityPercent   = 100.0 // ยกเกิน 1RM อ้างอิง (ทำสถิติใหม่) ถือเป็น 100%
+)
+
+// WeightSetMets เลือก METs ของเซตเดียว
+//   - hasWeight=false หรือ hasReps=false หรือน้ำหนัก ≤ 0 → MetsBodyweight (ไม่มี 1RM ให้คำนวณ)
+//   - reps > 20 → MetsEndurance (เกินขอบเขตสมการ 1RM)
+//   - ไม่มี 1RM อ้างอิง → MetsEndurance
+//   - %1RM = (W / 1RM อ้างอิง) × 100 → ≥ 70 = MetsHeavy, < 70 = MetsEndurance
+func WeightSetMets(weightKg float64, reps int, reference1RM float64, hasWeight, hasReps bool) float64 {
+	if !hasWeight || !hasReps || weightKg <= 0 {
+		return MetsBodyweight
+	}
+	if reps > DesgorcesMaxReps || reference1RM <= 0 {
+		return MetsEndurance
+	}
+	pct := math.Min(weightKg/reference1RM*100, MaxIntensityPercent)
+	if pct >= HeavyIntensityPercent {
+		return MetsHeavy
+	}
+	return MetsEndurance
+}
+
+// WeightSetEnergyInput ข้อมูล 1 เซตที่เข้าสูตรพลังงาน
+type WeightSetEnergyInput struct {
+	WeightKg float64 // น้ำหนักที่ยก (kg)
+	Reps     int     // จำนวนครั้ง
+	Seconds  int     // เวลาของเซตนี้ = เวลาทำเซต + เวลาพักหลังเซต (วินาที)
+}
+
+// SessionBestOneRepMax e1RM สูงสุดจากเซตของเซสชันนี้ (Dual-Formula) — ใช้เป็น 1RM อ้างอิงแทน
+// เมื่อสมาชิกยังไม่เคยมีประวัติท่านี้ คืน 0 ถ้าไม่มีเซตไหนประเมินได้ (น้ำหนัก 0 หรือ reps > 20 ทุกเซต)
+func SessionBestOneRepMax(sets []WeightSetEnergyInput) float64 {
+	best := 0.0
+	for _, s := range sets {
+		if est := EstimateOneRepMax(s.WeightKg, s.Reps); est > best {
+			best = est
+		}
+	}
+	return best
+}
+
+// CalculateWeightTrainingCalories คำนวณพลังงานสุทธิรายเซตของเซสชันเวทเทรนนิ่ง 1 ท่า
+//
+//	kcal ของเซต i = NetEnergyKcal(METs_i, น้ำหนักตัว, เวลาเซต_i(นาที))
+//	kcal ทั้งเซสชัน = Σ kcal ของทุกเซต
+//
+// แต่ละเซตได้ METs ตามความหนักของตัวเอง (WeightSetMets) — ยกหนักกับยกเบาที่ใช้เวลาเท่ากันจึงได้
+// พลังงานต่างกัน kcalPerSet ปัด 2 ตำแหน่งก่อนรวม เพื่อให้ SUM(wtrs_calories) ใน DB เท่ากับ totalKcal พอดี
+// reference1RM = 1RM อ้างอิง (PR ก่อนเซสชันนี้ หรือ SessionBestOneRepMax ถ้าไม่มีประวัติ)
 func CalculateWeightTrainingCalories(
-	mets float64, // METs ของท่านี้ (wet_mets)
+	sets []WeightSetEnergyInput,
+	reference1RM float64,
 	bodyWeightKg float64, // น้ำหนักของผู้ออกกำลังกาย
-	totalDurationSeconds int, // เวลารวมทั้งเซสชัน (วินาที)
-	setCount int, // จำนวนเซตที่บันทึก
-) (kcalPerSet []float64, totalKcal float64) {
-	kcalPerSet = make([]float64, setCount) 
-	if setCount == 0 {
-		return kcalPerSet, 0 // ไม่มีเซตให้คำนวณ
+	hasWeight bool, // ท่าใช้อุปกรณ์ (ไม่ใช่บอดี้เวท)
+	hasReps bool, // ท่านับจำนวนครั้งได้ (ไม่ใช่ท่าค้างเวลา)
+) (kcalPerSet []float64, metsPerSet []float64, totalKcal float64) {
+	kcalPerSet = make([]float64, len(sets))
+	metsPerSet = make([]float64, len(sets))
+	for i, s := range sets {
+		mets := WeightSetMets(s.WeightKg, s.Reps, reference1RM, hasWeight, hasReps)
+		kcal := math.Round(NetEnergyKcal(mets, bodyWeightKg, float64(s.Seconds)/60.0)*100) / 100
+		metsPerSet[i] = mets
+		kcalPerSet[i] = kcal
+		totalKcal += kcal
 	}
-
-	// 1. เอา MET ของท่า , น้ำหนักตัว , เวลารวมทั้งเซสชัน เข้าสูตร Net Energy Kcal
-	minutes := float64(totalDurationSeconds) / 60.0 // แปลงวินาทีเป็นนาที ให้ตรงหน่วยของสูตร
-	// ส่งค่าเข้าสูตรแกนกลาง NetEnergyKcal
-	totalKcal = math.Round(NetEnergyKcal(mets, bodyWeightKg, minutes)*100) / 100
-	// เรียกฟังก์ชันพร้อมส่งค่าเข้าไป → รับค่าที่ return กลับมา → ปัด 2 ตำแหน่ง → เก็บใส่ totalKcal
-
-	// 2. หารพลังงานรวมเฉลี่ยเท่ากันทุกเซต (perSetShare = พลังงานต่อ 1 เซต)
-	perSetShare := totalKcal / float64(setCount)
-	for i := range kcalPerSet {
-		kcalPerSet[i] = perSetShare
-	}
-
-	return kcalPerSet, totalKcal // ค่าพลังงานต่อเซต เเละ พลังงานรวมทั้งหมด
+	return kcalPerSet, metsPerSet, math.Round(totalKcal*100) / 100
 }

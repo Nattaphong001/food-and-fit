@@ -171,11 +171,10 @@ func ValidateCardioResult(durationSeconds int, distanceKm float64, hasDistance b
 }
 
 // ── ขอบเขตของข้อมูลเซสชันเวทเทรนนิ่ง (ValidateWeightSession) ──
-// เวลารวมคือตัวที่ทำให้ kcal เพี้ยนได้มากที่สุด: kcal เป็นเส้นตรงกับเวลารวมของเซสชัน (METs คงที่ต่อท่า
-// — ดู services.CalculateWeightTrainingCalories, ../../CLAUDE.md ข้อ 7[B-1]) เวลาพักไม่ได้เข้าสูตร
-// เลือก MET เลย (ไม่มี MET ให้เลือกอีกต่อไป ท่านั้นๆ ใช้ wet_mets ค่าเดียวเสมอ) เหลือหน้าที่แค่ตรวจว่า
-// ค่าที่ส่งมาสมเหตุสมผลไหม ต้องกันค่าที่เป็นไปไม่ได้ตั้งแต่ชั้นรับข้อมูล ค่าเพดานด้านล่างเป็นค่าที่
-// ผู้พัฒนาเลือก ไม่ได้มาจากสเปกบทที่ 2
+// เวลาคือตัวที่ทำให้ kcal เพี้ยนได้มากที่สุด: kcal ของแต่ละเซตเป็นเส้นตรงกับเวลาของเซตนั้น (work + rest)
+// คูณ METs ของเซต (Dynamic METs ตาม %1RM — ดู services.CalculateWeightTrainingCalories, ../../CLAUDE.md
+// ข้อ 7[B-1]) เวลาพักไม่ได้มีผลต่อการเลือก METs (เลือกจากน้ำหนัก/reps/PR เท่านั้น) ต้องกันค่าที่เป็นไป
+// ไม่ได้ตั้งแต่ชั้นรับข้อมูล ค่าเพดานด้านล่างเป็นค่าที่ผู้พัฒนาเลือก ไม่ได้มาจากสเปกบทที่ 2
 const (
 	// เวลาต่ำสุดต่อเซต: 1 เซตที่บันทึกได้จริงต้องใช้เวลาอย่างน้อยกี่วินาที (กันข้อมูลขยะจากการกดรัว)
 	WeightSessionMinSecondsPerSet = 5
@@ -224,7 +223,7 @@ func WeightSessionTotalSeconds(sets []WeightSetCheck) int {
 // hasWeight/hasReps คุมตาม UI ของท่านั้น (2 กฎแยกกันไม่ทับซ้อน ดู models.WeightExercise.WetIsTimed):
 //   hasWeight=false (wet_equipment=5 Bodyweight) → ไม่มีช่องกรอกน้ำหนัก ทุกเซตต้องเป็นน้ำหนัก 0
 //   hasReps=false (wet_is_timed=true เช่น Plank) → ไม่มีช่องกรอกจำนวนครั้ง ทุกเซตต้องเป็น Reps 0
-// (0 = ไม่ได้บันทึก ไม่ใช่ "ทำ 0 ครั้ง") พลังงานคิดจาก METs ของท่า × เวลารวมอย่างเดียวอยู่แล้ว ไม่ใช้ทั้งคู่
+// (0 = ไม่ได้บันทึก ไม่ใช่ "ทำ 0 ครั้ง") ท่าที่ขาดช่องใดช่องหนึ่งไม่มี 1RM จึงได้ METs 3.0 คงที่ × เวลาของเซต
 // [USED] workout_controller.go (SaveWorkoutResult)
 func ValidateWeightSession(sets []WeightSetCheck, hasWeight bool, hasReps bool) (bool, string) {
 	totalDurationSeconds := WeightSessionTotalSeconds(sets)

@@ -896,8 +896,9 @@ const abnormalOneRepMaxJumpRatio = 1.2
 // SaveWorkoutResult บันทึกผลเวทเทรนนิ่งทั้งเซสชัน — รับทั้งเซสชันครั้งเดียว (ไม่ใช่ยิงทีละเซต) กัน
 // เน็ตหลุดกลางทางแล้วได้ข้อมูลครึ่งๆ
 //
-// สูตรคำนวณพลังงาน: METs คงที่ต่อท่า (weight_exercises.wet_mets, แก้ 2026-09-29 แทนที่ Session MET +
-// RIR — ดู services.CalculateWeightTrainingCalories และ ../../CLAUDE.md ข้อ 7[B-1])
+// สูตรคำนวณพลังงาน: Dynamic METs รายเซตตาม %1RM เทียบ PR ก่อนเซสชัน (บทที่ 2 ข้อ 2.1.4.12 ตารางที่ 2.3,
+// แก้ 2026-10-01 แทนที่ METs คงที่ต่อท่า — ดู services.CalculateWeightTrainingCalories และ
+// ../../CLAUDE.md ข้อ 7[B-1])
 func SaveWorkoutResult(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -912,7 +913,7 @@ func SaveWorkoutResult(c *gin.Context) {
 		return
 	}
 
-	// ตรวจเวลารวม/เวลาพัก/เซต ก่อนแตะ DB — เวลารวมคูณ kcal ตรงๆ (METs ของท่า × เวลารวม ไม่มีเพดานในสูตร)
+	// ตรวจเวลารวม/เวลาพัก/เซต ก่อนแตะ DB — เวลาคูณ kcal ตรงๆ (METs ของเซต × เวลาของเซต ไม่มีเพดานในสูตร)
 	// จึงต้องปฏิเสธค่าที่เป็นไปไม่ได้ที่นี่ ไม่แก้ค่าเงียบๆ (ดู helpers.ValidateWeightSession)
 	// โหลดท่าก่อนตรวจ — กติกา Reps/น้ำหนักแยกกัน 2 เรื่องไม่ทับซ้อน (ดู models.WeightExercise.WetIsTimed):
 	// hasWeight: ท่าใช้อุปกรณ์ (ไม่ใช่บอดี้เวท) · hasReps: ท่านับจำนวนครั้งได้ (ไม่ใช่ท่าค้างเวลาแบบ Plank)
@@ -978,9 +979,9 @@ func SaveWorkoutResult(c *gin.Context) {
 		bodyWeight = bodyStat.MbsWeight
 	}
 
-	// 1RM ที่ดีที่สุดจากประวัติเดิม (ไม่รวมเซสชันนี้, Reps 1-10 เท่านั้น — ดู GetBestOneRepMax) —
-	// ไม่เข้าสูตรพลังงานแล้ว (2026-09-29 เปลี่ยนเป็น METs คงที่ต่อท่า ดู ../../CLAUDE.md ข้อ 7[B-1])
-	// ใช้แค่เตือน (ไม่ block) เมื่อ 1RM ที่ประเมินได้ในเซสชันนี้กระโดดผิดปกติจากประวัติ
+	// 1RM ที่ดีที่สุดจากประวัติเดิม (PR ก่อนเซสชันนี้ — ดึงก่อนบันทึกเซตใหม่เสมอ, Dual-Formula reps 1-20
+	// ดู GetBestOneRepMax) ใช้ 2 อย่าง: (1) 1RM อ้างอิงของสูตรพลังงาน (%1RM = W / ค่านี้, ../../CLAUDE.md
+	// ข้อ 7[B-1]) (2) เตือน (ไม่ block) เมื่อ 1RM ที่ประเมินได้ในเซสชันนี้กระโดดผิดปกติจากประวัติ
 	oneRepMax, _, _, _, _ := services.GetBestOneRepMax(uid, req.WetID)
 
 	// เลขเซ็ทนับต่อเนื่องทั้งวันจาก DB จริง ไม่ใช้เลขเซ็ทจาก client ตรงๆ — client (หน้าจอฝึก) นับ
@@ -1008,16 +1009,29 @@ func SaveWorkoutResult(c *gin.Context) {
 		return
 	}
 
-	// เวลารวม = Σ(เวลาทำเซต + เวลาพัก) ของเซตที่บันทึกจริง — ค่าเดียวกับที่เก็บ DB (SUM รายเซต) และที่แสดงบนจอ
-	// (เซตที่ถูกกรองทิ้ง reps=0 ไม่มีแถวใน DB จึงไม่นับเวลาของมัน)
-	validChecks := make([]helpers.WeightSetCheck, 0, len(validSets))
+	// เวลาของแต่ละเซต = เวลาทำเซต + เวลาพักหลังเซต (คิดพลังงานรายเซต) — ผลรวมทุกเซตเท่ากับเวลารวมที่เก็บ DB
+	// (SUM รายเซต) และที่แสดงบนจอ (เซตที่ถูกกรองทิ้ง reps=0 ไม่มีแถวใน DB จึงไม่นับเวลาของมัน)
+	energySets := make([]services.WeightSetEnergyInput, 0, len(validSets))
 	for _, s := range validSets {
-		validChecks = append(validChecks, helpers.WeightSetCheck{WorkSeconds: s.WtrsWorkSeconds, RestSeconds: s.WtrsRestSeconds})
+		seconds := helpers.WeightSessionTotalSeconds([]helpers.WeightSetCheck{{WorkSeconds: s.WtrsWorkSeconds, RestSeconds: s.WtrsRestSeconds}})
+		energySets = append(energySets, services.WeightSetEnergyInput{WeightKg: s.WtrsWeight, Reps: s.WtrsReps, Seconds: seconds})
 	}
-	totalSeconds := helpers.WeightSessionTotalSeconds(validChecks)
 
-	kcalPerSet, totalKcal := services.CalculateWeightTrainingCalories(
-		exercise.WetMets, bodyWeight, totalSeconds, len(validSets),
+	// 1RM อ้างอิง: PR ก่อนเซสชันนี้ — ยังไม่เคยมีประวัติ ใช้ e1RM สูงสุดของเซสชันนี้เองแทน (Dual-Formula)
+	// ไม่มีเซตไหนประเมินได้ (เช่น reps > 20 ทุกเซต) → ไม่มีตัวอ้างอิง เซตที่มีน้ำหนักได้ METs ความทนทาน
+	// ท่าบอดี้เวท/ท่าค้างเวลาไม่ใช้ 1RM เลย (METs 3.0 คงที่)
+	reference1RM, referenceSource := oneRepMax, "history"
+	if !hasWeight || !hasReps {
+		reference1RM, referenceSource = 0, "not_applicable"
+	} else if reference1RM <= 0 {
+		reference1RM, referenceSource = services.SessionBestOneRepMax(energySets), "session"
+		if reference1RM <= 0 {
+			referenceSource = "none"
+		}
+	}
+
+	kcalPerSet, metsPerSet, totalKcal := services.CalculateWeightTrainingCalories(
+		energySets, reference1RM, bodyWeight, hasWeight, hasReps,
 	)
 
 	rows := make([]models.WeightTrainingResult, 0, len(validSets))
@@ -1067,9 +1081,10 @@ func SaveWorkoutResult(c *gin.Context) {
 		"estimated_1rm":   sessionBest1RM,
 		"warnings":        warnings, // plausibility warning เท่านั้น ไม่ block การบันทึก (เหมือน UpdateBodyStats)
 		"calculation": gin.H{
-			"one_rep_max_used": oneRepMax,
+			"reference_1rm":    reference1RM,
+			"reference_source": referenceSource, // history | session | none | not_applicable
 			"body_weight_kg":   bodyWeight,
-			"mets":             exercise.WetMets,
+			"mets_per_set":     metsPerSet,
 		},
 	}
 	recentWeightSessions.Complete(submission, http.StatusOK, body)

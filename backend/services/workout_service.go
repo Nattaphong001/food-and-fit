@@ -189,26 +189,28 @@ func CopySystemPlanToSchedule(tx *gorm.DB, uid uint, plan models.WorkoutPlanTemp
 	return inserted, nil
 }
 
+var bestOneRepMaxSQL = `
+	SELECT wtrs_weight AS best_weight, wtrs_reps AS best_reps, wtrs_date AS date
+	FROM weight_training_result
+	WHERE mb_id = ? AND wet_id = ? AND wtrs_weight > 0 AND wtrs_reps BETWEEN 1 AND ?
+	ORDER BY ` + OneRepMaxSQL("wtrs_weight", "wtrs_reps") + ` DESC
+	LIMIT 1
+`
+
 // GetBestOneRepMax หาค่า Estimated 1RM ที่ดีที่สุดของสมาชิกคนนี้ในท่านี้ จากประวัติที่บันทึกไว้แล้ว
 // เท่านั้น (ไม่รวมเซตที่กำลังจะบันทึกใหม่) — ใช้แสดงผลหน้าจอ 1RM และเป็นค่าฐานสำหรับเตือน (ไม่ block)
 // เมื่อ 1RM ที่ประเมินได้ในเซสชันใหม่กระโดดผิดปกติ (ดู workout_controller.go SaveWorkoutResult)
-// ไม่ได้เข้าสูตรคำนวณพลังงานแล้วตั้งแต่ 2026-09-29 (METs คงที่ต่อท่า ดู ../../CLAUDE.md ข้อ 7[B-1])
+// และเป็น "1RM อ้างอิง" (PR ก่อนเซสชัน) ของสูตรพลังงานเวท — %1RM ของแต่ละเซต = W / ค่านี้
+// (ต้องเรียกก่อนบันทึกเซตของเซสชันใหม่เสมอ ดู ../../CLAUDE.md ข้อ 7[B-1])
 func GetBestOneRepMax(mbID, wetID uint) (best1RM, bestWeight float64, bestReps int, bestDate string, hasData bool) {
 	var row struct {
 		BestWeight float64 `gorm:"column:best_weight"`
 		BestReps   int     `gorm:"column:best_reps"`
 		Date       string  `gorm:"column:date"`
 	}
-	// จำกัด Reps 1-10 เท่านั้น เพราะสูตร Epley แม่นยำสูงสุดในช่วงนี้ (เซต Reps สูงมากๆ จะประเมิน
-	// 1RM พองเกินจริง) — เลือกเซตที่ให้ 1RM ประมาณสูงสุดจากทุกเซตที่เคยบันทึกของท่านี้
-	// รายละเอียด/ที่มาของช่วง 1-10 → formula-comments-history.md
-	config.DB.Raw(`
-		SELECT wtrs_weight AS best_weight, wtrs_reps AS best_reps, wtrs_date AS date
-		FROM weight_training_result
-		WHERE mb_id = ? AND wet_id = ? AND wtrs_weight > 0 AND wtrs_reps BETWEEN 1 AND 10
-		ORDER BY (wtrs_weight * (1 + wtrs_reps / 30.0)) DESC
-		LIMIT 1
-	`, mbID, wetID).Scan(&row)
+	// Dual-Formula: Epley reps 1-10, Desgorces reps 11-20 (OneRepMaxSQL) — reps > 20 ประเมินไม่ได้
+	// เลือกเซตที่ให้ 1RM ประมาณสูงสุดจากทุกเซตที่เคยบันทึกของท่านี้
+	config.DB.Raw(bestOneRepMaxSQL, mbID, wetID, DesgorcesMaxReps).Scan(&row)
 
 	if row.BestWeight == 0 {
 		return 0, 0, 0, "", false // ไม่เคยฝึกท่านี้มาก่อนเลย
