@@ -40,6 +40,11 @@ type WeightExercise struct {
 	// METs คงที่ต่อท่า อ้างอิง 2024 Adult Compendium of Physical Activities (Herrmann et al., 2567)
 	// แทนที่ Session MET + RIR เดิม (ดู ../../CLAUDE.md ข้อ 7[B-1]) — แบบเดียวกับ cardio.cdo_mets
 	WetMets         float64                `gorm:"type:decimal(4,2);column:wet_mets" json:"wet_mets"`
+	// WetIsTimed (wet_is_timed) — เพิ่มเข้ามา 2026-09-30 (migrations/2026-09-30_weight_exercises_is_timed.sql)
+	// ท่าค้างเวลา ไม่มีจำนวนครั้งให้กรอก (เช่น Plank) แยกจาก WetEquipment=5 (Bodyweight) เพราะท่าบอดี้เวท
+	// ส่วนใหญ่ (Pull-up, Dips, Hanging Leg Raise, Crunch) นับจำนวนครั้งได้ปกติ มีแค่ไม่มีน้ำหนักถ่วง —
+	// UI: ช่องน้ำหนักซ่อนเมื่อ WetEquipment==5, ช่องจำนวนครั้งซ่อนเมื่อ WetIsTimed==true (2 กฎแยกกันไม่ทับซ้อน)
+	WetIsTimed      bool                   `gorm:"column:wet_is_timed" json:"wet_is_timed"`
 	MuscleDetails []ExerciseMuscleDetail `gorm:"foreignKey:WetID;references:WetID" json:"muscle_details"`
 }
 
@@ -183,14 +188,12 @@ type WeightTrainingResult struct {
 	WtrsSetNo          int            `gorm:"type:tinyint unsigned;column:wtrs_set_no" json:"wtrs_set_no"`
 	WtrsReps           int            `gorm:"type:smallint unsigned;column:wtrs_reps" json:"wtrs_reps"`
 	WtrsWeight         float64        `gorm:"type:decimal(5,2);column:wtrs_weight" json:"wtrs_weight"`
-	// *int เพราะคอลัมน์ nullable จริง (เพิ่มเข้ามา 2026-09-08 — แถวเก่าก่อนหน้านั้นเป็น NULL หมด)
-	// เหตุผลเดียวกับ WetID/WschID ด้านล่าง: ประกาศเป็น int เฉยๆ GORM scan NULL ไม่ได้
-	// เวลารวมทั้งเซสชัน (วินาที) ซ้ำกันทุกแถวของเซสชันเดียวกัน — ห้าม SUM ข้ามแถว
-	WtrsDuration *int `gorm:"type:smallint unsigned;column:wtrs_duration" json:"wtrs_duration"`
-	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป (เพิ่มเข้ามา 2026-09-18, migrations/2026-09-18_
-	// add_weight_training_rest_seconds.sql) — NULL = ไม่ทราบ (แถวเก่า/มือถือยังไม่ส่งมา หรือเซตสุดท้าย
-	// ของเซสชัน) เก็บลง DB เพื่อดูประวัติเท่านั้น ตั้งแต่สูตร Session MET (2026-09-26,
-	// services.CalculateWeightTrainingCalories) ไม่ได้ใช้เวลาพักเข้าสูตรเลือก MET แล้ว
+	// เวลาที่ใช้ทำเซตนี้ (วินาที) — แต่ละแถวเก็บเฉพาะเวลาของตัวเอง แทน wtrs_duration เดิมที่เก็บเวลารวม
+	// ทั้งเซสชันซ้ำทุกแถว (migrations/2026-09-30_weight_training_work_seconds.sql)
+	// เวลารวม = SUM(wtrs_work_seconds + COALESCE(wtrs_rest_seconds, 0)) — ค่าเดียวกับที่เข้าสูตรพลังงาน
+	WtrsWorkSeconds int `gorm:"type:smallint unsigned;column:wtrs_work_seconds;not null" json:"wtrs_work_seconds"`
+	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป (เพิ่มเข้ามา 2026-09-18) — NULL = เซตสุดท้ายของเซสชัน
+	// หรือไม่เคยกดปุ่มพัก (นับเป็น 0 ตอนรวมเวลา)
 	WtrsRestSeconds    *int           `gorm:"type:smallint unsigned;column:wtrs_rest_seconds" json:"wtrs_rest_seconds"`
 	// wtrs_active_seconds ถูกลบออกจาก DB แล้ว (2026-09-29, migrations/2026-09-29_drop_wtrs_active_seconds.sql)
 	// — เก็บไว้เผื่ออนาคตแต่ไม่เคยเข้าสูตรคำนวณพลังงานเลยตั้งแต่โมเดล Two-Compartment Energy Model ถูก

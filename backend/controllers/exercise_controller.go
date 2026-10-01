@@ -197,6 +197,8 @@ func CreateWeightExercise(c *gin.Context) {
 		}
 		wetMets = m
 	}
+	// wet_is_timed — ท่าค้างเวลา ไม่มีจำนวนครั้งให้กรอกในแอป (เช่น Plank) ค่าเริ่มต้น false ถ้าไม่ได้ส่งมา
+	wetIsTimed := c.PostForm("wet_is_timed") == "true" || c.PostForm("wet_is_timed") == "1"
 	// mug_id (ถ้า form ส่งมา) ไม่ใช้แล้ว — weight_exercises.mug_id ถูก DROP ออกจาก DB (2026-09-04)
 	// กำหนดกล้ามเนื้อของท่าฝึกผ่าน endpoint exercise_muscle_details แยกต่างหากเท่านั้น (รองรับ
 	// หลักหลายมัด/รองได้ ต่างจาก mug_id เดิมที่เก็บได้แค่มัดเดียว)
@@ -240,6 +242,7 @@ func CreateWeightExercise(c *gin.Context) {
 		WetEquipment:    int8(wetEquip),        // #nosec G115 -- validated by ValidateWeightExerciseCodes above
 		WetExerciseType: int8(wetExerciseType), // #nosec G115 -- validated by ValidateWeightExerciseCodes above
 		WetMets:         wetMets,
+		WetIsTimed:      wetIsTimed,
 		WetImage:        imagePath,
 	}
 
@@ -315,6 +318,9 @@ func UpdateWeightExercise(c *gin.Context) {
 			return
 		}
 		exercise.WetMets = m
+	}
+	if timedStr := c.PostForm("wet_is_timed"); timedStr != "" {
+		exercise.WetIsTimed = timedStr == "true" || timedStr == "1"
 	}
 	// mug_id (ถ้า form ส่งมา) ไม่ใช้แล้ว — เหตุผลเดียวกับ CreateWeightExercise ด้านบน
 

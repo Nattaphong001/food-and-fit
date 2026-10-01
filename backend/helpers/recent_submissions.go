@@ -87,17 +87,17 @@ func (s *Submission) Done() <-chan struct{} { return s.done }
 // Result คืนผลที่เก็บไว้ — ok = false ถ้าเจ้าของคำขอไม่สำเร็จ (ผู้รอควรลอง Acquire ใหม่)
 func (s *Submission) Result() (status int, body any, ok bool) { return s.status, s.body, s.ok }
 
-// WeightSessionFingerprint สร้างคีย์ระบุ "คำขอบันทึกเวทเซสชันเดียวกัน" จากสมาชิก ท่า เวลารวม และทุกเซต
-// (Reps น้ำหนัก เวลาพัก) — ผู้ใช้ 2 คนหรือ 2 เซสชันจริงที่ต่างกันแม้แต่ค่าเดียวได้คีย์ต่างกัน
-func WeightSessionFingerprint(memberID, exerciseID uint, totalDurationSeconds int, sets []WeightSetCheck) string {
+// WeightSessionFingerprint สร้างคีย์ระบุ "คำขอบันทึกเวทเซสชันเดียวกัน" จากสมาชิก ท่า และทุกเซต
+// (Reps น้ำหนัก เวลาทำเซต เวลาพัก) — ผู้ใช้ 2 คนหรือ 2 เซสชันจริงที่ต่างกันแม้แต่ค่าเดียวได้คีย์ต่างกัน
+func WeightSessionFingerprint(memberID, exerciseID uint, sets []WeightSetCheck) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d|%d|%d", memberID, exerciseID, totalDurationSeconds)
+	fmt.Fprintf(&b, "%d|%d", memberID, exerciseID)
 	for _, s := range sets {
 		rest := "nil"
 		if s.RestSeconds != nil {
 			rest = fmt.Sprint(*s.RestSeconds)
 		}
-		fmt.Fprintf(&b, "|%d,%.2f,%s", s.Reps, s.WeightKg, rest)
+		fmt.Fprintf(&b, "|%d,%.2f,%d,%s", s.Reps, s.WeightKg, s.WorkSeconds, rest)
 	}
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:])

@@ -89,24 +89,24 @@ func TestRecentSubmissions_ConcurrentDuplicatesWriteOnce(t *testing.T) {
 
 func TestWeightSessionFingerprint(t *testing.T) {
 	rest := func(v int) *int { return &v }
-	base := []WeightSetCheck{{Reps: 10, WeightKg: 40, RestSeconds: rest(60)}, {Reps: 8, WeightKg: 40}}
-	key := WeightSessionFingerprint(1, 5, 300, base)
+	base := []WeightSetCheck{{Reps: 10, WeightKg: 40, WorkSeconds: 30, RestSeconds: rest(60)}, {Reps: 8, WeightKg: 40, WorkSeconds: 30}}
+	key := WeightSessionFingerprint(1, 5, base)
 
-	if key != WeightSessionFingerprint(1, 5, 300, base) {
+	if key != WeightSessionFingerprint(1, 5, base) {
 		t.Error("ข้อมูลเดียวกันต้องได้คีย์เดียวกัน")
 	}
 	changed := []struct {
 		name string
 		key  string
 	}{
-		{"สมาชิกต่าง", WeightSessionFingerprint(2, 5, 300, base)},
-		{"ท่าต่าง", WeightSessionFingerprint(1, 6, 300, base)},
-		{"เวลารวมต่าง", WeightSessionFingerprint(1, 5, 301, base)},
-		{"Reps ต่าง", WeightSessionFingerprint(1, 5, 300, []WeightSetCheck{{Reps: 11, WeightKg: 40, RestSeconds: rest(60)}, {Reps: 8, WeightKg: 40}})},
-		{"น้ำหนักต่าง", WeightSessionFingerprint(1, 5, 300, []WeightSetCheck{{Reps: 10, WeightKg: 42.5, RestSeconds: rest(60)}, {Reps: 8, WeightKg: 40}})},
-		{"เวลาพักต่าง", WeightSessionFingerprint(1, 5, 300, []WeightSetCheck{{Reps: 10, WeightKg: 40, RestSeconds: rest(61)}, {Reps: 8, WeightKg: 40}})},
-		{"nil ต่างจาก 0", WeightSessionFingerprint(1, 5, 300, []WeightSetCheck{{Reps: 10, WeightKg: 40, RestSeconds: rest(60)}, {Reps: 8, WeightKg: 40, RestSeconds: rest(0)}})},
-		{"จำนวนเซตต่าง", WeightSessionFingerprint(1, 5, 300, base[:1])},
+		{"สมาชิกต่าง", WeightSessionFingerprint(2, 5, base)},
+		{"ท่าต่าง", WeightSessionFingerprint(1, 6, base)},
+		{"เวลาทำเซตต่าง", WeightSessionFingerprint(1, 5, []WeightSetCheck{{Reps: 10, WeightKg: 40, WorkSeconds: 31, RestSeconds: rest(60)}, {Reps: 8, WeightKg: 40, WorkSeconds: 30}})},
+		{"Reps ต่าง", WeightSessionFingerprint(1, 5, []WeightSetCheck{{Reps: 11, WeightKg: 40, RestSeconds: rest(60)}, {Reps: 8, WeightKg: 40}})},
+		{"น้ำหนักต่าง", WeightSessionFingerprint(1, 5, []WeightSetCheck{{Reps: 10, WeightKg: 42.5, RestSeconds: rest(60)}, {Reps: 8, WeightKg: 40}})},
+		{"เวลาพักต่าง", WeightSessionFingerprint(1, 5, []WeightSetCheck{{Reps: 10, WeightKg: 40, RestSeconds: rest(61)}, {Reps: 8, WeightKg: 40}})},
+		{"nil ต่างจาก 0", WeightSessionFingerprint(1, 5, []WeightSetCheck{{Reps: 10, WeightKg: 40, RestSeconds: rest(60)}, {Reps: 8, WeightKg: 40, RestSeconds: rest(0)}})},
+		{"จำนวนเซตต่าง", WeightSessionFingerprint(1, 5, base[:1])},
 	}
 	for _, c := range changed {
 		if c.key == key {

@@ -180,7 +180,7 @@ const (
 	// เวลาต่ำสุดต่อเซต: 1 เซตที่บันทึกได้จริงต้องใช้เวลาอย่างน้อยกี่วินาที (กันข้อมูลขยะจากการกดรัว)
 	WeightSessionMinSecondsPerSet = 5
 	// เวลารวมสูงสุดของ 1 ท่า 1 เซสชัน (2 ชม.) — ท่าเดียว 5×5 พัก 5 นาทีก็ราว 35 นาที ยาวกว่า 2 ชม.
-	// เกือบแน่นอนว่าลืมกดจบ ต้องไม่เอาไปคิด kcal (คอลัมน์ wtrs_duration เป็น SMALLINT UNSIGNED เก็บได้ถึง 65535)
+	// เกือบแน่นอนว่าลืมกดจบ ต้องไม่เอาไปคิด kcal (wtrs_work_seconds/wtrs_rest_seconds เป็น SMALLINT UNSIGNED เก็บได้ถึง 65535)
 	WeightSessionMaxSeconds = 7200
 	// เวลารวมสูงสุดต่อเซต (10 นาที) — กันถ่างช่องว่างระหว่างเซตให้นานผิดปกติเพื่อยืดเวลาเซสชันได้ kcal
 	// เพิ่มฟรี (เพดานเวลารวมข้างบนอย่างเดียวหลวมเกินไป: 2 เซตก็ยังยัดเข้าไปได้ถึง 7200 วิ) ใช้ 10 นาที
@@ -193,8 +193,6 @@ const (
 	WeightSetMaxReps = 999
 	// น้ำหนักที่ยกสูงสุด ตรงเพดานจริงของคอลัมน์ wtrs_weight DECIMAL(5,2)
 	WeightSetMaxWeightKg = 999.99
-	// ผลรวมเวลาพักทุกเซตต้องไม่เกินเวลารวม (ช่วงพักเป็นส่วนหนึ่งของเวลาเซสชัน) เผื่อคลาดเคลื่อนจากการปัดวินาที
-	WeightRestSumToleranceSeconds = 10
 	// weight_exercises.wet_equipment ของท่าบอดี้เวท (1=Barbell 2=Dumbbell 3=Machine 4=Cable 5=Bodyweight)
 	EquipmentBodyweight = 5
 )
@@ -203,16 +201,33 @@ const (
 type WeightSetCheck struct {
 	Reps        int
 	WeightKg    float64
-	RestSeconds *int // nil = ไม่ทราบเวลาพัก (client เก่า) ไม่ตรวจ
+	WorkSeconds int  // เวลาที่ใช้ทำเซตนี้ (wtrs_work_seconds)
+	RestSeconds *int // เวลาพักหลังเซตนี้ (wtrs_rest_seconds) nil = เซตสุดท้าย หรือไม่เคยกดพัก
+}
+
+// WeightSessionTotalSeconds - เวลารวมของเซสชัน = Σ(เวลาทำเซต + เวลาพักหลังเซต) ทุกเซต — ที่เดียวที่นิยาม
+// "เวลารวม" ของเวทเทรนนิ่ง ใช้ทั้งเข้าสูตรพลังงาน ตรวจขอบเขต และตรงกับ SUM ในฐานข้อมูล/หน้าจอ
+func WeightSessionTotalSeconds(sets []WeightSetCheck) int {
+	total := 0
+	for _, s := range sets {
+		total += s.WorkSeconds
+		if s.RestSeconds != nil {
+			total += *s.RestSeconds
+		}
+	}
+	return total
 }
 
 // ValidateWeightSession - ตรวจความสมเหตุสมผลของเวลาและเซตตอนบันทึกผลเวทเทรนนิ่ง (SaveWorkoutResult)
 // ตอบ false พร้อมข้อความเมื่อค่าเป็นไปไม่ได้ ไม่แก้ค่าเงียบๆ (ต่างจากการตัดเพดานในสูตร) เพื่อไม่ให้ผลคำนวณ
 // ถูกปรับโดยที่ผู้ใช้ไม่รู้ — ลำดับ: จำนวนเซต → เวลารวม → แต่ละเซต → ผลรวมเวลาพัก
-// ท่าบอดี้เวท (bodyweight=true) ไม่มีช่องกรอกน้ำหนัก/จำนวนครั้งในแอป — ทุกเซตต้องเป็น Reps 0 และน้ำหนัก 0
-// (0 = ไม่ได้บันทึก ไม่ใช่ "ทำ 0 ครั้ง") พลังงานคิดจาก METs ของท่า × เวลารวมอย่างเดียวอยู่แล้ว
+// hasWeight/hasReps คุมตาม UI ของท่านั้น (2 กฎแยกกันไม่ทับซ้อน ดู models.WeightExercise.WetIsTimed):
+//   hasWeight=false (wet_equipment=5 Bodyweight) → ไม่มีช่องกรอกน้ำหนัก ทุกเซตต้องเป็นน้ำหนัก 0
+//   hasReps=false (wet_is_timed=true เช่น Plank) → ไม่มีช่องกรอกจำนวนครั้ง ทุกเซตต้องเป็น Reps 0
+// (0 = ไม่ได้บันทึก ไม่ใช่ "ทำ 0 ครั้ง") พลังงานคิดจาก METs ของท่า × เวลารวมอย่างเดียวอยู่แล้ว ไม่ใช้ทั้งคู่
 // [USED] workout_controller.go (SaveWorkoutResult)
-func ValidateWeightSession(totalDurationSeconds int, sets []WeightSetCheck, bodyweight bool) (bool, string) {
+func ValidateWeightSession(sets []WeightSetCheck, hasWeight bool, hasReps bool) (bool, string) {
+	totalDurationSeconds := WeightSessionTotalSeconds(sets)
 	if len(sets) < 1 {
 		return false, "ต้องมีอย่างน้อย 1 เซต"
 	}
@@ -228,29 +243,28 @@ func ValidateWeightSession(totalDurationSeconds int, sets []WeightSetCheck, body
 	if totalDurationSeconds > len(sets)*WeightSessionMaxSecondsPerSet {
 		return false, fmt.Sprintf("เวลารวมยาวผิดปกติเมื่อเทียบกับจำนวนเซต (สูงสุด %d นาทีต่อเซต) อาจลืมกดจบการฝึกหรือช่องว่างระหว่างเซตนานเกินไป", WeightSessionMaxSecondsPerSet/60)
 	}
-	restSum := 0
 	for _, s := range sets {
-		if bodyweight {
-			if s.Reps != 0 || s.WeightKg != 0 {
-				return false, "ท่าบอดี้เวทไม่ต้องบันทึกน้ำหนักและจำนวนครั้ง"
+		if s.WorkSeconds < 1 {
+			return false, "เวลาทำเซตไม่ถูกต้อง (ต้องมากกว่า 0 วินาที)"
+		}
+		if hasReps {
+			if s.Reps < 1 || s.Reps > WeightSetMaxReps {
+				return false, fmt.Sprintf("จำนวนครั้งต้องอยู่ระหว่าง 1-%d", WeightSetMaxReps)
 			}
-		} else if s.Reps < 1 || s.Reps > WeightSetMaxReps {
-			return false, fmt.Sprintf("จำนวนครั้งต้องอยู่ระหว่าง 1-%d", WeightSetMaxReps)
+		} else if s.Reps != 0 {
+			return false, "ท่านี้ไม่ต้องบันทึกจำนวนครั้ง"
+		}
+		if !hasWeight && s.WeightKg != 0 {
+			return false, "ท่านี้ไม่ต้องบันทึกน้ำหนัก"
 		}
 		if s.WeightKg < 0 || s.WeightKg > WeightSetMaxWeightKg {
 			return false, fmt.Sprintf("น้ำหนักที่ยกต้องอยู่ระหว่าง 0-%.2f กก.", WeightSetMaxWeightKg)
 		}
 		if s.RestSeconds != nil {
-			if *s.RestSeconds < 0 || *s.RestSeconds > totalDurationSeconds {
-				return false, "เวลาพักไม่ถูกต้อง (ติดลบหรือมากกว่าเวลารวม)"
+			if *s.RestSeconds < 0 {
+				return false, "เวลาพักไม่ถูกต้อง (ติดลบ)"
 			}
-			restSum += *s.RestSeconds
 		}
-	}
-	// ผลรวมเวลาพักต้องไม่เกินเวลารวมของเซสชัน (เวลาพักเป็นส่วนย่อยของเวลาเดียวกัน) — ตัด WorkSeconds
-	// ออกจากเช็คนี้แล้ว (2026-09-29, ดู wtrs_active_seconds ใน models/exercise.go)
-	if restSum > totalDurationSeconds+WeightRestSumToleranceSeconds {
-		return false, "ผลรวมเวลาพักมากกว่าเวลารวมของการฝึก"
 	}
 	return true, ""
 }

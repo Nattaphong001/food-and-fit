@@ -850,8 +850,11 @@ type WeightSessionSetInput struct {
 	// 0 ได้เฉพาะท่าบอดี้เวท (ไม่มีช่องกรอก) — ท่าอื่นบังคับ 1 ขึ้นไปที่ helpers.ValidateWeightSession
 	WtrsReps   int     `json:"wtrs_reps" binding:"gte=0"`
 	WtrsWeight float64 `json:"wtrs_weight"`
-	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป — optional, nil เมื่อมือถือยังไม่ส่งมา เก็บลง DB
-	// ตรงๆ เท่านั้น ไม่เข้าสูตรคำนวณพลังงานแล้ว (สูตรเวทถูกลบออก 2026-09-22 รอกำหนดสูตรใหม่)
+	// เวลาที่ใช้ทำเซตนี้ (วินาที) นับจากจบการพักรอบก่อน/เริ่มฝึก จนถึงกดพัก (2026-09-30 แทน
+	// total_duration_seconds — เวลารวมของเซสชัน backend รวมจากรายเซตเอง ไม่รับจาก client)
+	WtrsWorkSeconds int `json:"wtrs_work_seconds" binding:"gt=0"`
+	// เวลาพักหลังเซตนี้ (วินาที) — nil = เซตสุดท้าย หรือไม่เคยกดปุ่มพัก (ช่วงนั้นนับรวมใน work แล้ว)
+	// เวลารวม = Σ(work + rest) ใช้ทั้งเข้าสูตรพลังงานและเก็บ DB
 	WtrsRestSeconds *int `json:"wtrs_rest_seconds"`
 }
 
@@ -863,13 +866,12 @@ type WeightSessionRequest struct {
 	Date                 string                  `json:"date" binding:"required"`
 	WschID               *uint                   `json:"wsch_id"`
 	WetID                uint                    `json:"wet_id" binding:"required,gt=0"`
-	TotalDurationSeconds int                     `json:"total_duration_seconds" binding:"required,gt=0"`
 	Sets                 []WeightSessionSetInput `json:"sets" binding:"required,min=1,dive"`
 }
 
 // CardioResultRequest - บันทึกผล Cardio (ไม่ต้องมี schedule)
 // CdorsDuration หน่วยวินาที (เปลี่ยนจากนาที 2026-09-14 — ดู ValidateCardioResult) ตรงกับ
-// pattern เดียวกับ WeightSessionRequest.TotalDurationSeconds ด้านบน
+// pattern เดียวกับ wtrs_work_seconds/wtrs_rest_seconds ของเวท (วินาที)
 type CardioResultRequest struct {
 	Date          string  `json:"date" binding:"required"`
 	CdoID         uint    `json:"cdo_id" binding:"required"`
@@ -912,26 +914,28 @@ func SaveWorkoutResult(c *gin.Context) {
 
 	// ตรวจเวลารวม/เวลาพัก/เซต ก่อนแตะ DB — เวลารวมคูณ kcal ตรงๆ (METs ของท่า × เวลารวม ไม่มีเพดานในสูตร)
 	// จึงต้องปฏิเสธค่าที่เป็นไปไม่ได้ที่นี่ ไม่แก้ค่าเงียบๆ (ดู helpers.ValidateWeightSession)
-	// โหลดท่าก่อนตรวจ — กติกา Reps/น้ำหนักต่างกันระหว่างท่าบอดี้เวทกับท่าที่ใช้อุปกรณ์
+	// โหลดท่าก่อนตรวจ — กติกา Reps/น้ำหนักแยกกัน 2 เรื่องไม่ทับซ้อน (ดู models.WeightExercise.WetIsTimed):
+	// hasWeight: ท่าใช้อุปกรณ์ (ไม่ใช่บอดี้เวท) · hasReps: ท่านับจำนวนครั้งได้ (ไม่ใช่ท่าค้างเวลาแบบ Plank)
 	var exercise models.WeightExercise
 	if err := config.DB.First(&exercise, req.WetID).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่พบท่าฝึกนี้ในระบบ"})
 		return
 	}
-	isBodyweight := int(exercise.WetEquipment) == helpers.EquipmentBodyweight
+	hasWeight := int(exercise.WetEquipment) != helpers.EquipmentBodyweight
+	hasReps := !exercise.WetIsTimed
 
 	checks := make([]helpers.WeightSetCheck, 0, len(req.Sets))
 	for _, s := range req.Sets {
-		checks = append(checks, helpers.WeightSetCheck{Reps: s.WtrsReps, WeightKg: s.WtrsWeight, RestSeconds: s.WtrsRestSeconds})
+		checks = append(checks, helpers.WeightSetCheck{Reps: s.WtrsReps, WeightKg: s.WtrsWeight, WorkSeconds: s.WtrsWorkSeconds, RestSeconds: s.WtrsRestSeconds})
 	}
-	if ok, msg := helpers.ValidateWeightSession(req.TotalDurationSeconds, checks, isBodyweight); !ok {
+	if ok, msg := helpers.ValidateWeightSession(checks, hasWeight, hasReps); !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
 
 	// กันบันทึกซ้ำ: คำขอที่เหมือนกันเป๊ะ (สมาชิก ท่า เวลารวม ทุกเซต) ภายใน 60 วินาทีตอบผลเดิม ไม่เขียน DB ซ้ำ —
 	// กดปุ่มบันทึกรัว หรือเน็ตหลุดหลังบันทึกสำเร็จแล้วผู้ใช้กดลองใหม่ (ตอบซ้ำมี "duplicate": true)
-	fingerprint := helpers.WeightSessionFingerprint(uid, req.WetID, req.TotalDurationSeconds, checks)
+	fingerprint := helpers.WeightSessionFingerprint(uid, req.WetID, checks)
 	var submission *helpers.Submission
 	for attempt := 0; submission == nil; attempt++ {
 		if attempt >= 3 {
@@ -992,10 +996,10 @@ func SaveWorkoutResult(c *gin.Context) {
 
 	// กรองเฉพาะเซตที่สมบูรณ์ (Reps > 0) ก่อนเข้าสูตรพลังงาน — ลำดับต้องตรงกับ rows ด้านล่างเป๊ะ
 	// เพราะ services.CalculateWeightTrainingCalories คืน kcalPerSet ตามลำดับ index เดียวกับ validSets
-	// ท่าบอดี้เวทนับทุกเซต (Reps เป็น 0 เสมอ เพราะไม่มีช่องกรอก)
+	// ท่าค้างเวลา (hasReps=false) นับทุกเซต (Reps เป็น 0 เสมอ เพราะไม่มีช่องกรอก)
 	validSets := make([]WeightSessionSetInput, 0, len(req.Sets))
 	for _, s := range req.Sets {
-		if isBodyweight || s.WtrsReps > 0 {
+		if !hasReps || s.WtrsReps > 0 {
 			validSets = append(validSets, s)
 		}
 	}
@@ -1004,8 +1008,16 @@ func SaveWorkoutResult(c *gin.Context) {
 		return
 	}
 
+	// เวลารวม = Σ(เวลาทำเซต + เวลาพัก) ของเซตที่บันทึกจริง — ค่าเดียวกับที่เก็บ DB (SUM รายเซต) และที่แสดงบนจอ
+	// (เซตที่ถูกกรองทิ้ง reps=0 ไม่มีแถวใน DB จึงไม่นับเวลาของมัน)
+	validChecks := make([]helpers.WeightSetCheck, 0, len(validSets))
+	for _, s := range validSets {
+		validChecks = append(validChecks, helpers.WeightSetCheck{WorkSeconds: s.WtrsWorkSeconds, RestSeconds: s.WtrsRestSeconds})
+	}
+	totalSeconds := helpers.WeightSessionTotalSeconds(validChecks)
+
 	kcalPerSet, totalKcal := services.CalculateWeightTrainingCalories(
-		exercise.WetMets, bodyWeight, req.TotalDurationSeconds, len(validSets),
+		exercise.WetMets, bodyWeight, totalSeconds, len(validSets),
 	)
 
 	rows := make([]models.WeightTrainingResult, 0, len(validSets))
@@ -1013,13 +1025,12 @@ func SaveWorkoutResult(c *gin.Context) {
 	sessionBest1RM := 0.0
 	warnings := make([]string, 0)
 	for i, s := range validSets {
-		duration := req.TotalDurationSeconds
 		rows = append(rows, models.WeightTrainingResult{
 			WtrsDate:          today,
 			WtrsSetNo:         nextSetNo,
 			WtrsReps:          s.WtrsReps,
 			WtrsWeight:        s.WtrsWeight,
-			WtrsDuration:      &duration,
+			WtrsWorkSeconds:   s.WtrsWorkSeconds,
 			WtrsRestSeconds:   s.WtrsRestSeconds,
 			WtrsCalories:      kcalPerSet[i],
 			MbID:              uid,
