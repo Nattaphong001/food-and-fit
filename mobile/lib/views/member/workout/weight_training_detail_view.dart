@@ -36,6 +36,11 @@ class WeightTrainingDetailView extends StatefulWidget {
   final int exerciseType;
   final String muscleGroupName;
   final EquipmentType equipment;
+  // ท่าค้างเวลา (wet_is_timed) — ไม่มีจำนวนครั้งให้กรอก แยกจาก equipment==bodyweight (ดู Exercise.isTimed)
+  final bool isTimed;
+  // METs คงที่ของท่านี้ (weight_exercises.wet_mets) — แสดงผลอย่างเดียว เหมือน CardioType.mets
+  // ในหน้ารายละเอียดคาร์ดิโอ (cardio_activity_detail_view.dart)
+  final double mets;
   final int? wschId;    // wsch_id จริงจาก workout_schedules ถ้าท่านี้อยู่ในแผน
 
   const WeightTrainingDetailView({
@@ -54,6 +59,8 @@ class WeightTrainingDetailView extends StatefulWidget {
     this.exerciseType = 1,
     this.muscleGroupName = '',
     this.equipment = EquipmentType.bodyweight,
+    this.isTimed = false,
+    this.mets = 3.5,
     this.wschId,
   });
 
@@ -210,7 +217,7 @@ class _WeightTrainingDetailViewState extends State<WeightTrainingDetailView>
                     () {
                       final type = widget.exerciseType == 2 ? 'เฉพาะส่วน' : 'หลายกลุ่ม';
                       final group = widget.muscleGroupName.isNotEmpty ? ' • ${widget.muscleGroupName}' : '';
-                      return '$type$group';
+                      return '$type$group • MET ${widget.mets.toStringAsFixed(1)}';
                     }(),
                     style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Colors.white),
                   ),
@@ -581,7 +588,8 @@ class _WeightTrainingDetailViewState extends State<WeightTrainingDetailView>
                           exerciseType: widget.exerciseType,
                           muscleGroupName: widget.muscleGroupName,
                           wschId: widget.wschId,
-                          isBodyweight: widget.equipment == EquipmentType.bodyweight,
+                          hasWeight: widget.equipment != EquipmentType.bodyweight,
+                          hasReps: !widget.isTimed,
                         ),
                       ),
                     )
@@ -622,6 +630,8 @@ class _WeightTrainingDetailViewState extends State<WeightTrainingDetailView>
         muscleGroupName: widget.muscleGroupName,
         exerciseType: widget.exerciseType,
         equipment: widget.equipment,
+        isTimed: widget.isTimed,
+        mets: widget.mets,
         difficulty: widget.difficulty,
       ),
     );
@@ -636,6 +646,8 @@ class _ExerciseHistorySheet extends StatefulWidget {
   final String muscleGroupName;
   final int exerciseType; // 1=หลายกลุ่ม, 2=เฉพาะส่วน
   final EquipmentType equipment;
+  final bool isTimed;
+  final double mets;
   final String difficulty;
 
   const _ExerciseHistorySheet({
@@ -644,6 +656,8 @@ class _ExerciseHistorySheet extends StatefulWidget {
     this.muscleGroupName = '',
     this.exerciseType = 1,
     this.equipment = EquipmentType.bodyweight,
+    this.isTimed = false,
+    this.mets = 3.5,
     this.difficulty = '',
   });
 
@@ -710,8 +724,10 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
   // เรียงใหม่กันเหนียว แม้ backend จะคืนมาเรียง wtrs_date desc อยู่แล้วก็ตาม
   List<String> get _dates => _grouped.keys.toList()..sort((a, b) => b.compareTo(a));
 
-  // ท่าบอดี้เวทไม่มีน้ำหนัก/จำนวนครั้ง (บันทึกเป็น 0) — ซ่อนสถิติ/กราฟที่อิงน้ำหนักทั้งหมด
-  bool get _isBodyweight => widget.equipment == EquipmentType.bodyweight;
+  // ท่าบอดี้เวท (เช่น Pull-up) ไม่มีน้ำหนัก (บันทึกเป็น 0) — ซ่อนสถิติ/กราฟที่อิงน้ำหนักทั้งหมด
+  bool get _hasWeight => widget.equipment != EquipmentType.bodyweight;
+  // ท่าค้างเวลา (Plank) ไม่มีจำนวนครั้งด้วย (บันทึกเป็น 0)
+  bool get _hasReps => !widget.isTimed;
 
   double _sessionMax(String date) {
     final sets = _grouped[date] ?? [];
@@ -843,6 +859,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
                   _infoChip(widget.equipment.label, Icons.fitness_center_rounded),
                   if (widget.difficulty.isNotEmpty)
                     _infoChip(_difficultyLabel(widget.difficulty), Icons.speed_rounded),
+                  _infoChip('MET ${widget.mets.toStringAsFixed(1)}', Icons.local_fire_department_rounded),
                 ],
               ),
             ),
@@ -881,7 +898,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _buildStats(dates),
-                                if (dates.length >= 2 && !_isBodyweight) _buildChart(dates),
+                                if (dates.length >= 2 && _hasWeight) _buildChart(dates),
                                 _buildHistoryList(dates, grouped),
                               ],
                             ),
@@ -952,7 +969,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
             isDate: true,
           ),
         ]),
-        if (!_isBodyweight) ...[
+        if (_hasWeight) ...[
         const SizedBox(height: 10),
         Row(children: [
           _statCard(
@@ -981,7 +998,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
             icon: Icons.local_fire_department_rounded,
             iconColor: Colors.orange.shade400,
           ),
-          if (!_isBodyweight) ...[
+          if (_hasWeight) ...[
           const SizedBox(width: 10),
           Expanded(
             child: Container(
@@ -1223,7 +1240,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
           final sets = grouped[date]!;
           final isLatest = i == 0;
           final maxW = sets.map((s) => s.weight).reduce(math.max);
-          final isPR = !_isBodyweight && _overallMax > 0 && maxW >= _overallMax;
+          final isPR = _hasWeight && _overallMax > 0 && maxW >= _overallMax;
           final volume = _sessionVolume(date);
           final calories = _sessionCalories(date);
           final seconds = sessionDurationSeconds(sets);
@@ -1256,12 +1273,12 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
               const SizedBox(height: 4),
               Text(
                 '${sets.length} เซ็ต · '
-                '${_isBodyweight ? '' : 'สูงสุด ${maxW.toStringAsFixed(0)} กก. · '}'
+                '${_hasWeight ? 'สูงสุด ${maxW.toStringAsFixed(0)} กก. · ' : ''}'
                 '${seconds > 0 ? '${formatDuration(seconds)} · ' : ''}'
                 '${calories.toStringAsFixed(0)} kcal',
                 style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
               ),
-              if (!_isBodyweight) ...[
+              if (_hasWeight) ...[
                 const SizedBox(height: 2),
                 Text(
                   'ปริมาตร ${volume.toStringAsFixed(0)} กก.',
@@ -1288,7 +1305,10 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text(_isBodyweight ? 'เสร็จแล้ว' : '${s.weight} กก.  ×  ${s.reps} ครั้ง',
+                      child: Text(
+                          !_hasReps
+                              ? 'เสร็จแล้ว'
+                              : (_hasWeight ? '${s.weight} กก.  ×  ${s.reps} ครั้ง' : '${s.reps} ครั้ง'),
                           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                     ),
                     if (oneRM > 0)

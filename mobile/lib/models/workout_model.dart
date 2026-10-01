@@ -145,7 +145,8 @@ class WorkoutResult {
   final int reps;
   final double weight;
   final double calories;
-  final int? durationSeconds; // wtrs_duration — เวลารวมทั้งเซสชัน (ทุกเซตของเซสชันเดียวกันเก็บค่าเท่ากัน)
+  final int workSeconds; // wtrs_work_seconds — เวลาที่ใช้ทำเซตนี้ (วินาที)
+  final int? restSeconds; // wtrs_rest_seconds — เวลาพักหลังเซตนี้ (null = เซตสุดท้าย/ไม่ทราบ)
   final String? note;
   final String? exerciseName;
   final String? imageUrl;
@@ -159,7 +160,8 @@ class WorkoutResult {
     required this.reps,
     required this.weight,
     this.calories = 0,
-    this.durationSeconds,
+    this.workSeconds = 0,
+    this.restSeconds,
     this.note,
     this.exerciseName,
     this.imageUrl,
@@ -174,7 +176,8 @@ class WorkoutResult {
         reps: json['wtrs_reps'] ?? json['reps'] ?? 0,
         weight: (json['wtrs_weight'] ?? json['weight'] ?? 0).toDouble(),
         calories: (json['wtrs_calories'] ?? json['calories'] ?? 0).toDouble(),
-        durationSeconds: (json['wtrs_duration'] ?? json['duration_seconds']) as int?,
+        workSeconds: (json['wtrs_work_seconds'] ?? json['work_seconds'] ?? 0) as int,
+        restSeconds: (json['wtrs_rest_seconds'] ?? json['rest_seconds']) as int?,
         note: json['wtrs_note']?.toString() ?? json['note']?.toString(),
         exerciseName: (json['weight_exercise'] as Map?)?['wet_name']?.toString()
             ?? json['wet_name']?.toString() ?? json['exercise_name']?.toString(),
@@ -242,30 +245,11 @@ class CardioResult {
       };
 }
 
-/// เวลาฝึกรวม (วินาที) ของเซตที่ให้มา — ทุกเซตของเซสชันเดียวกันเก็บ `wtrs_duration` ค่าเดียวกัน
-/// จึงนับแต่ละเซสชันครั้งเดียว เดิมเช็ค "duration เท่ากับแถวก่อนหน้าไหม" เพื่อสรุปว่าเป็นเซสชัน
-/// เดียวกัน แต่ 2 เซสชันคนละรอบวันเดียวกัน (ท่าเดิม รอบเช้า/เย็น) มี duration บังเอิญเท่ากันได้
-/// (โดยเฉพาะเซตสั้นๆ ที่จับเวลาใกล้เคียงกัน) ทำให้รวมเวลาขาดไปทั้งเซสชัน — ไม่มี session id จริง
-/// ส่งมาจาก backend ให้ใช้ตรงๆ (wtrs_set_no เดินต่อเนื่องข้ามรอบในวันเดียวกัน ไม่รีเซ็ต)
-/// เปลี่ยนมาเช็ค resultId (wtrs_id, auto-increment) ติดกันแทน — เซตของเซสชันเดียวกันถูกบันทึกในคำขอ
-/// เดียวกัน (1 transaction) จึงได้ id ต่อเนื่องกันเป๊ะเสมอ ส่วนเซสชันที่แยกกันจริงจะมี activity อื่น
-/// ของระบบ (ผู้ใช้คนอื่น/ท่าอื่น) แทรกกลาง id เกือบทุกครั้ง ทนทานกว่าการเทียบค่า duration ที่บังเอิญ
-/// ตรงกันได้ คืน 0 ถ้าไม่มีข้อมูลเวลา (ข้อมูลเก่า) — ผู้เรียกควรซ่อนช่องเวลาเมื่อได้ 0
-int sessionDurationSeconds(Iterable<WorkoutResult> sets) {
-  final ordered = sets.toList()..sort((a, b) => a.resultId.compareTo(b.resultId));
-  var total = 0;
-  int? prevId;
-  for (final r in ordered) {
-    final d = r.durationSeconds;
-    if (d == null || d <= 0) {
-      prevId = null;
-      continue;
-    }
-    if (prevId == null || r.resultId != prevId + 1) total += d;
-    prevId = r.resultId;
-  }
-  return total;
-}
+/// เวลาฝึกรวม (วินาที) ของเซตที่ให้มา = Σ(wtrs_work_seconds + wtrs_rest_seconds) (2026-09-30) —
+/// แต่ละแถวเก็บเวลาของตัวเองแล้ว (เดิม wtrs_duration เก็บเวลารวมซ้ำทุกแถว ต้องเดาขอบเซสชัน) จึงรวมตรงๆ
+/// ได้เลย ค่าเดียวกับที่ backend ใช้คิดพลังงาน
+int sessionDurationSeconds(Iterable<WorkoutResult> sets) =>
+    sets.fold(0, (sum, r) => sum + r.workSeconds + (r.restSeconds ?? 0));
 
 /// แสดงเวลาจริงไม่ปัดขึ้น ใช้ร่วมกันทั้งเวทและคาร์ดิโอ:
 /// < 1 นาที `45 วินาที` · < 1 ชม. `2 นาที 50 วินาที` (วินาทีเป็น 0 → `3 นาที`) · ≥ 1 ชม. `1 ชม. 5 นาที`

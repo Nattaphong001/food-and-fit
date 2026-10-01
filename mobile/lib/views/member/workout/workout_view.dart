@@ -1434,6 +1434,8 @@ class _WorkoutViewState extends State<WorkoutView> with RouteAware {
           exerciseType: ex?.exerciseType ?? 1,
           muscleGroupName: ex?.muscleGroupName ?? '',
           equipment: ex?.equipment ?? EquipmentType.bodyweight,
+          isTimed: ex?.isTimed ?? false,
+          mets: ex?.mets ?? 3.5,
         ),
       ),
     );
@@ -1788,13 +1790,20 @@ class _WorkoutViewState extends State<WorkoutView> with RouteAware {
                             ),
                           ),
                           Text(
-                            '${sets.length} เซ็ต • ${totalCalories.round()} kcal • Volume ${totalVolume.round()} กก.'
-                            '${totalSeconds > 0 ? ' • ${formatDuration(totalSeconds)}' : ''}',
+                            '${sets.length} เซ็ต • ${totalCalories.round()} kcal • Volume ${totalVolume.round()} กก.',
                             style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.textMuted,
                             ),
                           ),
+                          if (totalSeconds > 0)
+                            Text(
+                              formatDuration(totalSeconds),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
                         ],
                       ),
                     ),

@@ -24,9 +24,12 @@ class WeightTrainingExerciseView extends StatefulWidget {
   final int exerciseType;      // 1=หลายกลุ่ม, 2=เฉพาะส่วน
   final String muscleGroupName; // เช่น ขา, อก, หลัง
   final int? wschId;   // wsch_id จริงจาก workout_schedules — ท่าในหน้านี้มาจากแผนเสมอ ใช้ตรงๆ ไม่ต้องสร้างใหม่
-  // ท่าบอดี้เวท (wet_equipment = 5): ไม่มีช่องกรอกน้ำหนัก/จำนวนครั้ง กด "จบการพัก" = บันทึก 1 เซต
-  // ส่ง Reps/น้ำหนักเป็น 0 (backend บังคับ) — พลังงานคิดจาก METs ของท่า × เวลารวมอยู่แล้ว
-  final bool isBodyweight;
+  // 2 กฎแยกกันไม่ทับซ้อน (ดู models.WeightExercise.WetIsTimed ฝั่ง backend):
+  //   hasWeight=false (wet_equipment=5 Bodyweight) → ไม่มีช่องกรอกน้ำหนัก
+  //   hasReps=false (wet_is_timed=true เช่น Plank) → ไม่มีช่องกรอกจำนวนครั้ง กด "จบการพัก" = บันทึก 1 เซต
+  // ช่องที่ไม่มีให้กรอกจะส่งเป็น 0 ขึ้น backend (บังคับ) — พลังงานคิดจาก METs ของท่า × เวลารวมอยู่แล้ว
+  final bool hasWeight;
+  final bool hasReps;
 
   const WeightTrainingExerciseView({
     super.key,
@@ -37,7 +40,8 @@ class WeightTrainingExerciseView extends StatefulWidget {
     this.exerciseType = 1,
     this.muscleGroupName = '',
     this.wschId,
-    this.isBodyweight = false,
+    this.hasWeight = true,
+    this.hasReps = true,
   });
 
   @override
@@ -102,6 +106,8 @@ class _WeightTrainingExerciseViewState
   // ตอนท้ายจึงไม่ถูกนับ ไม่ต้องมีเพดานในสูตร
   DateTime? _sessionStartedAt;
   DateTime? _restStartedAt;
+  // จุดเริ่มนับเวลาทำเซตถัดไป (เริ่มฝึก / จบการพักรอบที่บันทึกเซตแล้ว) — wtrs_work_seconds = ตอนกดพัก - ตัวนี้
+  DateTime? _workStartedAt;
   // ตอนที่เซตล่าสุดจบจริง (= ตอนกดเริ่มพักหลังเซตนั้น) ใช้เป็นจุดสิ้นสุดเวลารวมของเซสชัน — ไม่นับพักหลังเซตสุดท้าย
   DateTime? _lastSetEndedAt;
   // จุดเริ่มนับ "ไม่มีการบันทึกเซต" สำหรับถามว่ายังฝึกอยู่ไหม (เริ่มฝึก / บันทึกเซต / กด "ฝึกต่อ" ล่าสุด)
@@ -319,11 +325,14 @@ class _WeightTrainingExerciseViewState
   // Validation & Save Logic
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // กรอกครบทั้งน้ำหนักและจำนวนครั้งหรือไม่ — คุมทั้ง validation ตอนบันทึกเซต และ
+  // กรอกครบตามช่องที่ท่านี้มีหรือไม่ — คุมทั้ง validation ตอนบันทึกเซต และ
   // สไตล์ปุ่ม "จบการพัก" (ดู _buildRestingRow) ให้ตรงกันเสมอ
-  bool get _canSaveSet =>
-      widget.isBodyweight ||
-      (_weightController.text.trim().isNotEmpty && _repsController.text.trim().isNotEmpty);
+  bool get _canSaveSet {
+    if (!widget.hasReps) return true; // ท่าค้างเวลา (Plank): ไม่มีช่องกรอกเลย
+    final repsOk = _repsController.text.trim().isNotEmpty;
+    if (!widget.hasWeight) return repsOk; // นับจำนวนครั้งได้ แต่ไม่มีน้ำหนัก
+    return repsOk && _weightController.text.trim().isNotEmpty;
+  }
 
   // จบการพัก: กดปุ่มนี้ "จบการพักได้เสมอ" ไม่ว่าจะกรอกครบหรือไม่ — ต่างจากเดิมที่กรอก
   // ไม่ครบแล้วกดไม่ออกจากโหมดพักเลย บันทึกเซตเฉพาะตอนกรอกครบทั้งสองช่องเท่านั้น
@@ -331,8 +340,8 @@ class _WeightTrainingExerciseViewState
   // ทำหน้าที่เดียวกัน) ปัดสไลด์ลงเฉยๆ ไม่นับว่าจบพัก ต้องกดปุ่มนี้เท่านั้น
   void _finishRest() {
     if (_canSaveSet) {
-      final String w = widget.isBodyweight ? '0' : _weightController.text.trim();
-      final String r = widget.isBodyweight ? '0' : _repsController.text.trim();
+      final String w = widget.hasWeight ? _weightController.text.trim() : '0';
+      final String r = widget.hasReps ? _repsController.text.trim() : '0';
       final DateTime now = DateTime.now();
       final started = _restStartedAt;
       // แก้ 2026-09-26: เดิมกด "เพิ่มเซต" โดยไม่เคยกดปุ่มพักเลย (started == null) จะได้ 0 ปนกับ
@@ -340,6 +349,9 @@ class _WeightTrainingExerciseViewState
       // ตอนนี้แยกให้ชัด: ไม่เคยกดปุ่มพัก = null (ไม่ทราบ), กดจริงแล้วได้ 0 วิ = ค่าจริง ส่งเป็น 0
       final int? restSeconds = started == null ? null : now.difference(started).inSeconds;
       _lastSetEndedAt = started ?? now;
+      final workStart = _workStartedAt ?? _sessionStartedAt ?? now;
+      final workSeconds = (started ?? now).difference(workStart).inSeconds;
+      _workStartedAt = now;
       _idleCheckFrom = now;
       setState(() {
         _completedSets.add({
@@ -352,6 +364,8 @@ class _WeightTrainingExerciseViewState
           // (ไม่ใช่ 0 วินาที) ดูคอมเมนต์ด้านบน (เซตสุดท้ายของเซสชันไม่ส่งค่านี้ขึ้น API — ดู
           // _saveWorkoutToApi)
           'rest_seconds': restSeconds,
+          // เวลาที่ใช้ทำเซตนี้ (วินาที) ส่งขึ้น API เป็น wtrs_work_seconds (backend ต้อง > 0)
+          'work_seconds': workSeconds < 1 ? 1 : workSeconds,
         });
       });
     }
@@ -510,7 +524,7 @@ class _WeightTrainingExerciseViewState
                             value: _formatTimeSummary(_sessionDurationSeconds),
                             color: const Color(0xFF64B5F6),
                           ),
-                          if (!widget.isBodyweight) ...[
+                          if (widget.hasWeight) ...[
                             const SizedBox(width: 12),
                             _statBox(
                               icon: Icons.bar_chart_rounded,
@@ -565,9 +579,16 @@ class _WeightTrainingExerciseViewState
                                       ),
                                     ),
                                     const SizedBox(width: 14),
-                                    if (widget.isBodyweight)
+                                    if (!widget.hasReps)
                                       Expanded(
                                         child: Text('เซตที่ ${i + 1}',
+                                            style: const TextStyle(
+                                                color: Colors.white, fontSize: 15,
+                                                fontWeight: FontWeight.w600)),
+                                      )
+                                    else if (!widget.hasWeight)
+                                      Expanded(
+                                        child: Text('${s['reps']} ครั้ง',
                                             style: const TextStyle(
                                                 color: Colors.white, fontSize: 15,
                                                 fontWeight: FontWeight.w600)),
@@ -713,7 +734,7 @@ class _WeightTrainingExerciseViewState
     // ห้ามสร้าง schedule ใหม่ซ้ำ ไม่งั้นได้แถวขยะใน workout_schedules เพิ่มทุกครั้งที่บันทึกผล
     final int? scheduleId = widget.wschId;
 
-    final validSets = widget.isBodyweight
+    final validSets = !widget.hasReps
         ? _completedSets
         : _completedSets.where((s) => (int.tryParse(s['reps'].toString()) ?? 0) > 0).toList();
 
@@ -721,9 +742,7 @@ class _WeightTrainingExerciseViewState
       'date': today,
       'wet_id': widget.exerciseId,
       if (scheduleId != null) 'wsch_id': scheduleId,
-      // เวลารวมจากเริ่มฝึกถึงตอนบันทึกเซตล่าสุด (รวมช่วงพักระหว่างเซต) — ไม่นับส่วนที่ลืมกดจบตอนท้าย
-      // เวลาพักแต่ละเซตเป็นช่วงย่อยของช่วงนี้เสมอ จึงรวมกันไม่เกินเวลารวม (backend ตรวจข้อนี้)
-      'total_duration_seconds': _sessionDurationSeconds,
+      // เวลารวมไม่ส่งแล้ว (2026-09-30) — backend รวม Σ(work + rest) จากรายเซตเอง
       'sets': validSets.asMap().entries.map((entry) {
         final s = entry.value;
         final isLastSet = entry.key == validSets.length - 1;
@@ -741,6 +760,7 @@ class _WeightTrainingExerciseViewState
           // ส่งค่าจาก s['rest_seconds'] ตรงๆ ไม่ coalesce เป็น 0 อีกต่อไป (แก้ 2026-09-26) — ค่านี้
           // เป็น null อยู่แล้วถ้าไม่เคยกดปุ่มพัก (ดู _finishRest) การ ?? 0 เดิมจะกลบ null ที่แท้จริง
           // เป็น 0 ปนกับพักจริง 0 วินาที ทำให้ backend แยกไม่ออก
+          'wtrs_work_seconds': s['work_seconds'] ?? 1,
           'wtrs_rest_seconds': isLastSet ? null : s['rest_seconds'],
         };
       }).toList(),
@@ -766,9 +786,9 @@ class _WeightTrainingExerciseViewState
       final volume = calc.trainingVolume(parsedSets);
       final caloriesBurned = (result['calories_burned'] as num?)?.round();
       final caloriesPart = caloriesBurned != null ? ' • เผาผลาญ $caloriesBurned kcal' : '';
-      message = widget.isBodyweight
-          ? 'บันทึกแล้ว • ${validSets.length} เซต$caloriesPart'
-          : 'บันทึกแล้ว • Volume ${volume.round()} กก. • 1RM โดยประมาณ ${best1RM.round()} กก.$caloriesPart';
+      message = widget.hasWeight
+          ? 'บันทึกแล้ว • Volume ${volume.round()} กก. • 1RM โดยประมาณ ${best1RM.round()} กก.$caloriesPart'
+          : 'บันทึกแล้ว • ${validSets.length} เซต$caloriesPart';
       type = AppAlertType.success;
     } else {
       final lastError = result['message'] as String?;
@@ -960,7 +980,7 @@ class _WeightTrainingExerciseViewState
       child: Column(
         children: _isResting
             ? [
-                if (!widget.isBodyweight) _buildLogInputCard(),
+                if (widget.hasReps) _buildLogInputCard(),
                 if (_completedSets.isNotEmpty) _buildSetsTable(),
               ]
             : [
@@ -1015,17 +1035,26 @@ class _WeightTrainingExerciseViewState
                     child: Text('เซ็ทที่',
                         style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600, fontSize: 12)),
                   ),
-                  if (!widget.isBodyweight) ...const [
+                  if (!widget.hasReps) ...const [
+                  SizedBox(width: _colGap),
+                  Expanded(
+                    child: Text('สถานะ',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600, fontSize: 12)),
+                  ),
+                  ] else ...[
+                  if (widget.hasWeight) ...const [
                   SizedBox(width: _colGap),
                   Expanded(
                     child: Text('น้ำหนัก (กก.)',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600, fontSize: 12)),
                   ),
-                  SizedBox(width: _colGap),
+                  ],
+                  const SizedBox(width: _colGap),
                   SizedBox(
                     width: _repsColWidth,
-                    child: Text('จำนวนครั้ง',
+                    child: const Text('จำนวนครั้ง',
                         textAlign: TextAlign.right,
                         style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600, fontSize: 12)),
                   ),
@@ -1062,11 +1091,13 @@ class _WeightTrainingExerciseViewState
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _buildLightInput('น้ำหนัก (กก.)', _weightController, allowDecimal: true),
-            const SizedBox(width: 16),
-            const Text('×',
-                style: TextStyle(color: Colors.black26, fontSize: 26, fontWeight: FontWeight.w900)),
-            const SizedBox(width: 16),
+            if (widget.hasWeight) ...[
+              _buildLightInput('น้ำหนัก (กก.)', _weightController, allowDecimal: true),
+              const SizedBox(width: 16),
+              const Text('×',
+                  style: TextStyle(color: Colors.black26, fontSize: 26, fontWeight: FontWeight.w900)),
+              const SizedBox(width: 16),
+            ],
             _buildLightInput('จำนวนครั้ง', _repsController),
           ],
         ),
@@ -1176,19 +1207,21 @@ class _WeightTrainingExerciseViewState
               ),
             ),
           ),
-          if (widget.isBodyweight)
+          if (!widget.hasReps)
             const Expanded(
               child: Text('เสร็จแล้ว',
                   textAlign: TextAlign.right,
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.black87)),
             )
           else ...[
+          if (widget.hasWeight) ...[
           const SizedBox(width: _colGap),
           Expanded(
             child: Text('${item['weight']} กก.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.black87)),
           ),
+          ],
           const SizedBox(width: _colGap),
           SizedBox(
             width: _repsColWidth,
