@@ -16,6 +16,13 @@ import '../../../core/widgets/top_flash.dart';
 import '../../../core/widgets/workout_timer.dart';
 import '../../../services/workout_service.dart';
 
+// สถานะช่องกรอกของเซตที่กำลังจะบันทึก (ตอนพัก) — คุมข้อความ/สีปุ่ม "จบพัก" และบรรทัดบอกใต้ปุ่ม
+enum _SetInputState {
+  empty, // ยังไม่ได้กรอกอะไรเลย (หรือมีแค่น้ำหนักที่เติมให้อัตโนมัติจากเซตก่อน) — จบพักได้ทันที ไม่มีอะไรเสีย
+  partial, // กรอกแล้วแต่ยังไม่ครบ — จบพักได้ทันทีเช่นกัน แต่ข้อมูลที่กรอกจะไม่ถูกบันทึก (เตือนด้วยสีส้ม)
+  complete, // กรอกครบ — จบพักและบันทึกเซต
+}
+
 class WeightTrainingExerciseView extends StatefulWidget {
   final int exerciseId;
   final String exerciseName;
@@ -136,6 +143,14 @@ class _WeightTrainingExerciseViewState
   final _repsController = TextEditingController();
   final _weightController = TextEditingController();
 
+  // ท่านี้ยังไม่มี PR (และเป็นท่าน้ำหนัก+จำนวนครั้ง) → ถามรายเซตหลังกรอกครบตอนกดจบพักและบันทึก ว่ายกจนเกือบหมดแรงไหม
+  // (backend ใช้คำตอบเลือกตัวอ้างอิง %1RM ของเซสชันแรก — services.ResolveReferenceOneRepMax) เช็ค PR ไม่สำเร็จ = ไม่ถาม
+  bool _askNearFailure = false;
+  // กำลังเปิด dialog ถาม — กันกดปุ่มจบพักซ้ำระหว่างรอคำตอบ
+  bool _askingNearFailure = false;
+  // น้ำหนักที่เติมให้อัตโนมัติจากเซตก่อนตอนเริ่มพัก — ถ้าผู้ใช้ไม่แตะ ไม่นับว่า "กรอกแล้ว" (กันเตือนส้มทั้งที่เผลอกดพัก)
+  String _prefilledWeight = '';
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Lifecycle
   // ─────────────────────────────────────────────────────────────────────────────
@@ -151,6 +166,7 @@ class _WeightTrainingExerciseViewState
     _repsController.addListener(() => setState(() {}));
     _weightController.addListener(() => setState(() {}));
     _sheetController.addListener(_onSheetExtentChanged);
+    _loadFirstSessionFlag();
     _startPreCountdown();
     if (widget.loopVideoUrl.isNotEmpty) {
       _videoController = VideoPlayerController.networkUrl(
@@ -165,6 +181,16 @@ class _WeightTrainingExerciseViewState
             setState(() {});
           }
         });
+    }
+  }
+
+  // เช็ค PR ครั้งเดียวตอนเปิดหน้า — ไม่มีประวัติท่านี้ = ต้องถามรายเซต (ดู _askNearFailure)
+  Future<void> _loadFirstSessionFlag() async {
+    if (!widget.hasWeight || !widget.hasReps) return;
+    final best = await WorkoutService.to.getBest1RM(widget.exerciseId);
+    if (!mounted) return;
+    if (best['success'] == true && best['has_data'] != true) {
+      setState(() => _askNearFailure = true);
     }
   }
 
@@ -261,8 +287,10 @@ class _WeightTrainingExerciseViewState
     // Smart auto-fill: ดึงน้ำหนักจากเซตล่าสุด ล้างครั้ง
     if (_completedSets.isNotEmpty) {
       _weightController.text = _completedSets.last['weight'].toString();
+      _prefilledWeight = _weightController.text.trim();
       _repsController.clear();
     } else {
+      _prefilledWeight = '';
       _repsController.clear();
       _weightController.clear();
     }
@@ -335,11 +363,71 @@ class _WeightTrainingExerciseViewState
     return repsOk && _weightController.text.trim().isNotEmpty;
   }
 
+  _SetInputState get _setInputState {
+    if (_canSaveSet) return _SetInputState.complete;
+    final repsEmpty = _repsController.text.trim().isEmpty;
+    final weight = widget.hasWeight ? _weightController.text.trim() : '';
+    // น้ำหนักที่เติมอัตโนมัติจากเซตก่อนและผู้ใช้ไม่แตะ ไม่นับว่ากรอก
+    final weightTouched = weight.isNotEmpty && weight != _prefilledWeight;
+    return (repsEmpty && !weightTouched) ? _SetInputState.empty : _SetInputState.partial;
+  }
+
+  // เลขเซตที่กำลังจะบันทึก (นับจากเซตที่บันทึกแล้ว + 1)
+  int get _nextSetNo => _completedSets.length + 1;
+
+  String get _finishRestLabel =>
+      _setInputState == _SetInputState.complete ? 'จบพักและบันทึกเซต $_nextSetNo' : 'จบพัก';
+
+  // บรรทัดบอกใต้ปุ่ม — บอกชัดว่ากดแล้วเกิดอะไร: ช่องว่าง/ไม่ครบ กด "จบพัก" ได้ทันทีเสมอ ไม่ติดอะไร แค่เซตนั้นไม่ถูกบันทึก
+  String? get _finishRestHint {
+    switch (_setInputState) {
+      case _SetInputState.complete:
+        return null;
+      case _SetInputState.empty:
+        return _completedSets.isEmpty
+            ? 'เซตแรก • กรอกน้ำหนักและจำนวนครั้งเพื่อบันทึก'
+            : 'จบพักได้เลย • เซต $_nextSetNo จะยังไม่ถูกบันทึก';
+      case _SetInputState.partial:
+        final missing = _repsController.text.trim().isEmpty ? 'จำนวนครั้ง' : 'น้ำหนัก';
+        return 'กรอก$missingด้วยเพื่อบันทึกเซต $_nextSetNo • หรือจบพักโดยไม่บันทึก';
+    }
+  }
+
+  // ถามว่าเซตนี้ยกจนเกือบหมดแรงไหม — true/false = คำตอบ, null = ปิดโดยไม่เลือก (ยังไม่บันทึก ค้างโหมดพักเหมือนเดิม)
+  Future<bool?> _askSetNearFailure() {
+    return showAppChoiceDialog(
+      context,
+      icon: Icons.fitness_center,
+      title: 'เซต $_nextSetNo ยกจนเกือบหมดแรงไหม',
+      content: '${_weightController.text.trim()} กก. × ${_repsController.text.trim()} ครั้ง\n'
+          'ถ้ายกต่อได้อีกไม่เกิน 2-3 ครั้ง ให้ตอบ "ใช่"\n'
+          'ท่านี้ยังไม่มีประวัติ ระบบใช้คำตอบนี้ประเมินพลังงานของเซสชันแรกเท่านั้น',
+      confirmLabel: 'ใช่ เกือบหมดแรง',
+      cancelLabel: 'ยังเหลือแรง',
+      color: AppColors.primaryGreen,
+    );
+  }
+
+  // ปุ่มจบพักที่ footer: ช่องว่าง/ไม่ครบ = จบพักทันที ไม่ถามอะไร (เผลอกดพักก็กลับไปฝึกต่อได้เลย)
+  // ถามเฉพาะตอนจะบันทึกเซตจริง (กรอกครบ) และท่านี้ยังไม่มี PR
+  Future<void> _onFinishRestTap() async {
+    if (_askingNearFailure) return;
+    bool? nearFailure;
+    if (_askNearFailure && _setInputState == _SetInputState.complete) {
+      _askingNearFailure = true;
+      nearFailure = await _askSetNearFailure();
+      _askingNearFailure = false;
+      if (!mounted || nearFailure == null) return;
+    }
+    _finishRest(nearFailure: nearFailure);
+  }
+
   // จบการพัก: กดปุ่มนี้ "จบการพักได้เสมอ" ไม่ว่าจะกรอกครบหรือไม่ — ต่างจากเดิมที่กรอก
   // ไม่ครบแล้วกดไม่ออกจากโหมดพักเลย บันทึกเซตเฉพาะตอนกรอกครบทั้งสองช่องเท่านั้น
-  // (ใช้ทั้งปุ่ม "เพิ่มเซต" ในฟอร์ม และปุ่ม "จบการพัก"/"จบการพักและบันทึก" ที่ footer —
+  // (ใช้ทั้งปุ่ม "เพิ่มเซต" ในฟอร์ม และปุ่ม "จบพัก"/"จบพักและบันทึกเซต N" ที่ footer —
   // ทำหน้าที่เดียวกัน) ปัดสไลด์ลงเฉยๆ ไม่นับว่าจบพัก ต้องกดปุ่มนี้เท่านั้น
-  void _finishRest() {
+  // nearFailure = คำตอบรายเซต (null = ไม่ได้ถาม) ส่งขึ้น API เป็น near_failure ของเซตนั้น
+  void _finishRest({bool? nearFailure}) {
     if (_canSaveSet) {
       final String w = widget.hasWeight ? _weightController.text.trim() : '0';
       final String r = widget.hasReps ? _repsController.text.trim() : '0';
@@ -367,7 +455,7 @@ class _WeightTrainingExerciseViewState
           'rest_seconds': restSeconds,
           // เวลาที่ใช้ทำเซตนี้ (วินาที) ส่งขึ้น API เป็น wtrs_work_seconds (backend ต้อง > 0)
           'work_seconds': workSeconds < 1 ? 1 : workSeconds,
-        });
+            });
       });
     }
     _endRest();
@@ -763,6 +851,8 @@ class _WeightTrainingExerciseViewState
           // เป็น null อยู่แล้วถ้าไม่เคยกดปุ่มพัก (ดู _finishRest) การ ?? 0 เดิมจะกลบ null ที่แท้จริง
           // เป็น 0 ปนกับพักจริง 0 วินาที ทำให้ backend แยกไม่ออก
           'wtrs_work_seconds': s['work_seconds'] ?? 1,
+          // คำตอบรายเซต "ยกจนเกือบหมดแรงไหม" (มีเฉพาะท่าที่ยังไม่มี PR — ดู _onFinishRestTap)
+          if (s['near_failure'] != null) 'near_failure': s['near_failure'],
           'wtrs_rest_seconds': isLastSet ? null : s['rest_seconds'],
         };
       }).toList(),
@@ -1396,47 +1486,72 @@ class _WeightTrainingExerciseViewState
   // ปุ่ม "จบการพัก" ยืดออกด้านขวา + เปลี่ยนเป็น "จบการพักและบันทึก" (พื้นเขียวทึบ) ทันทีที่
   // กรอกครบทั้งน้ำหนัก+จำนวนครั้ง — ให้ผู้ใช้รู้ตัวว่ากดแล้วจะบันทึกเซตด้วย ไม่ใช่แค่จบพักเฉยๆ
   // (กรอกไม่ครบ/ว่าง ยังเป็นปุ่มเดิม กดได้เหมือนเดิมแค่ไม่บันทึก — ดู _finishRest)
+  //
+  // 3 สถานะ (ดู _SetInputState): ว่าง = เขียวโปร่ง "จบพัก" · กรอกไม่ครบ = ส้มโปร่ง "จบพัก" (เตือนว่าข้อมูลที่กรอกจะ
+  // ไม่ถูกบันทึก) · ครบ = เขียวทึบ "จบพักและบันทึกเซต N" — ทุกสถานะกดจบพักได้ทันที ไม่มี dialog/เงื่อนไขขวาง
+  // (เผลอกดพักก็กลับไปฝึกต่อได้เลย) บรรทัดบอกใต้ปุ่มบอกว่ากดแล้วเกิดอะไร
   Widget _buildRestingRow() {
-    final canSave = _canSaveSet;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    final state = _setInputState;
+    final canSave = state == _SetInputState.complete;
+    final isPartial = state == _SetInputState.partial;
+    final hint = _finishRestHint;
+    final Color accent = isPartial ? AppColors.weightIcon : _restTimerColor;
+    final Color labelColor = canSave
+        ? Colors.black
+        : (isPartial ? AppColors.alertWarning : _restTimerColor);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.self_improvement_rounded, color: _restTimerColor, size: 22),
-        const SizedBox(width: 10),
-        WorkoutTimer(seconds: _restSeconds, fontSize: 24, color: _restTimerColor, fontWeight: FontWeight.w800),
-        const SizedBox(width: 20),
-        GestureDetector(
-          onTap: _finishRest,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOut,
-            padding: EdgeInsets.symmetric(horizontal: canSave ? 24 : 18, vertical: 10),
-            decoration: BoxDecoration(
-              color: canSave ? _restTimerColor : _restTimerColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: canSave
-                  ? [BoxShadow(color: _restTimerColor.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))]
-                  : null,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (canSave) ...[
-                  const Icon(Icons.check_circle_rounded, color: Colors.black, size: 16),
-                  const SizedBox(width: 6),
-                ],
-                Text(
-                  canSave ? 'จบการพักและบันทึก' : 'จบการพัก',
-                  style: TextStyle(
-                    color: canSave ? Colors.black : _restTimerColor,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                  ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.self_improvement_rounded, color: _restTimerColor, size: 22),
+            const SizedBox(width: 10),
+            WorkoutTimer(seconds: _restSeconds, fontSize: 24, color: _restTimerColor, fontWeight: FontWeight.w800),
+            const SizedBox(width: 20),
+            GestureDetector(
+              onTap: _onFinishRestTap,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                padding: EdgeInsets.symmetric(horizontal: canSave ? 24 : 18, vertical: 10),
+                decoration: BoxDecoration(
+                  color: canSave ? _restTimerColor : accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(24),
+                  border: isPartial ? Border.all(color: accent.withValues(alpha: 0.6)) : null,
+                  boxShadow: canSave
+                      ? [BoxShadow(color: _restTimerColor.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))]
+                      : null,
                 ),
-              ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (canSave) ...[
+                      const Icon(Icons.check_circle_rounded, color: Colors.black, size: 16),
+                      const SizedBox(width: 6),
+                    ],
+                    Text(
+                      _finishRestLabel,
+                      style: TextStyle(color: labelColor, fontWeight: FontWeight.w800, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (hint != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            hint,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: isPartial ? AppColors.alertWarning : AppColors.textBody,
+              fontSize: 12,
+              fontWeight: isPartial ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
-        ),
+        ],
       ],
     );
   }

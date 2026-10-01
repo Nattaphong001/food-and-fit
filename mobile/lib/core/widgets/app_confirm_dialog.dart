@@ -14,7 +14,9 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 
-Future<bool> showAppConfirmDialog(
+// ถามแบบ 3 ผลลัพธ์: true = ปุ่มยืนยัน, false = ปุ่มซ้าย, null = ปิด dialog โดยไม่เลือก (แตะนอกกรอบ/ปุ่มย้อนกลับ)
+// ใช้เมื่อ "ไม่ตอบ" ต้องต่างจาก "ตอบปฏิเสธ" (เช่น ถามระหว่างบันทึกเซต ปิดเฉยๆ = ยังไม่บันทึก)
+Future<bool?> showAppChoiceDialog(
   BuildContext context, {
   required IconData icon,
   required String title,
@@ -72,7 +74,28 @@ Future<bool> showAppConfirmDialog(
       ),
     ),
   );
-  return confirm == true;
+  return confirm;
+}
+
+Future<bool> showAppConfirmDialog(
+  BuildContext context, {
+  required IconData icon,
+  required String title,
+  required String content,
+  String confirmLabel = 'ยืนยัน',
+  String cancelLabel = 'ยกเลิก',
+  Color color = AppColors.error,
+}) async {
+  final result = await showAppChoiceDialog(
+    context,
+    icon: icon,
+    title: title,
+    content: content,
+    confirmLabel: confirmLabel,
+    cancelLabel: cancelLabel,
+    color: color,
+  );
+  return result == true;
 }
 
 // AppNoticeDialog — dialog แจ้งเตือนให้ "รับทราบ" อย่างเดียว (Acknowledge) ไม่ใช่ถาม yes/no
