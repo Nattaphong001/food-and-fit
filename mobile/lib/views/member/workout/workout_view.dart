@@ -1435,7 +1435,6 @@ class _WorkoutViewState extends State<WorkoutView> with RouteAware {
           muscleGroupName: ex?.muscleGroupName ?? '',
           equipment: ex?.equipment ?? EquipmentType.bodyweight,
           isTimed: ex?.isTimed ?? false,
-          mets: ex?.mets ?? 3.5,
         ),
       ),
     );

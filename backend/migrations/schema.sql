@@ -305,7 +305,6 @@ CREATE TABLE `weight_exercises` (
   `wet_difficulty` tinyint(4) NOT NULL COMMENT 'ระดับของท่าฝึก (1=ง่าย, 2=ปานกลาง, 3=ยาก)',
   `wet_equipment` tinyint(4) NOT NULL COMMENT 'อุปกรณ์ที่ใช้ฝึก (1=Barbell, 2=Dumbbell, 3=Machine, 4=Cable, 5=Bodyweight)',
   `wet_exercise_type` tinyint(4) NOT NULL COMMENT 'ประเภทของท่าฝึกตามกลุ่มกล้ามเนื้อ (1=หลายกลุ่ม, 2=เฉพาะส่วน)',
-  `wet_mets` decimal(4,2) NOT NULL DEFAULT 3.50 COMMENT 'METs ของท่านี้ (คงที่ต่อท่า, 2024 Adult Compendium)',
   `wet_is_timed` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'ท่าค้างเวลา ไม่มีจำนวนครั้งให้กรอก (1=ใช่ เช่น Plank, 0=นับจำนวนครั้งได้)',
   `wet_description` text NOT NULL COMMENT 'คำอธิบายวิธีฝึก',
   `wet_technique` text NOT NULL COMMENT 'เทคนิคในการฝึก',

@@ -36,10 +36,10 @@ type WeightExercise struct {
 	// คอลัมน์ถูก DROP ออกจาก DB จริงแล้วด้วย (migrations/2026-09-19_drop_wet_base_met.sql) ไม่ใช่แค่
 	// เลิกใช้ในโค้ดเฉยๆ เหมือนที่เคยตัดสินใจไว้ก่อนหน้า
 	//
-	// WetMets (wet_mets) — เพิ่มเข้ามา 2026-09-29 (migrations/2026-09-29_weight_exercises_per_exercise_mets.sql)
-	// METs คงที่ต่อท่า อ้างอิง 2024 Adult Compendium of Physical Activities (Herrmann et al., 2567)
-	// แทนที่ Session MET + RIR เดิม (ดู ../../CLAUDE.md ข้อ 7[B-1]) — แบบเดียวกับ cardio.cdo_mets
-	WetMets         float64                `gorm:"type:decimal(4,2);column:wet_mets" json:"wet_mets"`
+	// WetMets (wet_mets) — เพิ่มเข้ามา 2026-09-29 (METs คงที่ต่อท่า) ตัดออกพร้อม DROP คอลัมน์แล้ว
+	// (2026-10-01, migrations/2026-10-01_drop_wet_mets.sql) — METs ของเวทเลือกรายเซตตาม %1RM เทียบ PR
+	// ก่อนเซสชัน (services.WeightSetMets, บทที่ 2 ตารางที่ 2.3, ../../CLAUDE.md ข้อ 7[B-1])
+	//
 	// WetIsTimed (wet_is_timed) — เพิ่มเข้ามา 2026-09-30 (migrations/2026-09-30_weight_exercises_is_timed.sql)
 	// ท่าค้างเวลา ไม่มีจำนวนครั้งให้กรอก (เช่น Plank) แยกจาก WetEquipment=5 (Bodyweight) เพราะท่าบอดี้เวท
 	// ส่วนใหญ่ (Pull-up, Dips, Hanging Leg Raise, Crunch) นับจำนวนครั้งได้ปกติ มีแค่ไม่มีน้ำหนักถ่วง —
@@ -202,9 +202,11 @@ type WeightTrainingResult struct {
 	// wtrs_intensity_level ถูกลบออกจาก DB แล้ว (2026-09-29,
 	// migrations/2026-09-29_weight_exercises_per_exercise_mets.sql) — METs ไม่ได้ตัดสินจากความหนัก
 	// ของเซสชันอีกต่อไป เปลี่ยนเป็นค่าคงที่ต่อท่า (weight_exercises.wet_mets) แทน ดู
-	// ../../CLAUDE.md ข้อ 7[B-1]
-	// พลังงานสุทธิ (kcal) ของเซตนี้ = totalKcal ทั้งเซสชัน หารเท่ากันทุกเซต (ดู
-	// services.CalculateWeightTrainingCalories) SUM(wtrs_calories) GROUP BY wtrs_date ยังถูกต้อง
+	// ../../CLAUDE.md ข้อ 7[B-1] (2026-10-01: wet_mets ถูก DROP แล้ว METs เลือกรายเซตตาม %1RM — ไม่เก็บ
+	// METs ลง DB คำนวณใหม่จาก น้ำหนัก/reps/PR ได้เสมอ)
+	// พลังงานสุทธิ (kcal) ของเซตนี้เอง = (METs ของเซต − 1) × 3.5 × น้ำหนักตัว / 200 × (work + rest)/60
+	// (แก้ 2026-10-01 — เดิมหารพลังงานทั้งเซสชันเท่ากันทุกเซต) ดู services.CalculateWeightTrainingCalories
+	// SUM(wtrs_calories) GROUP BY wtrs_date ยังถูกต้อง
 	WtrsCalories       float64        `gorm:"type:decimal(6,2);column:wtrs_calories" json:"wtrs_calories"`
 	MbID               uint           `gorm:"type:int(11);column:mb_id;not null" json:"mb_id"`
 	// WetID เป็น *uint เพราะคอลัมน์ wet_id เป็น nullable จริงใน DB (FK ON DELETE SET NULL) ถ้า

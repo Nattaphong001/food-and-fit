@@ -63,9 +63,8 @@ class Exercise {
   final List<int> muscleGroupIds;
   final int exerciseType;    // 1=หลายกลุ่ม, 2=เฉพาะส่วน
   final String muscleGroupName; // ชื่อกลุ่มกล้ามเนื้อหลัก เช่น ขา, อก
-  // METs คงที่ของท่านี้ (weight_exercises.wet_mets, เพิ่ม 2026-09-29) — แสดงผลอย่างเดียว backend
-  // เป็นเจ้าของค่าที่ใช้คำนวณพลังงานจริงเสมอ (เหมือน CardioType.mets)
-  final double mets;
+  // mets (weight_exercises.wet_mets) ตัดออกแล้ว (2026-10-01 — คอลัมน์ถูก DROP) METs ของเวทไม่ใช่ค่าคงที่
+  // ต่อท่าอีกต่อไป backend เลือกรายเซตตาม %1RM ตอนบันทึกผล (ดู ../../../CLAUDE.md ข้อ 7[B-1])
   // ท่าค้างเวลา (weight_exercises.wet_is_timed, เพิ่ม 2026-09-30) — ไม่มีจำนวนครั้งให้กรอก เช่น Plank
   // แยกจาก equipment==bodyweight เพราะท่าบอดี้เวทส่วนใหญ่ (Pull-up, Dips, Hanging Leg Raise, Crunch)
   // นับจำนวนครั้งได้ปกติ แค่ไม่มีน้ำหนักถ่วง (ดู weight_training_exercise_view.dart)
@@ -85,7 +84,6 @@ class Exercise {
     this.muscleGroupIds = const [],
     this.exerciseType = 1,
     this.muscleGroupName = '',
-    this.mets = 3.5,
     this.isTimed = false,
   });
 
@@ -122,7 +120,6 @@ class Exercise {
       muscleGroupIds: groupIds,
       exerciseType: (json['wet_exercise_type'] ?? 1) as int,
       muscleGroupName: primary?['mug_name'] as String? ?? '',
-      mets: (json['wet_mets'] ?? 3.5).toDouble(),
       isTimed: json['wet_is_timed'] == true || json['wet_is_timed'] == 1,
     );
   }

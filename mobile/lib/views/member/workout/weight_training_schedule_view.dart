@@ -1180,7 +1180,6 @@ class _WeightTrainingScheduleViewState extends State<WeightTrainingScheduleView>
               muscleGroupName: item.exercise.muscleGroupName,
               equipment: item.exercise.equipment,
               isTimed: item.exercise.isTimed,
-              mets: item.exercise.mets,
               // ท่านี้อยู่ในแผนอยู่แล้ว มี wsch_id จริงจาก workout_schedules —
               // ส่งตรงไปให้หน้าบันทึกผล ไม่ต้องให้มันไปสร้าง schedule ซ้ำเอง
               wschId: item.detailId,

@@ -186,17 +186,8 @@ func CreateWeightExercise(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
-	// wet_mets — METs คงที่ของท่านี้ (2024 Adult Compendium of Physical Activities, Herrmann et al.,
-	// 2567) ช่วงตรวจเดียวกับ cdo_mets ของ cardio ค่าเริ่มต้น 3.5 ถ้าไม่ได้ส่งมา (ตรงกับ DB default)
-	wetMets := 3.5
-	if metsStr := c.PostForm("wet_mets"); metsStr != "" {
-		m, metsErr := strconv.ParseFloat(metsStr, 64)
-		if metsErr != nil || m < 0.9 || m > 25 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "ค่า METs ต้องเป็นตัวเลขระหว่าง 0.9-25"})
-			return
-		}
-		wetMets = m
-	}
+	// wet_mets ถูก DROP แล้ว (2026-10-01) — METs ของเวทเลือกรายเซตตาม %1RM ไม่ใช่ค่าคงที่ต่อท่า
+	// (services.WeightSetMets, ../../CLAUDE.md ข้อ 7[B-1]) form ที่ยังส่ง wet_mets มาจะถูกเพิกเฉย
 	// wet_is_timed — ท่าค้างเวลา ไม่มีจำนวนครั้งให้กรอกในแอป (เช่น Plank) ค่าเริ่มต้น false ถ้าไม่ได้ส่งมา
 	wetIsTimed := c.PostForm("wet_is_timed") == "true" || c.PostForm("wet_is_timed") == "1"
 	// mug_id (ถ้า form ส่งมา) ไม่ใช้แล้ว — weight_exercises.mug_id ถูก DROP ออกจาก DB (2026-09-04)
@@ -241,7 +232,6 @@ func CreateWeightExercise(c *gin.Context) {
 		WetDifficulty:   int8(wetDiff),         // #nosec G115 -- validated by ValidateWeightExerciseCodes above
 		WetEquipment:    int8(wetEquip),        // #nosec G115 -- validated by ValidateWeightExerciseCodes above
 		WetExerciseType: int8(wetExerciseType), // #nosec G115 -- validated by ValidateWeightExerciseCodes above
-		WetMets:         wetMets,
 		WetIsTimed:      wetIsTimed,
 		WetImage:        imagePath,
 	}
@@ -310,14 +300,6 @@ func UpdateWeightExercise(c *gin.Context) {
 			return
 		}
 		exercise.WetExerciseType = int8(t)
-	}
-	if metsStr := c.PostForm("wet_mets"); metsStr != "" {
-		m, metsErr := strconv.ParseFloat(metsStr, 64)
-		if metsErr != nil || m < 0.9 || m > 25 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "ค่า METs ต้องเป็นตัวเลขระหว่าง 0.9-25"})
-			return
-		}
-		exercise.WetMets = m
 	}
 	if timedStr := c.PostForm("wet_is_timed"); timedStr != "" {
 		exercise.WetIsTimed = timedStr == "true" || timedStr == "1"
