@@ -181,7 +181,7 @@ func ValidateCardioResult(durationSeconds int, distanceKm float64, hasDistance b
 		return false, "ระยะเวลาต้องไม่น้อยกว่า 1 นาที"
 	}
 	if durationSeconds > CardioMaxSecondsPerSession {
-		return false, fmt.Sprintf("ระยะเวลาไม่ถูกต้อง (สูงสุด %d นาทีต่อครั้ง) อาจลืมกดจบการออกกำลังกาย", CardioMaxSecondsPerSession/60)
+		return false, fmt.Sprintf("ระยะเวลาไม่ถูกต้อง (สูงสุด %d ชั่วโมงต่อครั้ง) อาจลืมกดจบการออกกำลังกาย", CardioMaxSecondsPerSession/3600)
 	}
 	if hasDistance {
 		if distanceKm < 0 {
@@ -523,7 +523,7 @@ func ValidateCardioDate(date string, now time.Time) (bool, string) {
 	}
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	if d.Before(today.AddDate(0, 0, -CardioDateMaxDaysBack)) || d.After(today.AddDate(0, 0, CardioDateMaxDaysAhead)) {
-		return false, fmt.Sprintf("วันที่ต้องอยู่ในช่วงย้อนหลังไม่เกิน %d วัน และล่วงหน้าไม่เกิน %d วัน", CardioDateMaxDaysBack, CardioDateMaxDaysAhead)
+		return false, "วันที่บันทึกต้องเป็นวันนี้หรือเมื่อวานเท่านั้น (ไม่มีการบันทึกย้อนหลัง)"
 	}
 	return true, ""
 }

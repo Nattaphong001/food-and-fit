@@ -359,7 +359,13 @@ class _CardioActivityExerciseViewState extends State<CardioActivityExerciseView>
     if (!mounted) return;
     final bool success = result['success'] == true;
 
-    showAppAlert(context, success ? 'บันทึกสำเร็จ เยี่ยมมาก!' : 'เกิดข้อผิดพลาดในการบันทึก',
+    // ไม่สำเร็จ: แสดงเหตุผลจาก backend ถ้ามี (เหมือนหน้าเวทเทรนนิ่ง) ไม่งั้นข้อความทั่วไป
+    final lastError = result['message'] as String?;
+    showAppAlert(
+        context,
+        success
+            ? 'บันทึกสำเร็จ เยี่ยมมาก!'
+            : 'เกิดข้อผิดพลาดในการบันทึก${lastError != null && lastError.isNotEmpty ? ": $lastError" : ""}',
         type: success ? AppAlertType.success : AppAlertType.error);
     if (success) Navigator.pop(context);
   }

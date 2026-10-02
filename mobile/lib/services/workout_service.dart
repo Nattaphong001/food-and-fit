@@ -522,7 +522,12 @@ class WorkoutService extends GetxService {
   Future<Map<String, dynamic>> saveCardioResult(Map<String, dynamic> data) async {
     try {
       final response = await _api.post('/member/cardio-results', data);
-      return {'success': response.statusCode == 200 || response.statusCode == 201};
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {'success': true};
+      }
+      // เหตุผลที่ backend ปฏิเสธ (เวลาเกินเพดาน, วันที่ไม่ถูกต้อง, ไม่มีน้ำหนักตัว ฯลฯ) ส่งต่อให้หน้าจอแสดง
+      final msg = (response.data is Map) ? (response.data['error'] ?? response.data['message']) : null;
+      return {'success': false, 'message': msg?.toString()};
     } catch (e) {
       return {'success': false};
     }
