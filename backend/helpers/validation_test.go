@@ -1,6 +1,13 @@
 package helpers
 
-import "testing"
+import (
+	"errors"
+	"net/http"
+	"testing"
+	"time"
+
+	"gorm.io/gorm"
+)
 
 // ครอบคลุมทั้ง 5 ค่ามาตรฐานที่ต้องผ่าน + ค่ากลางๆ ที่ต้อง reject (D9)
 func TestValidateActivityLevel(t *testing.T) {
@@ -141,7 +148,7 @@ func TestValidateWeightSession(t *testing.T) {
 	})
 }
 
-// ValidateCardioResult: ขอบของเวลา (60-36000 วิ) และระยะทาง (0-999.99 กม. เฉพาะกิจกรรมที่มีระยะทาง)
+// ValidateCardioResult: ขอบของเวลา (60-21600 วิ) และระยะทาง (0-999.99 กม. เฉพาะกิจกรรมที่มีระยะทาง)
 func TestValidateCardioResult(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -154,7 +161,8 @@ func TestValidateCardioResult(t *testing.T) {
 		{"ปกติ 30 นาที ไม่มีระยะทาง (เช่น เวทบอลออกกำลัง)", 1800, 0, false, true},
 		{"เวลาต่ำกว่า 60 วิ", 59, 0, false, false},
 		{"เวลา 60 วิพอดี (ขั้นต่ำ)", 60, 0, false, true},
-		{"เวลา 36000 วิพอดี (เพดาน 600 นาที)", 36000, 0, false, true},
+		{"เวลา 21600 วิพอดี (เพดาน 6 ชม.)", 21600, 0, false, true},
+		{"เวลา 21601 วิ", 21601, 0, false, false},
 		{"เวลาเกินเพดาน 36001 วิ", 36001, 0, false, false},
 		{"เวลา 0", 0, 0, false, false},
 		{"เวลาติดลบ", -60, 0, false, false},
@@ -181,3 +189,141 @@ func TestValidateCardioResult(t *testing.T) {
 // wtrs_active_seconds (WorkSeconds) ถูกตัดออกจาก WeightSetCheck แล้ว (2026-09-29, DROP column DB
 // จริง) — ไม่เคยเข้าสูตรคำนวณพลังงานเลยตั้งแต่ Two-Compartment Energy Model ถูกยกเลิก (2026-09-22)
 // ทดสอบ TestValidateWeightSession_WorkSeconds เดิมถูกลบไปพร้อมกัน (ดู git history ถ้าต้องการดูของเดิม)
+
+// เพดานเวลา "ต่อเซต" ต้องเป็นต่อเซตจริง ไม่ใช่ค่าเฉลี่ย — เซตเดียวยาวผิดปกติต้องถูก reject แม้เซตอื่นสั้น
+func TestValidateWeightSession_PerSetCapIsPerSet(t *testing.T) {
+	build := func(longSetSeconds int) []WeightSetCheck {
+		sets := make([]WeightSetCheck, 0, 50)
+		for i := 0; i < 49; i++ {
+			sets = append(sets, WeightSetCheck{Reps: 5, WeightKg: 50, WorkSeconds: WeightSessionMinSecondsPerSet})
+		}
+		return append(sets, WeightSetCheck{Reps: 5, WeightKg: 50, WorkSeconds: longSetSeconds})
+	}
+	if ok, _ := ValidateWeightSession(build(WeightSessionMaxSecondsPerSet), true, true); !ok {
+		t.Error("เซตยาว 600 วิพอดี ต้องผ่าน")
+	}
+	if ok, msg := ValidateWeightSession(build(WeightSessionMaxSecondsPerSet+1), true, true); ok || msg == "" {
+		t.Errorf("เซตยาว 601 วิ ต้อง reject พร้อมข้อความ (ok=%v msg=%q)", ok, msg)
+	}
+	// work + rest ของเซตเดียวรวมกันเกินเพดาน
+	rest := 300
+	if ok, _ := ValidateWeightSession([]WeightSetCheck{{Reps: 5, WeightKg: 50, WorkSeconds: 400, RestSeconds: &rest}}, true, true); ok {
+		t.Error("work 400 + rest 300 = 700 วิ ต้อง reject")
+	}
+}
+
+// เพดานเวลาสะสมต่อท่าต่อวัน กันส่งซ้ำ/แบ่งส่งหลายคำขอ
+func TestValidateDailyWeightSeconds(t *testing.T) {
+	cases := []struct {
+		name          string
+		existing, new int
+		want          bool
+	}{
+		{"วันแรก ไม่มีของเดิม", 0, 1800, true},
+		{"รวมเท่าเพดานพอดี", 3600, 3600, true},
+		{"รวมเกินเพดาน 1 วิ", 3600, 3601, false},
+		{"ส่งซ้ำจนสะสมเกิน", 7000, 300, false},
+		{"มีของเดิมเต็มเพดานแล้ว", WeightSessionMaxSeconds, 1, false},
+	}
+	for _, tc := range cases {
+		ok, msg := ValidateDailyWeightSeconds(tc.existing, tc.new)
+		if ok != tc.want || (!ok && msg == "") {
+			t.Errorf("%s: got (%v, %q), want ok=%v", tc.name, ok, msg, tc.want)
+		}
+	}
+}
+
+// ResolveBodyWeight: ห้ามมี fallback — ไม่มีข้อมูล/น้ำหนักผิด/DB error ต้องได้ error ไม่ใช่ค่าเดา
+func TestResolveBodyWeight(t *testing.T) {
+	cases := []struct {
+		name       string
+		weight     float64
+		err        error
+		wantWeight float64
+		wantStatus int
+	}{
+		{"มีข้อมูล", 72.5, nil, 72.5, 0},
+		{"ไม่มีแถวน้ำหนักตัว", 0, gorm.ErrRecordNotFound, 0, http.StatusBadRequest},
+		{"DB error อื่น", 0, errors.New("connection refused"), 0, http.StatusInternalServerError},
+		{"DB error แต่ได้ค่าค้าง", 80, errors.New("timeout"), 0, http.StatusInternalServerError},
+		{"น้ำหนัก 0", 0, nil, 0, http.StatusBadRequest},
+		{"น้ำหนักติดลบ", -5, nil, 0, http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		w, status, msg := ResolveBodyWeight(tc.weight, tc.err)
+		if w != tc.wantWeight || status != tc.wantStatus {
+			t.Errorf("%s: got (%v, %d), want (%v, %d)", tc.name, w, status, tc.wantWeight, tc.wantStatus)
+		}
+		if (status != 0) != (msg != "") {
+			t.Errorf("%s: msg = %q ไม่สอดคล้องกับ status %d", tc.name, msg, status)
+		}
+	}
+}
+
+// เพดานสะสมต่อวันต้องไม่ต่ำกว่าเพดานต่อเซสชัน และเพดานต่อเซตต้องไม่เกินเพดานต่อเซสชัน (กันตั้งค่าขัดกันเอง)
+func TestWeightCaps_Consistent(t *testing.T) {
+	if WeightDailyMaxSecondsPerExercise < WeightSessionMaxSeconds {
+		t.Errorf("daily cap %d < session cap %d", WeightDailyMaxSecondsPerExercise, WeightSessionMaxSeconds)
+	}
+	if WeightSessionMaxSecondsPerSet > WeightSessionMaxSeconds {
+		t.Errorf("per-set cap %d > session cap %d", WeightSessionMaxSecondsPerSet, WeightSessionMaxSeconds)
+	}
+	// เซสชันเต็มเพดานในวันแรกต้องบันทึกได้
+	if ok, _ := ValidateDailyWeightSeconds(0, WeightSessionMaxSeconds); !ok {
+		t.Error("เซสชันเต็มเพดานในวันที่ไม่มีของเดิมต้องผ่าน")
+	}
+}
+
+func TestValidateDailyCardioSeconds(t *testing.T) {
+	cases := []struct {
+		name          string
+		existing, new int
+		want          bool
+	}{
+		{"วันแรก", 0, 3600, true},
+		{"วิ่งเช้า + ปั่นเย็น", 5400, 7200, true},
+		{"รวมเท่าเพดานพอดี", 14400, 14400, true},
+		{"เกินเพดาน 1 วิ", 14400, 14401, false},
+		{"ส่งซ้ำจนสะสมเกิน", 28000, 900, false},
+	}
+	for _, tc := range cases {
+		ok, msg := ValidateDailyCardioSeconds(tc.existing, tc.new)
+		if ok != tc.want || (!ok && msg == "") {
+			t.Errorf("%s: got (%v, %q), want ok=%v", tc.name, ok, msg, tc.want)
+		}
+	}
+}
+
+func TestCardioCaps_Consistent(t *testing.T) {
+	if CardioMaxSecondsPerDay < CardioMaxSecondsPerSession {
+		t.Errorf("daily cap %d < session cap %d", CardioMaxSecondsPerDay, CardioMaxSecondsPerSession)
+	}
+	if ok, _ := ValidateDailyCardioSeconds(0, CardioMaxSecondsPerSession); !ok {
+		t.Error("ครั้งเดียวเต็มเพดานในวันแรกต้องผ่าน")
+	}
+}
+
+func TestValidateCardioDate(t *testing.T) {
+	now := time.Date(2026, 10, 2, 15, 30, 0, 0, time.Local)
+	cases := []struct {
+		name string
+		date string
+		want bool
+	}{
+		{"วันนี้", "2026-10-02", true},
+		{"เมื่อวาน (ข้ามเที่ยงคืน)", "2026-10-01", true},
+		{"ย้อนหลัง 2 วัน (ไม่มีบันทึกย้อนหลัง)", "2026-09-30", false},
+		{"พรุ่งนี้", "2026-10-03", false},
+		{"อนาคตไกล", "2030-01-01", false},
+		{"รูปแบบผิด", "02/10/2026", false},
+		{"มีเวลาปน", "2026-10-02T10:00:00", false},
+		{"ว่าง", "", false},
+		{"วันที่ไม่มีจริง", "2026-02-30", false},
+	}
+	for _, tc := range cases {
+		ok, msg := ValidateCardioDate(tc.date, now)
+		if ok != tc.want || (!ok && msg == "") {
+			t.Errorf("%s: got (%v, %q), want ok=%v", tc.name, ok, msg, tc.want)
+		}
+	}
+}

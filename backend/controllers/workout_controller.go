@@ -977,9 +977,15 @@ func SaveWorkoutResult(c *gin.Context) {
 	}()
 
 	var bodyStat models.MemberBodyStat
-	bodyWeight := 70.0 // default fallback
-	if err := config.DB.Where("mb_id = ?", uid).Order("mbs_recorded_date desc").First(&bodyStat).Error; err == nil {
-		bodyWeight = bodyStat.MbsWeight
+	// ไม่มี fallback น้ำหนักตัว — ไม่มีข้อมูล/DB error ต้องตอบ error ไม่เดาค่า (helpers.ResolveBodyWeight)
+	bwErr := config.DB.Where("mb_id = ?", uid).Order("mbs_recorded_date desc").First(&bodyStat).Error
+	bodyWeight, bwStatus, bwMsg := helpers.ResolveBodyWeight(bodyStat.MbsWeight, bwErr)
+	if bwStatus != 0 {
+		if bwStatus == http.StatusInternalServerError {
+			slog.Error("SaveWorkoutResult: load body weight failed", "err", bwErr, "request_id", c.GetString("request_id"))
+		}
+		c.JSON(bwStatus, gin.H{"error": bwMsg})
+		return
 	}
 
 	// 1RM ที่ดีที่สุดจากประวัติเดิม (PR ก่อนเซสชันนี้ — ดึงก่อนบันทึกเซตใหม่เสมอ, Dual-Formula reps 1-20
@@ -1018,6 +1024,25 @@ func SaveWorkoutResult(c *gin.Context) {
 	for _, s := range validSets {
 		seconds := helpers.WeightSessionTotalSeconds([]helpers.WeightSetCheck{{WorkSeconds: s.WtrsWorkSeconds, RestSeconds: s.WtrsRestSeconds}})
 		energySets = append(energySets, services.WeightSetEnergyInput{WeightKg: s.WtrsWeight, Reps: s.WtrsReps, Seconds: seconds, NearFailure: s.NearFailure != nil && *s.NearFailure})
+	}
+
+	// เพดานเวลาสะสมต่อ (สมาชิก, ท่า, วัน) — กันส่งซ้ำ/แบ่งส่งหลายคำขอเพื่อสะสมพลังงาน (helpers.ValidateDailyWeightSeconds)
+	newSeconds := 0
+	for _, es := range energySets {
+		newSeconds += es.Seconds
+	}
+	var existingSeconds int64
+	if err := config.DB.Model(&models.WeightTrainingResult{}).
+		Where("mb_id = ? AND wet_id = ? AND wtrs_date = ?", uid, req.WetID, today).
+		Select("COALESCE(SUM(wtrs_work_seconds + COALESCE(wtrs_rest_seconds, 0)), 0)").
+		Scan(&existingSeconds).Error; err != nil {
+		slog.Error("SaveWorkoutResult: sum daily seconds failed", "err", err, "request_id", c.GetString("request_id"))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกผลไม่สำเร็จ กรุณาลองใหม่"})
+		return
+	}
+	if ok, msg := helpers.ValidateDailyWeightSeconds(int(existingSeconds), newSeconds); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
 	}
 
 	// 1RM อ้างอิง: มี PR ก่อนเซสชันนี้ → ใช้ PR (history) · ยังไม่เคยมีประวัติท่านี้ → ใช้ e1RM สูงสุดของเซตใน
@@ -1078,7 +1103,7 @@ func SaveWorkoutResult(c *gin.Context) {
 		"warnings":        warnings, // plausibility warning เท่านั้น ไม่ block การบันทึก (เหมือน UpdateBodyStats)
 		"calculation": gin.H{
 			"reference_1rm":    reference1RM,
-			"reference_source": referenceSource, // history | session | none | not_applicable
+			"reference_source": referenceSource, // history | session | session_declined | none | not_applicable
 			"body_weight_kg":   bodyWeight,
 			"mets_per_set":     metsPerSet,
 		},
@@ -1147,10 +1172,37 @@ func SaveCardioResult(c *gin.Context) {
 		return
 	}
 
+	// วันที่ต้องเป็น YYYY-MM-DD และอยู่ในช่วงที่รับได้ — กัน client เปลี่ยนวันที่เพื่อเลี่ยงเพดานรายวันข้างล่าง
+	if ok, msg := helpers.ValidateCardioDate(req.Date, time.Now()); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+
+	// เพดานเวลาสะสมต่อสมาชิกต่อวัน (รวมทุกกิจกรรมคาร์ดิโอ) — กันส่งซ้ำสะสมพลังงาน (helpers.ValidateDailyCardioSeconds)
+	var existingCardioSeconds int64
+	if err := config.DB.Model(&models.CardioResult{}).
+		Where("mb_id = ? AND cdors_date = ?", uid, req.Date).
+		Select("COALESCE(SUM(cdors_duration), 0)").
+		Scan(&existingCardioSeconds).Error; err != nil {
+		slog.Error("SaveCardioResult: sum daily seconds failed", "err", err, "request_id", c.GetString("request_id"))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกผลไม่สำเร็จ กรุณาลองใหม่"})
+		return
+	}
+	if ok, msg := helpers.ValidateDailyCardioSeconds(int(existingCardioSeconds), req.CdorsDuration); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+
 	var bodyStat models.MemberBodyStat
-	bodyWeight := 70.0
-	if err := config.DB.Where("mb_id = ?", uid).Order("mbs_recorded_date desc").First(&bodyStat).Error; err == nil {
-		bodyWeight = bodyStat.MbsWeight
+	// ไม่มี fallback น้ำหนักตัว — ไม่มีข้อมูล/DB error ต้องตอบ error ไม่เดาค่า (helpers.ResolveBodyWeight)
+	bwErr := config.DB.Where("mb_id = ?", uid).Order("mbs_recorded_date desc").First(&bodyStat).Error
+	bodyWeight, bwStatus, bwMsg := helpers.ResolveBodyWeight(bodyStat.MbsWeight, bwErr)
+	if bwStatus != 0 {
+		if bwStatus == http.StatusInternalServerError {
+			slog.Error("SaveCardioResult: load body weight failed", "err", bwErr, "request_id", c.GetString("request_id"))
+		}
+		c.JSON(bwStatus, gin.H{"error": bwMsg})
+		return
 	}
 
 	// NET calories (สูตร ACSM บทที่ 2 ข้อ 2.1.4.10) — สูตรจริงอยู่ที่ services.NetEnergyKcal (ใช้ร่วมกับ

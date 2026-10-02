@@ -2,15 +2,18 @@ package helpers
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // ========================================
@@ -143,12 +146,33 @@ func ValidateHeight(height float64) (bool, string) {
 	return true, ""
 }
 
+// เพดานเวลาคาร์ดิโอ (ค่าที่ผู้พัฒนาเลือก ไม่ได้มาจากสเปกบทที่ 2) — กะจากการใช้งานจริง: ข้อมูลจริงใน cardio_result
+// ว่างอยู่ ณ 2026-10-02 (ถูกล้างพร้อมรีเซ็ตสูตร 2026-10-01) จึงไม่มีสถิติผู้ใช้ให้อ้าง ใช้เหตุผลเชิงกิจกรรมแทน:
+//   - ต่อครั้ง 6 ชม.: กิจกรรมใน cardio (METs สูงสุด 12.3) ที่ยาวสุดแบบสมจริงคือปั่นจักรยานทางไกล/วิ่งมาราธอน
+//     (ราว 3-6 ชม.) เกินนี้เกือบแน่นอนว่าลืมกดจบ (เดิม 10 ชม. หลวมเกิน — 10 ชม. × 12 METs ≈ 8,000+ kcal ต่อครั้ง)
+//   - ต่อวันต่อสมาชิก (รวมทุกกิจกรรม) 8 ชม.: ซ้อมหลายรอบ/ไตรกีฬา/ออกกำลังเช้า-เย็นได้ แต่ส่งซ้ำสะสม kcal เกินนี้ไม่ได้
+//     (kcal เป็นเส้นตรงกับเวลา) ต้อง ≥ เพดานต่อครั้งเสมอ (ล็อกด้วย test) ข้อมูลจริงยังไม่มี ควรทบทวนเมื่อมีผู้ใช้สะสม
+const (
+	CardioMaxSecondsPerSession = 21600
+	CardioMaxSecondsPerDay     = 28800
+)
+
+// ValidateDailyCardioSeconds - เพดานเวลาสะสมคาร์ดิโอต่อ (สมาชิก, วัน) รวมทุกคำขอ/ทุกกิจกรรม
+// existingSeconds = SUM(cdors_duration) ของแถวที่บันทึกไปแล้วในวันเดียวกัน
+// [USED] workout_controller.go (SaveCardioResult)
+func ValidateDailyCardioSeconds(existingSeconds, newSeconds int) (bool, string) {
+	if existingSeconds+newSeconds > CardioMaxSecondsPerDay {
+		return false, fmt.Sprintf("เวลาคาร์ดิโอของวันนี้รวมเกิน %d ชั่วโมง (บันทึกไปแล้ว %d นาที) กรุณาตรวจสอบว่าบันทึกซ้ำหรือไม่", CardioMaxSecondsPerDay/3600, existingSeconds/60)
+	}
+	return true, ""
+}
+
 // ValidateCardioResult - ตรวจช่วงค่าตอนบันทึกผลคาร์ดิโอ (SaveCardioResult)
-// duration: 60-36000 วินาที (1 นาที - 10 ชม.) — เปลี่ยนหน่วยจาก "นาที" เป็น "วินาที" เมื่อ 2026-09-14
+// duration: 60-21600 วินาที (1 นาที - 6 ชม.) — เปลี่ยนหน่วยจาก "นาที" เป็น "วินาที" เมื่อ 2026-09-14
 // (เดิมเก็บนาทีเต็มเท่านั้น ปัดเศษ 60-89 วิ เป็น "1 นาที" เท่ากันหมด คลาดเคลื่อนได้ถึง ±48% ในเซสชันสั้น)
 // ขั้นต่ำ 60 วินาทียังคงไว้เหมือนเดิม — ไม่ใช่แค่กันกดพลาด แต่ MET (Compendium of Physical
 // Activities) เป็นค่าที่วัดจาก steady-state VO2 กิจกรรม <1 นาที ไม่ใช่ steady-state จึงไม่มีความหมาย
-// ทางสรีรวิทยาที่จะเอา MET มาคูณตรงๆ เพดาน 36000 วินาที (=600 นาทีเดิม) กันกดพลาด/ทดสอบยิงค่าประหลาด
+// ทางสรีรวิทยาที่จะเอา MET มาคูณตรงๆ เพดานต่อครั้ง CardioMaxSecondsPerSession (ดูค่าคงที่ด้านล่าง) กันกดพลาด/ลืมกดจบ/ทดสอบยิงค่าประหลาด
 // cardio_result.cdors_duration เป็น SMALLINT UNSIGNED เก็บได้ถึง 65535 แต่ไม่มีเซสชันจริงไหนยาวขนาดนั้น
 // distance: 0-999.99 กม. ตรงเพดานจริงของคอลัมน์ cdors_distance DECIMAL(5,2) กัน DB error
 // [USED] workout_controller.go (SaveCardioResult)
@@ -156,8 +180,8 @@ func ValidateCardioResult(durationSeconds int, distanceKm float64, hasDistance b
 	if durationSeconds < 60 {
 		return false, "ระยะเวลาต้องไม่น้อยกว่า 1 นาที"
 	}
-	if durationSeconds > 36000 {
-		return false, "ระยะเวลาไม่ถูกต้อง (สูงสุด 600 นาที)"
+	if durationSeconds > CardioMaxSecondsPerSession {
+		return false, fmt.Sprintf("ระยะเวลาไม่ถูกต้อง (สูงสุด %d นาทีต่อครั้ง) อาจลืมกดจบการออกกำลังกาย", CardioMaxSecondsPerSession/60)
 	}
 	if hasDistance {
 		if distanceKm < 0 {
@@ -186,6 +210,13 @@ const (
 	// เดียวกับ _idlePromptAfter ฝั่งมือถือ (weight_training_exercise_view.dart) ซึ่งเป็นเกณฑ์ที่ระบบ
 	// นิยาม "ช่องว่างระหว่างเซตผิดปกติ" ไว้อยู่แล้ว ไม่ใช่ตัวเลขใหม่ที่เดาเพิ่ม
 	WeightSessionMaxSecondsPerSet = 600
+	// เวลาสะสมสูงสุดต่อ (สมาชิก, ท่า, วัน) รวมทุกคำขอ — ต้อง ≥ WeightSessionMaxSeconds เสมอ ไม่งั้นเซสชันเดียวที่ผ่านเพดานรวม
+	// ก็บันทึกไม่ได้ (ล็อกด้วย test) ใช้ 2 ชม. เท่ากัน: ฝึกท่าเดียวหลายรอบต่อวันได้ แต่ส่งซ้ำสะสมพลังงานเกินนี้ไม่ได้
+	// เหตุผลของตัวเลข (กะจากการใช้งานจริง): ข้อมูลจริงใน weight_training_result (2026-10-02, 46 เซต) เซตยาวสุด
+	// 210 วิ (ทำ ≤ 70 พัก ≤ 180) ท่าต่อวันรวมสูงสุด 31 นาที เพดาน 10 นาที/เซต และ 2 ชม./ท่า/วัน จึงเป็น ~3 เท่า และ
+	// ~4 เท่าของที่พบ ครอบคลุมเคสหนักจริง (5×5 พัก 5 นาที ≈ 30 นาที/รอบ ฝึก 2 รอบ/วัน ≈ 60-70 นาที) ส่วนผู้ลืมกดจบ/
+	// ส่งซ้ำจะชนเพดาน — ข้อมูลจริงยังน้อย ควรทบทวนเมื่อมีผู้ใช้สะสมมากขึ้น
+	WeightDailyMaxSecondsPerExercise = WeightSessionMaxSeconds
 	// จำนวนเซตสูงสุดต่อคำขอ (wtrs_set_no เป็น TINYINT UNSIGNED)
 	WeightSessionMaxSets = 50
 	// Reps สูงสุดต่อเซต ให้ตรงกับรูปแบบ Reps 3 หลักของแผนฝึก (RepsPattern)
@@ -239,12 +270,13 @@ func ValidateWeightSession(sets []WeightSetCheck, hasWeight bool, hasReps bool) 
 	if totalDurationSeconds > WeightSessionMaxSeconds {
 		return false, fmt.Sprintf("เวลารวมยาวผิดปกติ (สูงสุด %d นาทีต่อท่า) อาจลืมกดจบการฝึก", WeightSessionMaxSeconds/60)
 	}
-	if totalDurationSeconds > len(sets)*WeightSessionMaxSecondsPerSet {
-		return false, fmt.Sprintf("เวลารวมยาวผิดปกติเมื่อเทียบกับจำนวนเซต (สูงสุด %d นาทีต่อเซต) อาจลืมกดจบการฝึกหรือช่องว่างระหว่างเซตนานเกินไป", WeightSessionMaxSecondsPerSet/60)
-	}
 	for _, s := range sets {
 		if s.WorkSeconds < 1 {
 			return false, "เวลาทำเซตไม่ถูกต้อง (ต้องมากกว่า 0 วินาที)"
+		}
+		// เพดานต่อเซตจริง (ไม่ใช่ค่าเฉลี่ย — เดิมเซตเดียวยาวเกือบ 2 ชม. ได้ถ้าเซตอื่นสั้น) เวลาเซต = ทำ + พักหลังเซต
+		if setSeconds := s.WorkSeconds + restSecondsOrZero(s.RestSeconds); setSeconds > WeightSessionMaxSecondsPerSet {
+			return false, fmt.Sprintf("เวลาของแต่ละเซตยาวผิดปกติ (สูงสุด %d นาทีต่อเซต รวมเวลาพัก) อาจลืมกดจบการฝึกหรือพักนานเกินไป", WeightSessionMaxSecondsPerSet/60)
 		}
 		if hasReps {
 			if s.Reps < 1 || s.Reps > WeightSetMaxReps {
@@ -432,4 +464,66 @@ func RespondSuccess(c *gin.Context, message string, data interface{}) {
 		"message": message,
 		"data":    data,
 	})
+}
+
+// ResolveBodyWeight - น้ำหนักตัวล่าสุดที่ใช้คำนวณพลังงานการออกกำลังกาย (เวท/คาร์ดิโอ) — ไม่มีค่า fallback
+// (กฎ "ห้ามสร้างข้อมูลจำลองแทนข้อมูลที่ยังไม่มี") ตอบ status 0 = ใช้ได้ ไม่งั้นคืน HTTP status + ข้อความ:
+//   - ยังไม่มีแถว member_body_stats (gorm.ErrRecordNotFound) หรือน้ำหนัก ≤ 0 → 400 ให้ผู้ใช้กรอกข้อมูลร่างกายก่อน
+//   - error อื่นของ DB → 500 (ไม่กลืนเงียบแล้วใช้ค่าเดา)
+//
+// [USED] workout_controller.go (SaveWorkoutResult, SaveCardioResult)
+func ResolveBodyWeight(weightKg float64, queryErr error) (float64, int, string) {
+	if queryErr != nil {
+		if errors.Is(queryErr, gorm.ErrRecordNotFound) {
+			return 0, http.StatusBadRequest, "ยังไม่มีข้อมูลน้ำหนักตัว กรุณากรอกข้อมูลร่างกายก่อนบันทึกการออกกำลังกาย"
+		}
+		return 0, http.StatusInternalServerError, "ดึงข้อมูลน้ำหนักตัวไม่สำเร็จ กรุณาลองใหม่"
+	}
+	if weightKg <= 0 {
+		return 0, http.StatusBadRequest, "ข้อมูลน้ำหนักตัวไม่ถูกต้อง กรุณาแก้ไขข้อมูลร่างกายก่อนบันทึกการออกกำลังกาย"
+	}
+	return weightKg, 0, ""
+}
+
+func restSecondsOrZero(r *int) int {
+	if r == nil {
+		return 0
+	}
+	return *r
+}
+
+// ValidateDailyWeightSeconds - เพดานเวลารวมต่อ (สมาชิก, ท่า, วัน) = WeightDailyMaxSecondsPerExercise — กันส่งบันทึกซ้ำ/แบ่งส่ง
+// หลายคำขอ (เปลี่ยนเวลาเล็กน้อยให้ fingerprint ไม่ซ้ำ) เพื่อสะสมพลังงานเกินจริง kcal เป็นเส้นตรงกับเวลา จึงต้องจำกัด
+// เวลาสะสมของวันเดียวกัน existingSeconds = SUM(work + COALESCE(rest, 0)) ของแถวที่บันทึกไปแล้ววันนี้ (ท่านี้)
+// ฝึกท่าเดียวหลายรอบต่อวันยังได้ตราบที่รวมไม่เกินเพดาน
+// [USED] workout_controller.go (SaveWorkoutResult)
+func ValidateDailyWeightSeconds(existingSeconds, newSeconds int) (bool, string) {
+	if existingSeconds+newSeconds > WeightDailyMaxSecondsPerExercise {
+		return false, fmt.Sprintf("เวลาฝึกท่านี้ของวันนี้รวมเกิน %d นาที (บันทึกไปแล้ว %d นาที) กรุณาตรวจสอบว่าบันทึกซ้ำหรือไม่", WeightDailyMaxSecondsPerExercise/60, existingSeconds/60)
+	}
+	return true, ""
+}
+
+// ช่วงวันที่ที่รับได้ของผลคาร์ดิโอ (เทียบวันที่ของเซิร์ฟเวอร์): ระบบไม่มีการบันทึกออกกำลังกายย้อนหลัง มือถือส่งวันเริ่ม
+// เซสชันเสมอ (cardio_activity_exercise_view.dart) จึงรับได้แค่วันนี้ กับเมื่อวานเพื่อรองรับเซสชันที่ข้ามเที่ยงคืน
+// ล่วงหน้าไม่รับเลย — "วันนี้" ของเซิร์ฟเวอร์ตรึงเป็น Asia/Bangkok แล้ว (main.go: time.Local = UTC+7 ใช้กับ time.Now() ทุกจุด
+// รวม SaveWorkoutResult และ config.buildDSN ตรึง time_zone ของ session MySQL ให้ CURDATE() ตรงกัน) จึงไม่ขึ้นกับเขตเวลาของโฮสต์
+// ผู้ใช้นอกเขตเวลาไทยต้องให้มือถือส่ง offset มาแทน เปลี่ยนวันที่เพื่อเลี่ยงเพดานรายวันจึงทำไม่ได้
+const (
+	CardioDateMaxDaysBack  = 1
+	CardioDateMaxDaysAhead = 0
+)
+
+// ValidateCardioDate - ตรวจ date ของ SaveCardioResult: ต้องเป็น YYYY-MM-DD และอยู่ในช่วงข้างบน
+// [USED] workout_controller.go (SaveCardioResult)
+func ValidateCardioDate(date string, now time.Time) (bool, string) {
+	d, err := time.ParseInLocation("2006-01-02", date, now.Location())
+	if err != nil {
+		return false, "รูปแบบวันที่ไม่ถูกต้อง (ต้องเป็น YYYY-MM-DD)"
+	}
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	if d.Before(today.AddDate(0, 0, -CardioDateMaxDaysBack)) || d.After(today.AddDate(0, 0, CardioDateMaxDaysAhead)) {
+		return false, fmt.Sprintf("วันที่ต้องอยู่ในช่วงย้อนหลังไม่เกิน %d วัน และล่วงหน้าไม่เกิน %d วัน", CardioDateMaxDaysBack, CardioDateMaxDaysAhead)
+	}
+	return true, ""
 }
