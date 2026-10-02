@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"time"
 
@@ -44,10 +45,7 @@ func ConnectDatabase() {
 	}
 
 	// timeout=30s ป้องกัน dial hang, parseTime+loc คงเดิม
-	dsn := fmt.Sprintf(
-		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local&timeout=30s&readTimeout=30s&writeTimeout=30s",
-		dbUser, dbPass, dbHost, dbPort, dbName,
-	)
+	dsn := buildDSN(dbUser, dbPass, dbHost, dbPort, dbName)
 
 	slog.Info("connecting to database", "user", dbUser, "host", dbHost, "port", dbPort, "db", dbName)
 
@@ -84,4 +82,17 @@ func ConnectDatabase() {
 	}
 
 	fmt.Println("✅ Database connected successfully!")
+}
+
+// sessionTimeZone - เขตเวลาของ session MySQL ต้องตรงกับเวลาของแอป (main.go ตั้ง time.Local = Asia/Bangkok, UTC+7)
+// เพื่อให้ CURDATE()/NOW() ใน SQL (analytics_service.go) ได้วันที่เดียวกับที่ Go ใช้บันทึก wtrs_date/cdors_date
+// แม้ย้าย DB ไปอยู่บนโฮสต์ที่ตั้งเขตเวลาเป็น UTC (ไม่ใส่ = ใช้ @@global.time_zone ของเซิร์ฟเวอร์ ซึ่ง XAMPP ปัจจุบันเป็น SYSTEM = +7)
+const sessionTimeZone = "+07:00"
+
+// buildDSN - timeout=30s ป้องกัน dial hang, parseTime + loc=Local (= Asia/Bangkok ตาม main.go) + time_zone ของ session
+func buildDSN(user, pass, host, port, name string) string {
+	return fmt.Sprintf(
+		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local&timeout=30s&readTimeout=30s&writeTimeout=30s&time_zone=%s",
+		user, pass, host, port, name, url.QueryEscape("'"+sessionTimeZone+"'"),
+	)
 }
