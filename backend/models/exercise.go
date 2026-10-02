@@ -195,6 +195,9 @@ type WeightTrainingResult struct {
 	// เวลาพักหลังเซตนี้ (วินาที) ก่อนเริ่มเซตถัดไป (เพิ่มเข้ามา 2026-09-18) — NULL = เซตสุดท้ายของเซสชัน
 	// หรือไม่เคยกดปุ่มพัก (นับเป็น 0 ตอนรวมเวลา)
 	WtrsRestSeconds    *int           `gorm:"type:smallint unsigned;column:wtrs_rest_seconds" json:"wtrs_rest_seconds"`
+	// คำตอบผู้ใช้ตอนท่านั้นยังไม่มี PR (2026-10-02): true=หมดแรงแล้ว (ยกต่อได้ไม่เกิน 2-3 ครั้ง) false=ยังยกได้อีก
+	// nil=ไม่ได้ถาม — เก็บไว้ตรวจ/คิดมือย้อนหลังเท่านั้น (ใช้ตอนบันทึกเพื่อเลือก 1RM อ้างอิง ไม่ถูกอ่านกลับมาคำนวณ)
+	WtrsNearFailure    *bool          `gorm:"type:tinyint(1) unsigned;column:wtrs_near_failure" json:"wtrs_near_failure"`
 	// wtrs_active_seconds ถูกลบออกจาก DB แล้ว (2026-09-29, migrations/2026-09-29_drop_wtrs_active_seconds.sql)
 	// — เก็บไว้เผื่ออนาคตแต่ไม่เคยเข้าสูตรคำนวณพลังงานเลยตั้งแต่โมเดล Two-Compartment Energy Model ถูก
 	// ยกเลิก (2026-09-22) จนถึง METs คงที่ต่อท่าปัจจุบัน (ดู ../../CLAUDE.md ข้อ 7[B-1]) — ตัดทิ้งเพราะ

@@ -1067,6 +1067,7 @@ func SaveWorkoutResult(c *gin.Context) {
 			WtrsWeight:        s.WtrsWeight,
 			WtrsWorkSeconds:   s.WtrsWorkSeconds,
 			WtrsRestSeconds:   s.WtrsRestSeconds,
+			WtrsNearFailure:   s.NearFailure,
 			WtrsCalories:      kcalPerSet[i],
 			MbID:              uid,
 			WetID:             &req.WetID,

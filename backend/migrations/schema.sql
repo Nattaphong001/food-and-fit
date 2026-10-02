@@ -325,6 +325,7 @@ CREATE TABLE `weight_training_result` (
   `wtrs_reps` smallint(5) unsigned NOT NULL COMMENT 'จำนวนครั้งที่ยกได้',
   `wtrs_work_seconds` smallint(5) unsigned NOT NULL COMMENT 'เวลาที่ใช้ทำเซตนี้ (วินาที) นับตั้งแต่จบการพักรอบก่อน/เริ่มฝึก จนถึงกดพัก',
   `wtrs_rest_seconds` smallint(5) unsigned DEFAULT NULL COMMENT 'เวลาพักหลังเซตนั้น (หน่วยวินาที)',
+  `wtrs_near_failure` tinyint(1) unsigned DEFAULT NULL COMMENT 'คำตอบผู้ใช้ตอนไม่มี PR: 1=หมดแรงแล้ว (ยกต่อได้ไม่เกิน 2-3 ครั้ง) 0=ยังยกได้อีก NULL=ไม่ได้ถาม',
   `wtrs_calories` decimal(6,2) NOT NULL COMMENT 'แคลอรี่ที่เผาผลาญ (สุทธิ)',
   `mb_id` int(11) NOT NULL COMMENT 'รหัสสมาชิก [FK -> member_profile]',
   `wet_id` int(10) unsigned DEFAULT NULL COMMENT 'รหัสท่าฝึกเวทเทรนนิ่ง [FK -> weight_exercises]',

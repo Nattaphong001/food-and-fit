@@ -208,6 +208,26 @@ func TestSaveWorkoutResult_FirstSession_UsesNearFailureReference(t *testing.T) {
 	if n := f.countRows("weight_training_result"); n != 2 {
 		t.Errorf("rows = %d, want 2", n)
 	}
+	// คำตอบรายเซตต้องถูกเก็บลง DB ตามลำดับเซต (1 = หมดแรงแล้ว, 0 = ยังยกได้อีก) ไว้ตรวจ/คิดมือย้อนหลัง
+	var stored []*bool
+	f.db.Raw("SELECT wtrs_near_failure FROM weight_training_result WHERE mb_id = ? ORDER BY wtrs_set_no", f.memberID).Scan(&stored)
+	if len(stored) != 2 || stored[0] == nil || !*stored[0] || stored[1] == nil || *stored[1] {
+		t.Errorf("wtrs_near_failure ใน DB = %v, want [true false]", stored)
+	}
+}
+
+// ไม่ส่ง near_failure (ท่ามี PR/ไม่ได้ถาม) → เก็บเป็น NULL ไม่ใช่ 0
+func TestSaveWorkoutResult_NotAsked_StoresNullNearFailure(t *testing.T) {
+	f := newFixture(t, 70)
+	code, body := f.post("/workout-results", f.weightReq(f.barbellID, wset(1, 5, 80, 40, 80, nil)))
+	if code != http.StatusOK {
+		t.Fatalf("got %d %v", code, body)
+	}
+	var nullCount int64
+	f.db.Raw("SELECT COUNT(*) FROM weight_training_result WHERE mb_id = ? AND wtrs_near_failure IS NULL", f.memberID).Scan(&nullCount)
+	if nullCount != 1 {
+		t.Errorf("แถวที่ wtrs_near_failure เป็น NULL = %d, want 1", nullCount)
+	}
 }
 
 // ผู้ใช้ไม่ตอบ "ใช่" ทุกเซตตอนไม่มี PR → session_declined ทุกเซตได้ 3.5
