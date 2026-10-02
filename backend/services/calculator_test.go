@@ -294,3 +294,38 @@ func TestCalculateGoals_WeightLoss_ClampsToBmr(t *testing.T) {
 		t.Errorf("target = %.2f, want เท่ากับ bmr %.2f (clamp กันต่ำกว่า BMR)", target, bmr)
 	}
 }
+
+// Dual-Formula เลือกสมการตามจำนวนครั้งล้วน ๆ ไม่ปรับ/ไม่ผสมผล — 1-10 = Epley, 11-20 = Desgorces, > 20 = 0
+// คำนวณค่าคาดหวังแยกจากโค้ดจริง (ตรงสูตรบทที่ 2 ข้อ 2.1.4.12) ทุก reps 1-20 ที่น้ำหนักหลายค่า
+// การที่ขอบ 10/11 ไม่ต่อเนื่อง (100 กก.: 133.33 → 132.55) เป็นผลของสูตรตามเล่ม ไม่ใช่บั๊ก
+func TestEstimateOneRepMax_RoutesByRepsRange(t *testing.T) {
+	for _, w := range []float64{20, 62.5, 100, 180.25} {
+		for r := 1; r <= 20; r++ {
+			var want float64
+			if r <= 10 {
+				want = w * (1 + float64(r)/30)
+			} else {
+				want = 100 * w / (83.7677*math.Exp(-0.0338*float64(r)) + 17.6846)
+			}
+			if got := EstimateOneRepMax(w, r); !almostEqual(got, want, 0.005) {
+				t.Errorf("EstimateOneRepMax(%v, %d) = %v, want %v", w, r, got, want)
+			}
+		}
+	}
+}
+
+// ขอบเขตของช่วง: reps 10 ใช้ Epley, reps 11 ใช้ Desgorces, reps 20 ยังประเมินได้, reps 21 ไม่ประเมิน
+func TestEstimateOneRepMax_RangeEdges(t *testing.T) {
+	if got := EstimateOneRepMax(100, 10); !almostEqual(got, 133.33, 0.005) {
+		t.Errorf("reps 10 = %v, want Epley 133.33", got)
+	}
+	if got := EstimateOneRepMax(100, 11); !almostEqual(got, 132.55, 0.005) {
+		t.Errorf("reps 11 = %v, want Desgorces 132.55", got)
+	}
+	if got := EstimateOneRepMax(100, 20); got <= 0 {
+		t.Errorf("reps 20 = %v, want > 0", got)
+	}
+	if got := EstimateOneRepMax(100, 21); got != 0 {
+		t.Errorf("reps 21 = %v, want 0", got)
+	}
+}

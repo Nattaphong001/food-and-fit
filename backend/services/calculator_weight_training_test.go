@@ -168,3 +168,100 @@ func TestCalculateWeightTrainingCalories_FirstSessionUsesSessionReference(t *tes
 		t.Errorf("total = %v, want 30.63", total)
 	}
 }
+
+// ── ตรวจช่องโหว่ของสูตร (2026-10-02) ──
+// เคสที่ชื่อขึ้นต้น Limitation = ข้อจำกัดที่ทราบและเปิดเผยในเล่มแล้ว (CLAUDE.md ข้อ 7[B-1] ข้อจำกัด ก/ข)
+// test ล็อกพฤติกรรมปัจจุบันไว้ ถ้าแก้ช่องโหว่แล้วต้องปรับ test ตาม
+
+// มี PR แล้ว → คำตอบ near_failure ต้องไม่มีผล (กันผู้ใช้ตอบ "ใช่" เพื่อดันตัวอ้างอิงเอง)
+func TestResolveReferenceOneRepMax_HistoryIgnoresNearFailure(t *testing.T) {
+	sets := []WeightSetEnergyInput{{200, 1, 60, true}}
+	ref, src := ResolveReferenceOneRepMax(100, sets, true, true)
+	if ref != 100 || src != ReferenceHistory {
+		t.Errorf("got (%v, %s), want (100, history)", ref, src)
+	}
+}
+
+// ขอบ 70%: 69.99 → 3.5, 70.00 → 6.0 และขอบ reps 20/21
+func TestWeightSetMets_Boundaries(t *testing.T) {
+	if got := WeightSetMets(69.99, 10, 100, true, true); got != MetsEndurance {
+		t.Errorf("69.99%% = %v, want %v", got, MetsEndurance)
+	}
+	if got := WeightSetMets(70, 10, 100, true, true); got != MetsHeavy {
+		t.Errorf("70%% = %v, want %v", got, MetsHeavy)
+	}
+	if got := WeightSetMets(90, 20, 100, true, true); got != MetsHeavy {
+		t.Errorf("reps 20 ยังเข้าสมการ = %v, want %v", got, MetsHeavy)
+	}
+	if got := WeightSetMets(90, 21, 100, true, true); got != MetsEndurance {
+		t.Errorf("reps 21 = %v, want %v", got, MetsEndurance)
+	}
+}
+
+// ผลรวมต้องเท่ากับผลบวกของ kcal รายเซตที่ปัดแล้ว (SUM(wtrs_calories) ใน DB ต้องตรง calories_burned)
+func TestCalculateWeightTrainingCalories_TotalEqualsSumOfRoundedRows(t *testing.T) {
+	sets := []WeightSetEnergyInput{{50, 5, 37, false}, {50, 5, 41, false}, {50, 5, 43, false}, {95, 3, 59, false}}
+	kcal, _, total := CalculateWeightTrainingCalories(sets, 100, 73.3, true, true)
+	sum := 0.0
+	for _, k := range kcal {
+		sum += k
+	}
+	if !almostEqual(total, sum, 0.005) {
+		t.Errorf("total = %v, sum รายเซต = %v", total, sum)
+	}
+}
+
+// ค่าผิดปกติต้องไม่ทำให้ติดลบ/NaN
+func TestCalculateWeightTrainingCalories_NoNegativeOrZeroInputs(t *testing.T) {
+	sets := []WeightSetEnergyInput{{80, 5, 0, false}, {80, 5, 60, false}}
+	kcal, _, total := CalculateWeightTrainingCalories(sets, 100, 0, true, true)
+	for i, k := range kcal {
+		if k != 0 {
+			t.Errorf("น้ำหนักตัว 0 → kcal[%d] = %v, want 0", i, k)
+		}
+	}
+	if total != 0 {
+		t.Errorf("total = %v, want 0", total)
+	}
+	// เซตเวลา 0 วินาที ได้ 0 ไม่ติดลบ
+	kcal, _, _ = CalculateWeightTrainingCalories(sets, 100, 70, true, true)
+	if kcal[0] != 0 || kcal[1] <= 0 {
+		t.Errorf("kcal = %v, want [0, >0]", kcal)
+	}
+}
+
+// ท่าบอดี้เวท/ค้างเวลา: near_failure และ PR ไม่มีผล ได้ 3.0 คงที่
+func TestResolveReferenceOneRepMax_BodyweightIgnoresEverything(t *testing.T) {
+	sets := []WeightSetEnergyInput{{0, 10, 60, true}}
+	ref, src := ResolveReferenceOneRepMax(150, sets, false, true)
+	if ref != 0 || src != ReferenceNotApplicable {
+		t.Errorf("got (%v, %s)", ref, src)
+	}
+	_, mets, _ := CalculateWeightTrainingCalories(sets, ref, 70, false, true)
+	if mets[0] != MetsBodyweight {
+		t.Errorf("mets = %v, want 3.0", mets[0])
+	}
+}
+
+// Limitation (ก): เซสชันแรก ยกเบา 20 กก. × 5 แล้วตอบ "ใช่" → ตัวอ้างอิงต่ำ → เซตหนักถัดมาได้ 6.0
+// ระบบตรวจคำตอบของผู้ใช้ไม่ได้ (ตอบเกินจริงได้พลังงานสูงขึ้น)
+func TestLimitation_FirstSessionHonorSystemInflatesMets(t *testing.T) {
+	honest := []WeightSetEnergyInput{{20, 5, 60, false}, {60, 8, 60, true}}
+	lie := []WeightSetEnergyInput{{20, 5, 60, true}, {60, 8, 60, false}}
+	_, mHonest, _ := CalculateWeightTrainingCalories(honest, SessionReferenceOneRepMax(honest), 70, true, true)
+	_, mLie, _ := CalculateWeightTrainingCalories(lie, SessionReferenceOneRepMax(lie), 70, true, true)
+	if mHonest[0] != MetsEndurance {
+		t.Errorf("เซตเบา (ตอบตรง) = %v, want 3.5", mHonest[0])
+	}
+	if mLie[0] != MetsHeavy {
+		t.Errorf("เซตเบาที่ตอบ \"ใช่\" ได้ 6.0 ตามที่บันทึกข้อจำกัดไว้ แต่ได้ %v", mLie[0])
+	}
+}
+
+// Limitation (ข): PR ต่ำจากครั้งแรกที่ยกเบา → ครั้งถัดไปยกปานกลางได้ 6.0 เร็วเกินไป
+func TestLimitation_LowPRGivesHeavyMetsTooEarly(t *testing.T) {
+	lowPR := EstimateOneRepMax(30, 10) // 40 กก.
+	if got := WeightSetMets(60, 8, lowPR, true, true); got != MetsHeavy {
+		t.Errorf("got %v, want %v (ล็อกพฤติกรรมที่ทราบ)", got, MetsHeavy)
+	}
+}
