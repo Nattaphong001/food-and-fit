@@ -363,6 +363,14 @@ class _WeightTrainingExerciseViewState
     return repsOk && _weightController.text.trim().isNotEmpty;
   }
 
+  // เซตนี้ประเมิน 1RM ได้ไหม (reps 1-20 และน้ำหนัก > 0 ตรงกับ services.EstimateOneRepMax) — เซตที่ประเมินไม่ได้
+  // ไม่มีทางเป็นตัวอ้างอิง ได้ 3.5 เสมอ จึงไม่ต้องถามหมดแรง (คำตอบไม่มีผลกับเซตนั้น)
+  bool get _setCanBeReference {
+    final reps = int.tryParse(_repsController.text.trim()) ?? 0;
+    final weight = double.tryParse(_weightController.text.trim().replaceAll(',', '.')) ?? 0;
+    return reps >= 1 && reps <= 20 && weight > 0;
+  }
+
   _SetInputState get _setInputState {
     if (_canSaveSet) return _SetInputState.complete;
     final repsEmpty = _repsController.text.trim().isEmpty;
@@ -395,25 +403,135 @@ class _WeightTrainingExerciseViewState
 
   // ถามว่าเซตนี้ยกจนเกือบหมดแรงไหม — true/false = คำตอบ, null = ปิดโดยไม่เลือก (ยังไม่บันทึก ค้างโหมดพักเหมือนเดิม)
   Future<bool?> _askSetNearFailure() {
-    return showAppChoiceDialog(
-      context,
-      icon: Icons.fitness_center,
-      title: 'เซต $_nextSetNo ยกจนเกือบหมดแรงไหม',
-      content: '${_weightController.text.trim()} กก. × ${_repsController.text.trim()} ครั้ง\n'
-          'ถ้ายกต่อได้อีกไม่เกิน 2-3 ครั้ง ให้ตอบ "ใช่"\n'
-          'ท่านี้ยังไม่มีประวัติ ระบบใช้คำตอบนี้ประเมินพลังงานของเซสชันแรกเท่านั้น',
-      confirmLabel: 'ใช่ เกือบหมดแรง',
-      cancelLabel: 'ยังเหลือแรง',
-      color: AppColors.primaryGreen,
+    final summary = '${_weightController.text.trim()} กก. × ${_repsController.text.trim()} ครั้ง';
+    // การ์ดคำตอบ 2 ใบ น้ำหนักภาพเท่ากัน (พื้นอ่อน+ขอบสี+ไอคอน) ไม่ทำให้ข้อใดเด่นกว่า เพราะ "หมดแรง" ให้ METs สูงกว่า
+    // ปุ่มทึบสีเข้มจะชี้นำให้ตอบข้อนั้น · ส้ม = หนักจนเกือบสุด, ฟ้า = ยังไหว (ไม่ใช้เขียว/แดง เพราะไม่ใช่ถูก/ผิด)
+    // true = หมดแรง, false = ยังยกได้อีก
+    Widget answerCard(BuildContext ctx, {required bool value, required IconData icon, required String label, required String hint, required Color accent, required Color bg}) {
+      return Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => Navigator.pop(ctx, value),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: accent.withValues(alpha: 0.35), width: 1.5),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                  child: Icon(icon, color: accent, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(label, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+                      const SizedBox(height: 2),
+                      Text(hint, style: const TextStyle(fontSize: 14, color: AppColors.textBody)),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: accent, size: 26),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        clipBehavior: Clip.hardEdge,
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                    decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(20)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.fitness_center, size: 16, color: AppColors.textBody),
+                        const SizedBox(width: 8),
+                        Text('เซต $_nextSetNo  ·  $summary',
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textDark)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text('ยกครั้งสุดท้ายแล้ว\nหมดแรงหรือยัง?',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textDark, height: 1.35)),
+                const SizedBox(height: 20),
+                answerCard(ctx,
+                    value: true,
+                    icon: Icons.local_fire_department_rounded,
+                    label: 'หมดแรงแล้ว',
+                    hint: 'ยกต่อได้อีกไม่เกิน 2-3 ครั้ง',
+                    accent: AppColors.weightIcon,
+                    bg: AppColors.weightBg),
+                const SizedBox(height: 12),
+                answerCard(ctx,
+                    value: false,
+                    icon: Icons.bolt_rounded,
+                    label: 'ยังยกได้อีก',
+                    hint: 'ยกต่อได้อีก 4 ครั้งขึ้นไป',
+                    accent: AppColors.alertInfo,
+                    bg: AppColors.cardioBg),
+                const SizedBox(height: 18),
+                // กล่องอธิบาย 2 ข้อ แยกหัวข้อ+ไอคอนต่อข้อ อ่านทีละประเด็น ไม่ให้ประโยคยาวขึ้นบรรทัดกลางคำ
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(14)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      _NearFailureNote(
+                        icon: Icons.info_outline_rounded,
+                        title: 'ประเมินเบื้องต้น',
+                        body: 'ท่านี้ยังไม่มีประวัติ ระบบใช้คำตอบนี้ประเมินพลังงานที่เผาผลาญ',
+                      ),
+                      SizedBox(height: 10),
+                      _NearFailureNote(
+                        icon: Icons.trending_up_rounded,
+                        title: 'ยิ่งฝึกยิ่งแม่นยำ',
+                        body: 'เมื่อฝึกท่านี้ต่อเนื่องและมีประวัติสะสม ค่า 1RM และ %1RM จะแม่นขึ้นเรื่อยๆ',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   // ปุ่มจบพักที่ footer: ช่องว่าง/ไม่ครบ = จบพักทันที ไม่ถามอะไร (เผลอกดพักก็กลับไปฝึกต่อได้เลย)
-  // ถามเฉพาะตอนจะบันทึกเซตจริง (กรอกครบ) และท่านี้ยังไม่มี PR
+  // ถามเฉพาะตอนจะบันทึกเซตจริง (กรอกครบ) ท่านี้ยังไม่มี PR และเซตนี้ประเมิน 1RM ได้ (reps 1-20, น้ำหนัก > 0)
   Future<void> _onFinishRestTap() async {
     if (_askingNearFailure) return;
     bool? nearFailure;
-    if (_askNearFailure && _setInputState == _SetInputState.complete) {
+    if (_askNearFailure && _setInputState == _SetInputState.complete && _setCanBeReference) {
       _askingNearFailure = true;
       nearFailure = await _askSetNearFailure();
       _askingNearFailure = false;
@@ -455,7 +573,9 @@ class _WeightTrainingExerciseViewState
           'rest_seconds': restSeconds,
           // เวลาที่ใช้ทำเซตนี้ (วินาที) ส่งขึ้น API เป็น wtrs_work_seconds (backend ต้อง > 0)
           'work_seconds': workSeconds < 1 ? 1 : workSeconds,
-            });
+          // คำตอบ "ยกจนเกือบหมดแรงไหม" ของเซตนี้ — null = ไม่ได้ถาม (ท่านี้มี PR แล้ว) ไม่ส่งขึ้น API
+          'near_failure': nearFailure,
+        });
       });
     }
     _endRest();
@@ -1601,6 +1721,35 @@ class _WeightTrainingExerciseViewState
           ),
         ],
       ),
+    );
+  }
+}
+
+// แถวอธิบายในไดอะล็อกถามหมดแรง: ไอคอนซ้าย + หัวข้อตัวหนา + คำอธิบายใต้หัวข้อ
+class _NearFailureNote extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String body;
+  const _NearFailureNote({required this.icon, required this.title, required this.body});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: AppColors.textBlueGrey),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textDark)),
+              const SizedBox(height: 2),
+              Text(body, style: const TextStyle(fontSize: 13, color: AppColors.textBody, height: 1.45)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
