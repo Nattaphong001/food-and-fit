@@ -168,6 +168,8 @@ const (
 	// ตารางที่ 5, น. 1341) ใกล้เคียงขอบ 67% ของตารางที่ 2.1 (NSCA) — ต่ำกว่า = 02054, ตั้งแต่ 70% ขึ้นไป = 02050
 	HeavyIntensityPercent = 70.0
 	MaxIntensityPercent   = 100.0 // ยกเกิน 1RM อ้างอิง (ทำสถิติใหม่) ถือเป็น 100%
+
+	intensityEpsilon = 1e-9 // ความคลาดเคลื่อนของ float ตอนเทียบ %1RM กับเกณฑ์ (ดู WeightSetMets)
 )
 
 // WeightSetMets เลือก METs ของเซตเดียว
@@ -183,7 +185,9 @@ func WeightSetMets(weightKg float64, reps int, reference1RM float64, hasWeight, 
 		return MetsEndurance
 	}
 	pct := math.Min(weightKg/reference1RM*100, MaxIntensityPercent)
-	if pct >= HeavyIntensityPercent {
+	// ทน float คลาดเคลื่อนที่จุดตัดพอดี: W / ref × 100 บางคู่ที่ควรได้ 70.00 พอดี (เช่น 5.81 ÷ 8.30) ออกมา 69.999… ตกไป 3.5
+	// ทั้งที่สเปกให้ ≥ 70 = 6.0 — ค่าจริงเป็นทศนิยม 2 ตำแหน่ง ห่างจากจุดตัดที่ใกล้ที่สุดมากกว่า epsilon นี้หลายเท่า จึงไม่กระทบเคสอื่น
+	if pct >= HeavyIntensityPercent-intensityEpsilon {
 		return MetsHeavy
 	}
 	return MetsEndurance
@@ -298,7 +302,9 @@ func CalculateWeightTrainingCalories(
 		} else {
 			mets = WeightSetMets(s.WeightKg, s.Reps, reference1RM, hasWeight, hasReps)
 		}
-		kcal := math.Round(NetEnergyKcal(mets, bodyWeightKg, float64(s.Seconds)/60.0)*100) / 100
+		// เวลาติดลบถือเป็น 0 (กันพลังงานติดลบ — defence in depth ต่อจาก ValidateWeightSession ที่ปฏิเสธไว้แล้ว)
+		seconds := math.Max(float64(s.Seconds), 0)
+		kcal := math.Round(NetEnergyKcal(mets, math.Max(bodyWeightKg, 0), seconds/60.0)*100) / 100
 		metsPerSet[i] = mets
 		kcalPerSet[i] = kcal
 		totalKcal += kcal
