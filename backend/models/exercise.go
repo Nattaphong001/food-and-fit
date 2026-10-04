@@ -38,7 +38,7 @@ type WeightExercise struct {
 	//
 	// WetMets (wet_mets) — เพิ่มเข้ามา 2026-09-29 (METs คงที่ต่อท่า) ตัดออกพร้อม DROP คอลัมน์แล้ว
 	// (2026-10-01, migrations/2026-10-01_drop_wet_mets.sql) — METs ของเวทเลือกรายเซตตาม %1RM เทียบ PR
-	// ก่อนเซสชัน (services.WeightSetMets, บทที่ 2 ตารางที่ 2.3, ../../CLAUDE.md ข้อ 7[B-1])
+	// ก่อนเซสชัน (services.WeightSetMets, บทที่ 2 ตารางที่ 2.2, ../../CLAUDE.md ข้อ 7[B-1])
 	//
 	// WetIsTimed (wet_is_timed) — เพิ่มเข้ามา 2026-09-30 (migrations/2026-09-30_weight_exercises_is_timed.sql)
 	// ท่าค้างเวลา ไม่มีจำนวนครั้งให้กรอก (เช่น Plank) แยกจาก WetEquipment=5 (Bodyweight) เพราะท่าบอดี้เวท

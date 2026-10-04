@@ -56,7 +56,7 @@ const double kEnergyBalanceTolerance = 0.10;
   return ('ตามเป้า', AppColors.primaryGreen);
 }
 
-// Estimated 1RM แบบ Dual-Formula (บทที่ 2 ข้อ 2.1.4.12, แก้ 2026-10-01 จาก Epley อย่างเดียว) — ตัวเลข
+// Estimated 1RM แบบ Dual-Formula (บทที่ 2 ข้อ 2.1.4.10, แก้ 2026-10-01 จาก Epley อย่างเดียว) — ตัวเลข
 // ต้องตรงกับ services.EstimateOneRepMax ฝั่ง Go เป๊ะ (มีเทสต์ 2 ฝั่งล็อกค่าเดียวกัน):
 //   reps 1-10  → Epley: weight × (1 + reps/30)
 //   reps 11-20 → Desgorces: 100 × weight / (83.7677 × e^(−0.0338 × reps) + 17.6846)
