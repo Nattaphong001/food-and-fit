@@ -96,7 +96,7 @@ func CalculateMacroTargets(targetCalories float64, goalType int) (proteinG, carb
 // 3. Estimated 1RM — EstimateOneRepMax
 // ═══════════════════════════════════════════════════════════════════════
 
-// ระบบสลับสมการแบบไดนามิก (Dynamic Dual-Formula Model, บทที่ 2 ข้อ 2.1.4.12) — ใช้ร่วมกันทั้ง Go และ SQL
+// ระบบสลับสมการแบบไดนามิก (Dynamic Dual-Formula Model, บทที่ 2 ข้อ 2.1.4.10) — ใช้ร่วมกันทั้ง Go และ SQL
 // (ผ่าน OneRepMaxSQL ใน analytics_service.go) ห้ามพิมพ์ตัวเลขซ้ำที่อื่น
 const (
 	EpleyMaxReps     = 10 // Epley ใช้กับ reps 1-10 (ช่วงจำนวนครั้งต่ำถึงปานกลาง)
@@ -151,30 +151,21 @@ func NetEnergyKcal(mets, bodyWeightKg, minutes float64) float64 {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// 4. พลังงานคาร์ดิโอ
-// ═══════════════════════════════════════════════════════════════════════
-// CalculateCardioCalories คำนวณพลังงานสุทธิของคาร์ดิโอ 1 ครั้ง — mets มาจากตาราง cardio
-func CalculateCardioCalories(
-	mets float64, // METs ของท่านี้
-	bodyWeightKg float64, // น้ำหนักของผู้ออกกำลังกาย
-	// เวลาที่ฝึก (วินาที)
-	durationSeconds int) float64 {
-	// ส่งค่าเข้าสูตร Net Energy Kcal : แปลงวินาที → นาที ก่อนส่ง แล้วปัดผลลัพธ์ 2 ตำแหน่ง
-	return math.Round(NetEnergyKcal(mets, bodyWeightKg, float64(durationSeconds)/60.0)*100) / 100
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// 5. พลังงานเวทเทรนนิ่ง — Dynamic METs ตาม %1RM (บทที่ 2 ข้อ 2.1.4.12 ตารางที่ 2.3)
+// 4. พลังงานเวทเทรนนิ่ง — Dynamic METs ตาม %1RM (บทที่ 2 ข้อ 2.1.4.10 ตารางที่ 2.2)
 // ═══════════════════════════════════════════════════════════════════════
 
-// ค่า METs จาก 2024 Adult Compendium of Physical Activities (Herrmann et al., 2567) ตามตารางที่ 2.3
+// ค่า METs จาก 2024 Adult Compendium of Physical Activities (Herrmann et al., 2567) ตามตารางที่ 2.2
 const (
-	MetsBodyweight = 3.0 // ไม่มี 1RM (บอดี้เวท / ท่าค้างเวลา / ไม่มีน้ำหนักถ่วง) — ความเข้มข้นทั่วไป/เบา
-	MetsEndurance  = 3.5 // ความทนทานของกล้ามเนื้อ (%1RM < 70) หรือ reps > 20
-	MetsHeavy      = 6.0 // เพิ่มขนาดกล้ามเนื้อ/ความแข็งแรง (%1RM ≥ 70)
+	MetsBodyweight = 3.0 // น้ำหนักถ่วง = 0 ในท่าที่ใช้อุปกรณ์ — Compendium 02056 บอดี้เวททั่วไป
+	MetsEndurance  = 3.5 // ความทนทานของกล้ามเนื้อ (%1RM < 70) หรือ reps > 20 — Compendium 02054
+	MetsHeavy      = 6.0 // เพิ่มขนาดกล้ามเนื้อ/ความแข็งแรง (%1RM ≥ 70) — Compendium 02050
 
-	// เกณฑ์ตัดระดับความหนัก: ตาราง 2.3 แบ่ง 60-70% / 70-80% / 85-90% ไม่ครอบคลุมช่วงอื่น (เช่น < 60%,
-	// 80-85%, > 90%) ระบบจึงตัดที่ 70% จุดเดียว — ต่ำกว่า = ความทนทาน, ตั้งแต่ 70% ขึ้นไป = หนัก
+	// ท่าบอดี้เวท/ท่าค้างเวลา แยกตาม wet_difficulty (Compendium 2024, Herrmann et al., 2567)
+	MetsBodyweightLight    = 2.8 // ความยาก 1 (Crunch, Plank) — 02024 calisthenics ออกแรงเบา
+	MetsBodyweightModerate = 3.8 // ความยาก 2-3 (Pull-up, Dips, Hanging Leg Raise) — 02022 calisthenics ปานกลาง
+
+	// เกณฑ์ตัดระดับความหนัก: ตัดที่ 70% จุดเดียว = ขอบล่างระดับ Vigorous (70-84%) ของ Garber et al. (2554,
+	// ตารางที่ 5, น. 1341) ใกล้เคียงขอบ 67% ของตารางที่ 2.1 (NSCA) — ต่ำกว่า = 02054, ตั้งแต่ 70% ขึ้นไป = 02050
 	HeavyIntensityPercent = 70.0
 	MaxIntensityPercent   = 100.0 // ยกเกิน 1RM อ้างอิง (ทำสถิติใหม่) ถือเป็น 100%
 )
@@ -198,6 +189,16 @@ func WeightSetMets(weightKg float64, reps int, reference1RM float64, hasWeight, 
 	return MetsEndurance
 }
 
+// BodyweightMets เลือก METs ของท่าบอดี้เวท/ท่าค้างเวลา ตามระดับความยากของท่า (wet_difficulty)
+// ความยาก 1 → 2.8 (02024) · ความยาก 2-3 หรือค่าอื่น → 3.8 (02022)
+// ไม่ใช้ 02020/02057 (7.5/6.5) เพราะเป็นค่าของ circuit ต่อเนื่อง ระบบแยกไม่ได้ว่าผู้ใช้ทำแบบนั้น
+func BodyweightMets(difficulty int) float64 {
+	if difficulty <= 1 {
+		return MetsBodyweightLight
+	}
+	return MetsBodyweightModerate
+}
+
 // WeightSetEnergyInput ข้อมูล 1 เซตที่เข้าสูตรพลังงาน
 type WeightSetEnergyInput struct {
 	WeightKg float64 // น้ำหนักที่ยก (kg)
@@ -207,11 +208,16 @@ type WeightSetEnergyInput struct {
 	NearFailure bool
 }
 
-// SessionReferenceOneRepMax คือ 1RM อ้างอิงชั่วคราวของเซสชันแรกที่ยังไม่มีประวัติ PR (2026-10-02)
-// = Estimated 1RM สูงสุดของ "เซตที่ผู้ใช้ยืนยัน NearFailure" ด้วย EstimateOneRepMax ตัวเดิม (Dual-Formula
-// reps 1-20, เซตที่ reps > 20 หรือน้ำหนัก ≤ 0 หรือไม่ยืนยัน ไม่นับ) คืน 0 ถ้าไม่มีเซตที่นับได้ → ทุกเซตได้
-// MetsEndurance เซตที่ยืนยันจะได้ %1RM ตามจำนวนครั้ง (เช่น 10 ครั้ง ≈ 75%, 5 ครั้ง ≈ 86%) ตรงช่วงตารางที่ 2.2
-// ส่วนเซตอื่นเทียบด้วยน้ำหนักจริง (ข้อจำกัด: คำตอบเป็นการประเมินของผู้ใช้เอง ต้องระบุในเล่ม)
+// SessionReferenceOneRepMax หา 1RM อ้างอิง "ครั้งแรกของท่า" (ยังไม่มีประวัติ PR) — ได้ค่าเดียวใช้ร่วมกันทั้งเซสชัน
+//
+//	ขั้นที่ 1: ดูเฉพาะเซตที่ผู้ใช้กด "หมดแรง" (NearFailure) เซตที่ไม่ได้กดไม่ถูกนับ
+//	ขั้นที่ 2: หา Estimated 1RM ของแต่ละเซตนั้นด้วย EstimateOneRepMax (reps 1-10 Epley, 11-20 Desgorces)
+//	ขั้นที่ 3: เลือกค่าที่ "สูงที่สุด" ค่าเดียวเป็นตัวอ้างอิง (คืน 0 ถ้าไม่มีเซตที่นับได้)
+//
+// เซตที่ไม่นับ: reps > 20 (ประเมิน 1RM ไม่ได้), น้ำหนัก ≤ 0, หรือผู้ใช้ไม่ได้กดหมดแรง
+// ตัวอย่าง: 40×12 (หมดแรง, e1RM 54.4) + 50×10 (หมดแรง, e1RM 66.7) → ตัวอ้างอิง = 66.7
+// ค่านี้ถูกนำไปหารน้ำหนักของ "ทุกเซต" ใน WeightSetMets (%1RM = น้ำหนักเซตนั้น ÷ ตัวอ้างอิงนี้)
+// ข้อจำกัด: คำตอบหมดแรงเป็นการประเมินของผู้ใช้เอง ระบบตรวจสอบไม่ได้ (ต้องระบุในเล่ม)
 func SessionReferenceOneRepMax(sets []WeightSetEnergyInput) float64 {
 	best := 0.0
 	for _, s := range sets {
@@ -234,11 +240,16 @@ const (
 	ReferenceNotApplicable   = "not_applicable"   // บอดี้เวท/ท่าค้างเวลา
 )
 
-// ResolveReferenceOneRepMax เลือก 1RM อ้างอิงของ %1RM (แก้ 2026-10-02 รอบ 3 — ถามรายเซต)
-//   - มี PR (history > 0) → ใช้ PR
-//   - ยังไม่มี PR และมีเซตที่ผู้ใช้ยืนยัน NearFailure → e1RM สูงสุดของเซตที่ยืนยันเหล่านั้น
-//   - ยังไม่มี PR และไม่มีเซตไหนยืนยัน → 0 ทุกเซตได้ MetsEndurance (กันเซสชันแรกที่ยกเบาแล้วหยุดทั้งที่ยังไหว
-//     ได้ 6.0 เกินจริง — ระบบแยกเองไม่ได้ จึงถามผู้ใช้ ค่าที่ได้เป็นการประเมินของผู้ใช้เอง)
+// ResolveReferenceOneRepMax เลือก "1RM อ้างอิง" ที่ใช้เป็นตัวหารของ %1RM (แก้ 2026-10-02 รอบ 3 — ถามรายเซต)
+// มีค่าเดียวต่อเซสชัน ใช้ร่วมกันทุกเซต เลือกตามลำดับนี้:
+//
+//	1) ท่านี้มีประวัติแล้ว (history > 0)     → ใช้ PR เดิม ไม่สนใจคำตอบหมดแรง
+//	                                           (เซสชันที่ทำ PR ใหม่ยังคิดด้วย PR เดิม PR ใหม่มีผลครั้งถัดไป)
+//	2) ยังไม่มีประวัติ + มีเซตกดหมดแรง       → e1RM สูงสุดของเซตที่กดหมดแรง (SessionReferenceOneRepMax)
+//	3) ยังไม่มีประวัติ + ไม่มีเซตกดหมดแรง    → ไม่มีตัวอ้างอิง (0) ทุกเซตได้ MetsEndurance (3.5)
+//	   (กันกรณียกเบาแล้วหยุดทั้งที่ยังไหว ได้ 6.0 เกินจริง — ระบบแยกเองไม่ได้ จึงถามผู้ใช้)
+//
+// ท่าบอดี้เวท/ท่าค้างเวลา ไม่ใช้ 1RM เลย (not_applicable)
 func ResolveReferenceOneRepMax(history float64, sets []WeightSetEnergyInput, hasWeight, hasReps bool) (float64, string) {
 	if !hasWeight || !hasReps {
 		return 0, ReferenceNotApplicable
@@ -276,15 +287,34 @@ func CalculateWeightTrainingCalories(
 	bodyWeightKg float64, // น้ำหนักของผู้ออกกำลังกาย
 	hasWeight bool, // ท่าใช้อุปกรณ์ (ไม่ใช่บอดี้เวท)
 	hasReps bool, // ท่านับจำนวนครั้งได้ (ไม่ใช่ท่าค้างเวลา)
+	difficulty int, // wet_difficulty ของท่า — ใช้เลือก METs เฉพาะท่าบอดี้เวท/ท่าค้างเวลา (BodyweightMets)
 ) (kcalPerSet []float64, metsPerSet []float64, totalKcal float64) {
 	kcalPerSet = make([]float64, len(sets))
 	metsPerSet = make([]float64, len(sets))
 	for i, s := range sets {
-		mets := WeightSetMets(s.WeightKg, s.Reps, reference1RM, hasWeight, hasReps)
+		var mets float64
+		if !hasWeight || !hasReps {
+			mets = BodyweightMets(difficulty)
+		} else {
+			mets = WeightSetMets(s.WeightKg, s.Reps, reference1RM, hasWeight, hasReps)
+		}
 		kcal := math.Round(NetEnergyKcal(mets, bodyWeightKg, float64(s.Seconds)/60.0)*100) / 100
 		metsPerSet[i] = mets
 		kcalPerSet[i] = kcal
 		totalKcal += kcal
 	}
 	return kcalPerSet, metsPerSet, math.Round(totalKcal*100) / 100
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 5. พลังงานคาร์ดิโอ (บทที่ 2 ข้อ 2.1.4.12 ตารางที่ 2.3)
+// ═══════════════════════════════════════════════════════════════════════
+// CalculateCardioCalories คำนวณพลังงานสุทธิของคาร์ดิโอ 1 ครั้ง — mets มาจากตาราง cardio
+func CalculateCardioCalories(
+	mets float64, // METs ของท่านี้
+	bodyWeightKg float64, // น้ำหนักของผู้ออกกำลังกาย
+	// เวลาที่ฝึก (วินาที)
+	durationSeconds int) float64 {
+	// ส่งค่าเข้าสูตร Net Energy Kcal : แปลงวินาที → นาที ก่อนส่ง แล้วปัดผลลัพธ์ 2 ตำแหน่ง
+	return math.Round(NetEnergyKcal(mets, bodyWeightKg, float64(durationSeconds)/60.0)*100) / 100
 }

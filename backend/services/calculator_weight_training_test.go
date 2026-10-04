@@ -2,8 +2,8 @@ package services
 
 import "testing"
 
-// ทดสอบพลังงานเวทเทรนนิ่ง — Dynamic METs รายเซตตาม %1RM เทียบ 1RM อ้างอิง (บทที่ 2 ข้อ 2.1.4.12
-// ตารางที่ 2.3, ดู ../../CLAUDE.md ข้อ 7[B-1])
+// ทดสอบพลังงานเวทเทรนนิ่ง — Dynamic METs รายเซตตาม %1RM เทียบ 1RM อ้างอิง (บทที่ 2 ข้อ 2.1.4.10
+// ตารางที่ 2.2, ดู ../../CLAUDE.md ข้อ 7[B-1])
 // หนักตัว 70 kg ทุกเคส → 3.5 × 70 / 200 = 1.225 kcal/นาที ต่อ 1 Net MET
 
 func TestWeightSetMets(t *testing.T) {
@@ -39,8 +39,8 @@ func TestCalculateWeightTrainingCalories_HeavyBurnsMoreThanLightSameTime(t *test
 	heavy := []WeightSetEnergyInput{{90, 5, 120, false}, {90, 5, 120, false}, {90, 5, 120, false}} // 90% → 6.0
 	light := []WeightSetEnergyInput{{50, 5, 120, false}, {50, 5, 120, false}, {50, 5, 120, false}} // 50% → 3.5
 
-	_, _, heavyTotal := CalculateWeightTrainingCalories(heavy, 100, 70, true, true)
-	_, _, lightTotal := CalculateWeightTrainingCalories(light, 100, 70, true, true)
+	_, _, heavyTotal := CalculateWeightTrainingCalories(heavy, 100, 70, true, true, 2)
+	_, _, lightTotal := CalculateWeightTrainingCalories(light, 100, 70, true, true, 2)
 
 	// หนัก: (6−1) × 1.225 × 2 นาที = 12.25 ต่อเซต × 3 = 36.75
 	if !almostEqual(heavyTotal, 36.75, 0.001) {
@@ -61,7 +61,7 @@ func TestCalculateWeightTrainingCalories_PerSetMetsAndTime(t *testing.T) {
 		{90, 3, 140, false},  // 90% → 6.0 → 5 × 1.225 × 140/60 = 14.29
 		{65, 15, 120, false}, // 65% → 3.5 → 2.5 × 1.225 × 2 = 6.125 → 6.13
 	}
-	kcal, mets, total := CalculateWeightTrainingCalories(sets, 100, 70, true, true)
+	kcal, mets, total := CalculateWeightTrainingCalories(sets, 100, 70, true, true, 2)
 	if mets[0] != MetsHeavy || mets[1] != MetsEndurance {
 		t.Errorf("mets = %v, want [6 3.5]", mets)
 	}
@@ -74,21 +74,46 @@ func TestCalculateWeightTrainingCalories_PerSetMetsAndTime(t *testing.T) {
 }
 
 func TestCalculateWeightTrainingCalories_Bodyweight(t *testing.T) {
-	// Pull-up 3 เซต เซตละ 60 วิ → 3.0 → 2 × 1.225 × 1 = 2.45 ต่อเซต
+	// Pull-up (ความยาก 3) 3 เซต เซตละ 60 วิ → 3.8 → 2.8 × 1.225 × 1 = 3.43 ต่อเซต
 	sets := []WeightSetEnergyInput{{0, 10, 60, false}, {0, 8, 60, false}, {0, 6, 60, false}}
-	_, mets, total := CalculateWeightTrainingCalories(sets, 0, 70, false, true)
+	_, mets, total := CalculateWeightTrainingCalories(sets, 0, 70, false, true, 3)
 	for _, m := range mets {
-		if m != MetsBodyweight {
-			t.Fatalf("บอดี้เวทต้องได้ METs 3.0 ทุกเซต ได้ %v", mets)
+		if m != MetsBodyweightModerate {
+			t.Fatalf("บอดี้เวทความยาก 3 ต้องได้ METs 3.8 ทุกเซต ได้ %v", mets)
 		}
 	}
-	if !almostEqual(total, 7.35, 0.001) {
-		t.Errorf("total = %v, want 7.35", total)
+	if !almostEqual(total, 10.29, 0.001) {
+		t.Errorf("total = %v, want 10.29", total)
+	}
+}
+
+// Plank (ท่าค้างเวลา, ความยาก 1) → 2.8 (02024)
+func TestCalculateWeightTrainingCalories_TimedLightBodyweight(t *testing.T) {
+	sets := []WeightSetEnergyInput{{0, 0, 120, false}}
+	_, mets, total := CalculateWeightTrainingCalories(sets, 0, 70, false, false, 1)
+	if mets[0] != MetsBodyweightLight {
+		t.Fatalf("Plank ต้องได้ METs 2.8 ได้ %v", mets[0])
+	}
+	// (2.8 − 1) × 1.225 × 2 = 4.41
+	if !almostEqual(total, 4.41, 0.001) {
+		t.Errorf("total = %v, want 4.41", total)
+	}
+}
+
+func TestBodyweightMets(t *testing.T) {
+	cases := []struct {
+		difficulty int
+		want       float64
+	}{{1, MetsBodyweightLight}, {2, MetsBodyweightModerate}, {3, MetsBodyweightModerate}}
+	for _, tc := range cases {
+		if got := BodyweightMets(tc.difficulty); got != tc.want {
+			t.Errorf("BodyweightMets(%d) = %v, want %v", tc.difficulty, got, tc.want)
+		}
 	}
 }
 
 func TestCalculateWeightTrainingCalories_EmptySets(t *testing.T) {
-	kcal, mets, total := CalculateWeightTrainingCalories(nil, 100, 70, true, true)
+	kcal, mets, total := CalculateWeightTrainingCalories(nil, 100, 70, true, true, 2)
 	if len(kcal) != 0 || len(mets) != 0 || total != 0 {
 		t.Fatalf("เซสชันว่างต้องได้ค่าศูนย์ทั้งหมด ได้ %v %v %v", kcal, mets, total)
 	}
@@ -97,7 +122,7 @@ func TestCalculateWeightTrainingCalories_EmptySets(t *testing.T) {
 // ไม่มีตัวอ้างอิงเลย (reference1RM = 0): ทุกเซตที่มีน้ำหนักได้ 3.5 ท่าที่ไม่มีน้ำหนักยังได้ 3.0
 func TestCalculateWeightTrainingCalories_NoReference(t *testing.T) {
 	sets := []WeightSetEnergyInput{{90, 3, 120, false}, {30, 10, 120, false}, {0, 8, 120, false}}
-	_, mets, _ := CalculateWeightTrainingCalories(sets, 0, 70, true, true)
+	_, mets, _ := CalculateWeightTrainingCalories(sets, 0, 70, true, true, 2)
 	if mets[0] != MetsEndurance || mets[1] != MetsEndurance {
 		t.Errorf("ไม่มีตัวอ้างอิง ทุกเซตที่มีน้ำหนักต้อง 3.5 ได้ %v", mets)
 	}
@@ -160,7 +185,7 @@ func TestResolveReferenceOneRepMax(t *testing.T) {
 func TestCalculateWeightTrainingCalories_FirstSessionUsesSessionReference(t *testing.T) {
 	sets := []WeightSetEnergyInput{{80, 5, 120, true}, {50, 10, 120, false}, {90, 3, 120, true}}
 	ref := SessionReferenceOneRepMax(sets)
-	_, mets, total := CalculateWeightTrainingCalories(sets, ref, 70, true, true)
+	_, mets, total := CalculateWeightTrainingCalories(sets, ref, 70, true, true, 2)
 	if mets[0] != MetsHeavy || mets[1] != MetsEndurance || mets[2] != MetsHeavy {
 		t.Errorf("mets = %v, want [6 3.5 6]", mets)
 	}
@@ -201,7 +226,7 @@ func TestWeightSetMets_Boundaries(t *testing.T) {
 // ผลรวมต้องเท่ากับผลบวกของ kcal รายเซตที่ปัดแล้ว (SUM(wtrs_calories) ใน DB ต้องตรง calories_burned)
 func TestCalculateWeightTrainingCalories_TotalEqualsSumOfRoundedRows(t *testing.T) {
 	sets := []WeightSetEnergyInput{{50, 5, 37, false}, {50, 5, 41, false}, {50, 5, 43, false}, {95, 3, 59, false}}
-	kcal, _, total := CalculateWeightTrainingCalories(sets, 100, 73.3, true, true)
+	kcal, _, total := CalculateWeightTrainingCalories(sets, 100, 73.3, true, true, 2)
 	sum := 0.0
 	for _, k := range kcal {
 		sum += k
@@ -214,7 +239,7 @@ func TestCalculateWeightTrainingCalories_TotalEqualsSumOfRoundedRows(t *testing.
 // ค่าผิดปกติต้องไม่ทำให้ติดลบ/NaN
 func TestCalculateWeightTrainingCalories_NoNegativeOrZeroInputs(t *testing.T) {
 	sets := []WeightSetEnergyInput{{80, 5, 0, false}, {80, 5, 60, false}}
-	kcal, _, total := CalculateWeightTrainingCalories(sets, 100, 0, true, true)
+	kcal, _, total := CalculateWeightTrainingCalories(sets, 100, 0, true, true, 2)
 	for i, k := range kcal {
 		if k != 0 {
 			t.Errorf("น้ำหนักตัว 0 → kcal[%d] = %v, want 0", i, k)
@@ -224,7 +249,7 @@ func TestCalculateWeightTrainingCalories_NoNegativeOrZeroInputs(t *testing.T) {
 		t.Errorf("total = %v, want 0", total)
 	}
 	// เซตเวลา 0 วินาที ได้ 0 ไม่ติดลบ
-	kcal, _, _ = CalculateWeightTrainingCalories(sets, 100, 70, true, true)
+	kcal, _, _ = CalculateWeightTrainingCalories(sets, 100, 70, true, true, 2)
 	if kcal[0] != 0 || kcal[1] <= 0 {
 		t.Errorf("kcal = %v, want [0, >0]", kcal)
 	}
@@ -237,9 +262,9 @@ func TestResolveReferenceOneRepMax_BodyweightIgnoresEverything(t *testing.T) {
 	if ref != 0 || src != ReferenceNotApplicable {
 		t.Errorf("got (%v, %s)", ref, src)
 	}
-	_, mets, _ := CalculateWeightTrainingCalories(sets, ref, 70, false, true)
-	if mets[0] != MetsBodyweight {
-		t.Errorf("mets = %v, want 3.0", mets[0])
+	_, mets, _ := CalculateWeightTrainingCalories(sets, ref, 70, false, true, 2)
+	if mets[0] != MetsBodyweightModerate {
+		t.Errorf("mets = %v, want 3.8", mets[0])
 	}
 }
 
@@ -248,8 +273,8 @@ func TestResolveReferenceOneRepMax_BodyweightIgnoresEverything(t *testing.T) {
 func TestLimitation_FirstSessionHonorSystemInflatesMets(t *testing.T) {
 	honest := []WeightSetEnergyInput{{20, 5, 60, false}, {60, 8, 60, true}}
 	lie := []WeightSetEnergyInput{{20, 5, 60, true}, {60, 8, 60, false}}
-	_, mHonest, _ := CalculateWeightTrainingCalories(honest, SessionReferenceOneRepMax(honest), 70, true, true)
-	_, mLie, _ := CalculateWeightTrainingCalories(lie, SessionReferenceOneRepMax(lie), 70, true, true)
+	_, mHonest, _ := CalculateWeightTrainingCalories(honest, SessionReferenceOneRepMax(honest), 70, true, true, 2)
+	_, mLie, _ := CalculateWeightTrainingCalories(lie, SessionReferenceOneRepMax(lie), 70, true, true, 2)
 	if mHonest[0] != MetsEndurance {
 		t.Errorf("เซตเบา (ตอบตรง) = %v, want 3.5", mHonest[0])
 	}

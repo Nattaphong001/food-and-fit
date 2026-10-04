@@ -259,7 +259,7 @@ func TestSaveWorkoutResult_WithHistory_IgnoresNearFailure(t *testing.T) {
 	}
 }
 
-// ท่าบอดี้เวท: METs 3.0 คงที่ ไม่ใช้ 1RM — (3−1)×1.225×2 = 4.9
+// ท่าบอดี้เวท ความยาก 1: METs 2.8 (02024) ไม่ใช้ 1RM — (2.8−1)×1.225×2 = 4.41
 func TestSaveWorkoutResult_Bodyweight_FixedMets(t *testing.T) {
 	f := newFixture(t, 70)
 	code, body := f.post("/workout-results", f.weightReq(f.bodyID, wset(1, 10, 0, 40, 80, ptr(true))))
@@ -267,8 +267,8 @@ func TestSaveWorkoutResult_Bodyweight_FixedMets(t *testing.T) {
 		t.Fatalf("got %d %v", code, body)
 	}
 	calc := body["calculation"].(map[string]any)
-	if calc["reference_source"] != "not_applicable" || calc["mets_per_set"].([]any)[0].(float64) != 3.0 || !near(body["calories_burned"].(float64), 4.9) {
-		t.Errorf("calc = %v kcal=%v, want not_applicable / 3.0 / 4.9", calc, body["calories_burned"])
+	if calc["reference_source"] != "not_applicable" || calc["mets_per_set"].([]any)[0].(float64) != 2.8 || !near(body["calories_burned"].(float64), 4.41) {
+		t.Errorf("calc = %v kcal=%v, want not_applicable / 2.8 / 4.41", calc, body["calories_burned"])
 	}
 }
 

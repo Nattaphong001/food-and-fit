@@ -899,7 +899,7 @@ const abnormalOneRepMaxJumpRatio = 1.2
 // SaveWorkoutResult บันทึกผลเวทเทรนนิ่งทั้งเซสชัน — รับทั้งเซสชันครั้งเดียว (ไม่ใช่ยิงทีละเซต) กัน
 // เน็ตหลุดกลางทางแล้วได้ข้อมูลครึ่งๆ
 //
-// สูตรคำนวณพลังงาน: Dynamic METs รายเซตตาม %1RM เทียบ PR ก่อนเซสชัน (บทที่ 2 ข้อ 2.1.4.12 ตารางที่ 2.3,
+// สูตรคำนวณพลังงาน: Dynamic METs รายเซตตาม %1RM เทียบ PR ก่อนเซสชัน (บทที่ 2 ข้อ 2.1.4.10 ตารางที่ 2.2,
 // แก้ 2026-10-01 แทนที่ METs คงที่ต่อท่า — ดู services.CalculateWeightTrainingCalories และ
 // ../../CLAUDE.md ข้อ 7[B-1])
 func SaveWorkoutResult(c *gin.Context) {
@@ -1052,7 +1052,7 @@ func SaveWorkoutResult(c *gin.Context) {
 	reference1RM, referenceSource := services.ResolveReferenceOneRepMax(oneRepMax, energySets, hasWeight, hasReps)
 
 	kcalPerSet, metsPerSet, totalKcal := services.CalculateWeightTrainingCalories(
-		energySets, reference1RM, bodyWeight, hasWeight, hasReps,
+		energySets, reference1RM, bodyWeight, hasWeight, hasReps, int(exercise.WetDifficulty),
 	)
 
 	rows := make([]models.WeightTrainingResult, 0, len(validSets))
@@ -1206,7 +1206,7 @@ func SaveCardioResult(c *gin.Context) {
 		return
 	}
 
-	// NET calories (สูตร ACSM บทที่ 2 ข้อ 2.1.4.10) — สูตรจริงอยู่ที่ services.NetEnergyKcal (ใช้ร่วมกับ
+	// NET calories (สูตร ACSM บทที่ 2 ข้อ 2.1.4.10 และ 2.1.4.12) — สูตรจริงอยู่ที่ services.NetEnergyKcal (ใช้ร่วมกับ
 	// เวทเทรนนิ่ง) หัก 1 MET ก่อนเก็บ DB กันนับซ้ำกับ Baseline (BMR×1.2) ตอนรวมเป็น Total Daily Energy
 	// Output ที่ analytics SUM(cdors_calories) ตรงๆ เข้า exerciseBurn และ clamp กัน METs ≤ 1 ติดลบไว้ในนั้นแล้ว
 	// (ปัจจุบันคาร์ดิโอทุกท่าใน DB METs ต่ำสุด 6.0 = ว่ายน้ำ ตรงรหัส Compendium 18310 ไม่ชนขอบนี้)
