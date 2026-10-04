@@ -882,12 +882,12 @@ type CardioResultRequest struct {
 	CdorsDistance float64 `json:"cdors_distance"`
 }
 
-// recentWeightSessions จำคำขอบันทึกเวทที่เพิ่งสำเร็จ 60 วินาที เพื่อกันกดบันทึกซ้ำ/ลองใหม่หลังเน็ตหลุดแล้วได้แถวและ
-// พลังงานซ้ำ 2 เท่า (ดู helpers.RecentSubmissions) — recentSubmissionWait คือเวลาสูงสุดที่คำขอซ้ำที่เข้ามาพร้อมกัน
-// จะรอผลของคำขอแรก
-var recentWeightSessions = helpers.NewRecentSubmissions(60 * time.Second)
-
-const recentSubmissionWait = 15 * time.Second
+// recentWeightSessions / recentCardioSessions จำคำขอบันทึกที่เพิ่งสำเร็จ 60 วินาที เพื่อกันกดบันทึกซ้ำ/ลองใหม่หลังเน็ตหลุด
+// แล้วได้แถวและพลังงานซ้ำ 2 เท่า (ดู helpers.RecentSubmissions, controllers/save_guard.go beginDedupedSave)
+var (
+	recentWeightSessions = helpers.NewRecentSubmissions(60 * time.Second)
+	recentCardioSessions = helpers.NewRecentSubmissions(60 * time.Second)
+)
 
 // เตือน (ไม่ block) เมื่อน้ำหนักที่ยกในเซตประเมิน 1RM ได้สูงกว่า Best 1RM เดิมมากผิดปกติ — กัน Best 1RM
 // เสียถาวรจากการกรอกพลาด (พิมพ์เกิน/หน่วยผิด) เพราะ GetBestOneRepMax เอาค่านี้เข้าสูตร RIR ของทุก
@@ -930,44 +930,34 @@ func SaveWorkoutResult(c *gin.Context) {
 
 	checks := make([]helpers.WeightSetCheck, 0, len(req.Sets))
 	for _, s := range req.Sets {
-		checks = append(checks, helpers.WeightSetCheck{Reps: s.WtrsReps, WeightKg: s.WtrsWeight, WorkSeconds: s.WtrsWorkSeconds, RestSeconds: s.WtrsRestSeconds})
+		checks = append(checks, helpers.WeightSetCheck{Reps: s.WtrsReps, WeightKg: s.WtrsWeight, WorkSeconds: s.WtrsWorkSeconds, RestSeconds: s.WtrsRestSeconds, NearFailure: s.NearFailure})
 	}
 	if ok, msg := helpers.ValidateWeightSession(checks, hasWeight, hasReps); !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
 
-	// กันบันทึกซ้ำ: คำขอที่เหมือนกันเป๊ะ (สมาชิก ท่า เวลารวม ทุกเซต) ภายใน 60 วินาทีตอบผลเดิม ไม่เขียน DB ซ้ำ —
+	// wsch_id (ถ้าส่งมา) ต้องเป็นตารางฝึกของสมาชิกคนนี้เอง — client ส่งมาตรงๆ ห้ามเชื่อ (ตรวจพบ 2026-10-04: ผูกผลการฝึกกับ
+	// ตารางของสมาชิกคนอื่นได้) ตรวจก่อนเริ่มกันซ้ำ ไม่พบตอบ 400 (เดิม wsch_id ที่ไม่มีจริงได้ 500 จาก FK)
+	if req.WschID != nil {
+		var owned int64
+		if err := config.DB.Model(&models.WorkoutSchedule{}).Where("wsch_id = ? AND mb_id = ?", *req.WschID, uid).Count(&owned).Error; err != nil {
+			slog.Error("SaveWorkoutResult: check schedule owner failed", "err", err, "request_id", c.GetString("request_id"))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกผลไม่สำเร็จ กรุณาลองใหม่"})
+			return
+		}
+		if owned == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่พบตารางฝึกนี้ในบัญชีของคุณ"})
+			return
+		}
+	}
+
+	// กันบันทึกซ้ำ: คำขอที่เหมือนกันเป๊ะ (สมาชิก ท่า เวลารวม ทุกเซต รวมคำตอบหมดแรง) ภายใน 60 วินาทีตอบผลเดิม ไม่เขียน DB ซ้ำ —
 	// กดปุ่มบันทึกรัว หรือเน็ตหลุดหลังบันทึกสำเร็จแล้วผู้ใช้กดลองใหม่ (ตอบซ้ำมี "duplicate": true)
 	fingerprint := helpers.WeightSessionFingerprint(uid, req.WetID, checks)
-	var submission *helpers.Submission
-	for attempt := 0; submission == nil; attempt++ {
-		if attempt >= 3 {
-			c.JSON(http.StatusConflict, gin.H{"error": "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"})
-			return
-		}
-		s, owner := recentWeightSessions.Acquire(fingerprint)
-		if owner {
-			submission = s
-			break
-		}
-		select {
-		case <-s.Done():
-		case <-time.After(recentSubmissionWait):
-			c.JSON(http.StatusConflict, gin.H{"error": "กำลังบันทึกการฝึกนี้อยู่ กรุณารอสักครู่แล้วตรวจประวัติการฝึก"})
-			return
-		}
-		if status, body, ok := s.Result(); ok {
-			replay := gin.H{}
-			if saved, isMap := body.(gin.H); isMap {
-				for k, v := range saved {
-					replay[k] = v
-				}
-			}
-			replay["duplicate"] = true
-			c.JSON(status, replay)
-			return
-		}
+	submission, proceed := beginDedupedSave(c, recentWeightSessions, fingerprint)
+	if !proceed {
+		return
 	}
 	saved := false
 	defer func() {
@@ -993,16 +983,7 @@ func SaveWorkoutResult(c *gin.Context) {
 	// ข้อ 7[B-1]) (2) เตือน (ไม่ block) เมื่อ 1RM ที่ประเมินได้ในเซสชันนี้กระโดดผิดปกติจากประวัติ
 	oneRepMax, _, _, _, _ := services.GetBestOneRepMax(uid, req.WetID)
 
-	// เลขเซ็ทนับต่อเนื่องทั้งวันจาก DB จริง ไม่ใช้เลขเซ็ทจาก client ตรงๆ — client (หน้าจอฝึก) นับ
-	// เซ็ทแบบรีเซ็ตเป็น 1 ใหม่ทุกครั้งที่เปิดหน้าจอ (ทุก "รอบ") ถ้าฝึกท่าเดียวกันซ้ำวันเดียวกัน
-	// หลายรอบ (เช่น รอบเช้า 1 เซ็ท รอบเย็นอีก 3 เซ็ท) จะได้เลขชนกันเป็น 1,1,2,3 ในประวัติ ดูเหมือน
-	// ข้อมูลซ้ำ/ผิดพลาด ทั้งที่จริงบันทึกครบ — คำนวณจากจำนวนแถวที่มีอยู่แล้วของ (สมาชิก, ท่านี้,
-	// วันนี้) +1 แทน ได้เลขต่อเนื่อง 1,2,3,4 เสมอไม่ว่าจะแบ่งกี่รอบ
 	today := time.Now().Format("2006-01-02")
-	var existingSetCount int64
-	config.DB.Model(&models.WeightTrainingResult{}).
-		Where("mb_id = ? AND wet_id = ? AND wtrs_date = ?", uid, req.WetID, today).
-		Count(&existingSetCount)
 
 	// กรองเฉพาะเซตที่สมบูรณ์ (Reps > 0) ก่อนเข้าสูตรพลังงาน — ลำดับต้องตรงกับ rows ด้านล่างเป๊ะ
 	// เพราะ services.CalculateWeightTrainingCalories คืน kcalPerSet ตามลำดับ index เดียวกับ validSets
@@ -1026,23 +1007,10 @@ func SaveWorkoutResult(c *gin.Context) {
 		energySets = append(energySets, services.WeightSetEnergyInput{WeightKg: s.WtrsWeight, Reps: s.WtrsReps, Seconds: seconds, NearFailure: s.NearFailure != nil && *s.NearFailure})
 	}
 
-	// เพดานเวลาสะสมต่อ (สมาชิก, ท่า, วัน) — กันส่งซ้ำ/แบ่งส่งหลายคำขอเพื่อสะสมพลังงาน (helpers.ValidateDailyWeightSeconds)
+	// เวลารวมของคำขอนี้ ใช้ตรวจเพดานสะสมต่อ (สมาชิก, ท่า, วัน) ใน transaction ด้านล่าง
 	newSeconds := 0
 	for _, es := range energySets {
 		newSeconds += es.Seconds
-	}
-	var existingSeconds int64
-	if err := config.DB.Model(&models.WeightTrainingResult{}).
-		Where("mb_id = ? AND wet_id = ? AND wtrs_date = ?", uid, req.WetID, today).
-		Select("COALESCE(SUM(wtrs_work_seconds + COALESCE(wtrs_rest_seconds, 0)), 0)").
-		Scan(&existingSeconds).Error; err != nil {
-		slog.Error("SaveWorkoutResult: sum daily seconds failed", "err", err, "request_id", c.GetString("request_id"))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกผลไม่สำเร็จ กรุณาลองใหม่"})
-		return
-	}
-	if ok, msg := helpers.ValidateDailyWeightSeconds(int(existingSeconds), newSeconds); !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
-		return
 	}
 
 	// 1RM อ้างอิง: มี PR ก่อนเซสชันนี้ → ใช้ PR (history) · ยังไม่เคยมีประวัติท่านี้ → ใช้ e1RM สูงสุดของเซตใน
@@ -1055,26 +1023,9 @@ func SaveWorkoutResult(c *gin.Context) {
 		energySets, reference1RM, bodyWeight, hasWeight, hasReps, int(exercise.WetDifficulty),
 	)
 
-	rows := make([]models.WeightTrainingResult, 0, len(validSets))
-	nextSetNo := int(existingSetCount) + 1
 	sessionBest1RM := 0.0
 	warnings := make([]string, 0)
-	for i, s := range validSets {
-		rows = append(rows, models.WeightTrainingResult{
-			WtrsDate:          today,
-			WtrsSetNo:         nextSetNo,
-			WtrsReps:          s.WtrsReps,
-			WtrsWeight:        s.WtrsWeight,
-			WtrsWorkSeconds:   s.WtrsWorkSeconds,
-			WtrsRestSeconds:   s.WtrsRestSeconds,
-			WtrsNearFailure:   s.NearFailure,
-			WtrsCalories:      kcalPerSet[i],
-			MbID:              uid,
-			WetID:             &req.WetID,
-			WschID:            req.WschID,
-		})
-		nextSetNo++
-
+	for _, s := range validSets {
 		// Estimated 1RM — คำนวณแสดงผลอย่างเดียว ไม่บันทึก DB (กฎเหล็กข้อ 8.2)
 		if s.WtrsWeight > 0 {
 			est := services.EstimateOneRepMax(s.WtrsWeight, s.WtrsReps)
@@ -1090,9 +1041,57 @@ func SaveWorkoutResult(c *gin.Context) {
 		}
 	}
 
-	if err := config.DB.Create(&rows).Error; err != nil {
-		slog.Error("SaveWorkoutResult: create failed", "err", err, "request_id", c.GetString("request_id"))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกผลไม่สำเร็จ กรุณาลองใหม่"})
+	// ขั้นสุดท้ายอยู่ใน transaction เดียวที่ล็อกแถวสมาชิก (lockMemberRow) — นับเซต/เวลาสะสมของวันนี้ ตรวจเพดานรายวัน แล้ว insert
+	// ต้องเป็นก้อนเดียวกัน ไม่งั้นคำขอที่ส่งพร้อมกันอ่านผลรวมเดิมแล้วผ่านเพดานพร้อมกันหมด (ตรวจพบ 2026-10-04)
+	//
+	// เลขเซ็ทนับต่อเนื่องทั้งวันจาก DB จริง ไม่ใช้เลขเซ็ทจาก client ตรงๆ — client (หน้าจอฝึก) นับ
+	// เซ็ทแบบรีเซ็ตเป็น 1 ใหม่ทุกครั้งที่เปิดหน้าจอ (ทุก "รอบ") ถ้าฝึกท่าเดียวกันซ้ำวันเดียวกัน
+	// หลายรอบ (เช่น รอบเช้า 1 เซ็ท รอบเย็นอีก 3 เซ็ท) จะได้เลขชนกันเป็น 1,1,2,3 ในประวัติ ดูเหมือน
+	// ข้อมูลซ้ำ/ผิดพลาด ทั้งที่จริงบันทึกครบ — คำนวณจากจำนวนแถวที่มีอยู่แล้วของ (สมาชิก, ท่านี้,
+	// วันนี้) +1 แทน ได้เลขต่อเนื่อง 1,2,3,4 เสมอไม่ว่าจะแบ่งกี่รอบ
+	rows := make([]models.WeightTrainingResult, 0, len(validSets))
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockMemberRow(tx, uid); err != nil {
+			return err
+		}
+		var existingSetCount int64
+		if err := tx.Model(&models.WeightTrainingResult{}).
+			Where("mb_id = ? AND wet_id = ? AND wtrs_date = ?", uid, req.WetID, today).
+			Count(&existingSetCount).Error; err != nil {
+			return err
+		}
+		// เพดานจำนวนเซตสะสม (wtrs_set_no เป็น TINYINT UNSIGNED) และเวลาสะสมต่อ (สมาชิก, ท่า, วัน) — กันส่งซ้ำ/แบ่งส่งหลายคำขอ
+		if ok, msg := helpers.ValidateDailyWeightSets(int(existingSetCount), len(validSets)); !ok {
+			return saveError{http.StatusBadRequest, msg}
+		}
+		var existingSeconds int64
+		if err := tx.Model(&models.WeightTrainingResult{}).
+			Where("mb_id = ? AND wet_id = ? AND wtrs_date = ?", uid, req.WetID, today).
+			Select("COALESCE(SUM(wtrs_work_seconds + COALESCE(wtrs_rest_seconds, 0)), 0)").
+			Scan(&existingSeconds).Error; err != nil {
+			return err
+		}
+		if ok, msg := helpers.ValidateDailyWeightSeconds(int(existingSeconds), newSeconds); !ok {
+			return saveError{http.StatusBadRequest, msg}
+		}
+		for i, s := range validSets {
+			rows = append(rows, models.WeightTrainingResult{
+				WtrsDate:        today,
+				WtrsSetNo:       int(existingSetCount) + 1 + i,
+				WtrsReps:        s.WtrsReps,
+				WtrsWeight:      s.WtrsWeight,
+				WtrsWorkSeconds: s.WtrsWorkSeconds,
+				WtrsRestSeconds: s.WtrsRestSeconds,
+				WtrsNearFailure: s.NearFailure,
+				WtrsCalories:    kcalPerSet[i],
+				MbID:            uid,
+				WetID:           &req.WetID,
+				WschID:          req.WschID,
+			})
+		}
+		return tx.Create(&rows).Error
+	}); err != nil {
+		respondSaveError(c, err, "SaveWorkoutResult")
 		return
 	}
 
@@ -1179,20 +1178,19 @@ func SaveCardioResult(c *gin.Context) {
 		return
 	}
 
-	// เพดานเวลาสะสมต่อสมาชิกต่อวัน (รวมทุกกิจกรรมคาร์ดิโอ) — กันส่งซ้ำสะสมพลังงาน (helpers.ValidateDailyCardioSeconds)
-	var existingCardioSeconds int64
-	if err := config.DB.Model(&models.CardioResult{}).
-		Where("mb_id = ? AND cdors_date = ?", uid, req.Date).
-		Select("COALESCE(SUM(cdors_duration), 0)").
-		Scan(&existingCardioSeconds).Error; err != nil {
-		slog.Error("SaveCardioResult: sum daily seconds failed", "err", err, "request_id", c.GetString("request_id"))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกผลไม่สำเร็จ กรุณาลองใหม่"})
+	// กันบันทึกซ้ำ: คำขอเหมือนกันเป๊ะ (สมาชิก กิจกรรม วันที่ เวลา ระยะทาง) ภายใน 60 วินาทีตอบผลเดิม ไม่เขียน DB ซ้ำ —
+	// เดิมคาร์ดิโอไม่มีระบบนี้ (เวทมีอยู่แล้ว) กดบันทึกซ้ำ/ลองใหม่หลังเน็ตหลุดได้แถวและพลังงานซ้ำ 2 เท่า
+	fingerprint := helpers.CardioFingerprint(uid, req.CdoID, req.Date, req.CdorsDuration, req.CdorsDistance)
+	submission, proceed := beginDedupedSave(c, recentCardioSessions, fingerprint)
+	if !proceed {
 		return
 	}
-	if ok, msg := helpers.ValidateDailyCardioSeconds(int(existingCardioSeconds), req.CdorsDuration); !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
-		return
-	}
+	saved := false
+	defer func() {
+		if !saved {
+			recentCardioSessions.Abort(fingerprint, submission)
+		}
+	}()
 
 	var bodyStat models.MemberBodyStat
 	// ไม่มี fallback น้ำหนักตัว — ไม่มีข้อมูล/DB error ต้องตอบ error ไม่เดาค่า (helpers.ResolveBodyWeight)
@@ -1212,6 +1210,11 @@ func SaveCardioResult(c *gin.Context) {
 	// (ปัจจุบันคาร์ดิโอทุกท่าใน DB METs ต่ำสุด 6.0 = ว่ายน้ำ ตรงรหัส Compendium 18310 ไม่ชนขอบนี้)
 	// แถวก่อน 2026-09-19 คำนวณด้วย coefficient 1.0 (สูตรเดิม) เทียบย้อนหลังตรงๆ ไม่ได้ ต่างกัน ~5%
 	burnedCalories := services.CalculateCardioCalories(cardio.CdoMets, bodyWeight, req.CdorsDuration)
+	// ต้องเก็บลงคอลัมน์ DECIMAL(6,2) ได้ — เกินให้ปฏิเสธ ไม่ปล่อยให้ DB ตัดค่าเงียบๆ (helpers.ValidateCaloriesFitColumn)
+	if ok, msg := helpers.ValidateCaloriesFitColumn(burnedCalories); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
 
 	// cdors_distance เก็บ NULL เมื่อกิจกรรมนั้นไม่ได้วัดระยะทาง (cdo_has_distance = 0) — "ไม่มี
 	// ระยะทาง" กับ "ระยะทาง 0 กม." คนละความหมาย DEFAULT 0.00 เดิมถูกถอดออกจาก DB แล้ว
@@ -1231,13 +1234,29 @@ func SaveCardioResult(c *gin.Context) {
 		CdoID:         &req.CdoID,
 	}
 
-	if err := config.DB.Create(&result).Error; err != nil {
-		slog.Error("SaveResult: create failed", "err", err, "request_id", c.GetString("request_id"))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกผลไม่สำเร็จ กรุณาลองใหม่"})
+	// เพดานเวลาสะสมต่อสมาชิกต่อวัน (รวมทุกกิจกรรมคาร์ดิโอ) — กันส่งซ้ำสะสมพลังงาน (helpers.ValidateDailyCardioSeconds)
+	// นับ/ตรวจ/insert อยู่ใน transaction เดียวที่ล็อกแถวสมาชิก (lockMemberRow) กันคำขอพร้อมกันผ่านเพดานพร้อมกันหมด
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockMemberRow(tx, uid); err != nil {
+			return err
+		}
+		var existingCardioSeconds int64
+		if err := tx.Model(&models.CardioResult{}).
+			Where("mb_id = ? AND cdors_date = ?", uid, req.Date).
+			Select("COALESCE(SUM(cdors_duration), 0)").
+			Scan(&existingCardioSeconds).Error; err != nil {
+			return err
+		}
+		if ok, msg := helpers.ValidateDailyCardioSeconds(int(existingCardioSeconds), req.CdorsDuration); !ok {
+			return saveError{http.StatusBadRequest, msg}
+		}
+		return tx.Create(&result).Error
+	}); err != nil {
+		respondSaveError(c, err, "SaveCardioResult")
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
+	body := gin.H{
 		"message":         "บันทึกผลคาร์ดิโอสำเร็จ",
 		"data":            result,
 		"calories_burned": burnedCalories,
@@ -1246,7 +1265,10 @@ func SaveCardioResult(c *gin.Context) {
 			"weight_kg":    bodyWeight,
 			"duration_sec": req.CdorsDuration,
 		},
-	})
+	}
+	recentCardioSessions.Complete(submission, http.StatusCreated, body)
+	saved = true
+	c.JSON(http.StatusCreated, body)
 }
 
 // =========================================================

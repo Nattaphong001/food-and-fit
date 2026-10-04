@@ -48,12 +48,19 @@ func openTestDB(t *testing.T) *gorm.DB {
 	if name == "food_and_fit_db" || !strings.Contains(name, "test") {
 		t.Fatalf("ปฏิเสธรันกับฐาน %q — ต้องเป็นฐานทดสอบที่ชื่อมีคำว่า test", name)
 	}
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local&timeout=3s",
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local&timeout=3s&sql_mode=%%27STRICT_ALL_TABLES%%2CNO_ZERO_IN_DATE%%2CNO_ZERO_DATE%%2CNO_ENGINE_SUBSTITUTION%%27",
 		envOr("TEST_DB_USER", "root"), os.Getenv("TEST_DB_PASS"),
 		envOr("TEST_DB_HOST", "127.0.0.1"), envOr("TEST_DB_PORT", "3306"), name)
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Skipf("เชื่อมฐานทดสอบ %s ไม่ได้ (ข้าม): %v", name, err)
+	}
+	// ฐานทดสอบเปิด strict (ต่างจาก production ที่ยังไม่ strict) — ค่าที่ล้นคอลัมน์จะ error แทนที่จะถูกตัดเงียบๆ
+	// ทำให้ test จับช่องที่ validation ปล่อยค่าเกินขอบเขตคอลัมน์ได้ (ดู helpers.MaxCaloriesPerRow)
+	var mode string
+	db.Raw("SELECT @@SESSION.sql_mode").Scan(&mode)
+	if !strings.Contains(mode, "STRICT_ALL_TABLES") {
+		t.Fatalf("ฐานทดสอบต้องเปิด strict แต่ sql_mode = %q", mode)
 	}
 	for _, tbl := range []string{"weight_training_result", "cardio_result", "member_body_stats", "member_profile", "weight_exercises", "cardio", "cardio_category"} {
 		if err := db.Exec("DELETE FROM " + tbl).Error; err != nil {
@@ -87,14 +94,14 @@ func newFixture(t *testing.T, weight float64) *fixture {
 	if weight > 0 {
 		mustExec("INSERT INTO member_body_stats (mb_id, mbs_height, mbs_weight, mbs_activity_level, mbs_target, mbs_recorded_date) VALUES (?, 170, ?, 1.2, 3, NOW())", f.memberID, weight)
 	}
-	mustExec("INSERT INTO weight_exercises (wet_name, wet_equipment, wet_is_timed, wet_difficulty, wet_exercise_type) VALUES ('Barbell test', 1, 0, 1, 1)")
+	mustExec("INSERT INTO weight_exercises (wet_name, wet_description, wet_technique, wet_equipment, wet_is_timed, wet_difficulty, wet_exercise_type) VALUES ('Barbell test', '', '', 1, 0, 1, 1)")
 	db.Raw("SELECT LAST_INSERT_ID()").Scan(&f.barbellID)
-	mustExec("INSERT INTO weight_exercises (wet_name, wet_equipment, wet_is_timed, wet_difficulty, wet_exercise_type) VALUES ('Bodyweight test', 5, 0, 1, 1)")
+	mustExec("INSERT INTO weight_exercises (wet_name, wet_description, wet_technique, wet_equipment, wet_is_timed, wet_difficulty, wet_exercise_type) VALUES ('Bodyweight test', '', '', 5, 0, 1, 1)")
 	db.Raw("SELECT LAST_INSERT_ID()").Scan(&f.bodyID)
-	mustExec("INSERT INTO cardio_category (cdc_name) VALUES ('test')")
+	mustExec("INSERT INTO cardio_category (cdc_name, cdc_description) VALUES ('test', '')")
 	var cdc uint
 	db.Raw("SELECT LAST_INSERT_ID()").Scan(&cdc)
-	mustExec("INSERT INTO cardio (cdo_name, cdo_mets, cdc_id, cdo_has_distance) VALUES ('Run test', 8.0, ?, 1)", cdc)
+	mustExec("INSERT INTO cardio (cdo_name, cdo_description, cdo_technique, cdo_mets, cdc_id, cdo_has_distance) VALUES ('Run test', '', '', 8.0, ?, 1)", cdc)
 	db.Raw("SELECT LAST_INSERT_ID()").Scan(&f.cardioID)
 	return f
 }
