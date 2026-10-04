@@ -155,7 +155,21 @@ func ValidateHeight(height float64) (bool, string) {
 const (
 	CardioMaxSecondsPerSession = 21600
 	CardioMaxSecondsPerDay     = 28800
+
+	// พลังงานสูงสุดต่อแถวที่คอลัมน์ cdors_calories/wtrs_calories (DECIMAL(6,2)) เก็บได้ — เพดานของคอลัมน์ ไม่ใช่ตัวเลขที่ตั้งเอง
+	// คาร์ดิโอคำนวณเกินได้จริงจากข้อมูลที่ผ่าน validation ทุกตัว (น้ำหนักตัว 300 กก. × METs 12.3 × 6 ชม. ≈ 21,000+ kcal)
+	// เดิมตอบ API ค่าจริงแต่ DB ตัดเหลือ 9,999.99 เงียบๆ (sql_mode ไม่ strict) → ตัวเลขบนจอไม่ตรงกับในรายงาน (พบ 2026-10-04)
+	MaxCaloriesPerRow = 9999.99
 )
+
+// ValidateCaloriesFitColumn - ปฏิเสธพลังงานที่คำนวณได้เกินที่คอลัมน์เก็บได้ (ไม่ตัดค่าเงียบๆ — หลัก [B-2] ของ ../../CLAUDE.md)
+// [USED] workout_controller.go (SaveCardioResult)
+func ValidateCaloriesFitColumn(kcal float64) (bool, string) {
+	if math.IsNaN(kcal) || kcal < 0 || kcal > MaxCaloriesPerRow {
+		return false, fmt.Sprintf("พลังงานที่คำนวณได้เกินขอบเขตที่บันทึกได้ (สูงสุด %.2f kcal ต่อครั้ง) กรุณาตรวจสอบเวลาออกกำลังกายและข้อมูลน้ำหนักตัว", MaxCaloriesPerRow)
+	}
+	return true, ""
+}
 
 // ValidateDailyCardioSeconds - เพดานเวลาสะสมคาร์ดิโอต่อ (สมาชิก, วัน) รวมทุกคำขอ/ทุกกิจกรรม
 // existingSeconds = SUM(cdors_duration) ของแถวที่บันทึกไปแล้วในวันเดียวกัน
@@ -217,8 +231,11 @@ const (
 	// ~4 เท่าของที่พบ ครอบคลุมเคสหนักจริง (5×5 พัก 5 นาที ≈ 30 นาที/รอบ ฝึก 2 รอบ/วัน ≈ 60-70 นาที) ส่วนผู้ลืมกดจบ/
 	// ส่งซ้ำจะชนเพดาน — ข้อมูลจริงยังน้อย ควรทบทวนเมื่อมีผู้ใช้สะสมมากขึ้น
 	WeightDailyMaxSecondsPerExercise = WeightSessionMaxSeconds
-	// จำนวนเซตสูงสุดต่อคำขอ (wtrs_set_no เป็น TINYINT UNSIGNED)
+	// จำนวนเซตสูงสุดต่อคำขอ
 	WeightSessionMaxSets = 50
+	// จำนวนเซตสะสมสูงสุดต่อ (สมาชิก, ท่า, วัน) — wtrs_set_no เป็น TINYINT UNSIGNED (≤ 255) เพดานเวลา 2 ชม. อย่างเดียวไม่พอ
+	// เพราะเซตละ 5 วิก็ได้ถึง 1,440 เซต/วัน เกิน 255 แล้ว MySQL ตัดเลขเซตเป็น 255 ซ้ำเงียบๆ (sql_mode ไม่ strict)
+	WeightDailyMaxSetsPerExercise = 255
 	// Reps สูงสุดต่อเซต ให้ตรงกับรูปแบบ Reps 3 หลักของแผนฝึก (RepsPattern)
 	WeightSetMaxReps = 999
 	// น้ำหนักที่ยกสูงสุด ตรงเพดานจริงของคอลัมน์ wtrs_weight DECIMAL(5,2)
@@ -233,6 +250,8 @@ type WeightSetCheck struct {
 	WeightKg    float64
 	WorkSeconds int  // เวลาที่ใช้ทำเซตนี้ (wtrs_work_seconds)
 	RestSeconds *int // เวลาพักหลังเซตนี้ (wtrs_rest_seconds) nil = เซตสุดท้าย หรือไม่เคยกดพัก
+	// คำตอบ "ยกจนใกล้หมดแรง" (nil = ไม่ได้ถาม) — เปลี่ยนตัวอ้างอิง 1RM จึงเปลี่ยน METs ได้ ต้องอยู่ใน fingerprint กันบันทึกซ้ำ
+	NearFailure *bool
 }
 
 // WeightSessionTotalSeconds - เวลารวมของเซสชัน = Σ(เวลาทำเซต + เวลาพักหลังเซต) ทุกเซต — ที่เดียวที่นิยาม
@@ -257,13 +276,20 @@ func WeightSessionTotalSeconds(sets []WeightSetCheck) int {
 // (0 = ไม่ได้บันทึก ไม่ใช่ "ทำ 0 ครั้ง") ท่าที่ขาดช่องใดช่องหนึ่งไม่มี 1RM จึงได้ METs 3.0 คงที่ × เวลาของเซต
 // [USED] workout_controller.go (SaveWorkoutResult)
 func ValidateWeightSession(sets []WeightSetCheck, hasWeight bool, hasReps bool) (bool, string) {
-	totalDurationSeconds := WeightSessionTotalSeconds(sets)
 	if len(sets) < 1 {
 		return false, "ต้องมีอย่างน้อย 1 เซต"
 	}
 	if len(sets) > WeightSessionMaxSets {
 		return false, fmt.Sprintf("จำนวนเซตไม่ถูกต้อง (สูงสุด %d เซต)", WeightSessionMaxSets)
 	}
+	// เพดานรายฟิลด์ต้องตรวจ "ก่อน" บวกเวลา — work + rest ของ int ที่ใหญ่มาก (เช่น MaxInt64) วนเป็นค่าลบ ทำให้หลุดทั้งเพดานต่อเซต
+	// และเวลารวม (ตรวจพบ 2026-10-04: kcal ติดลบถูกบันทึก) ฟิลด์เดียวเกินเพดานต่อเซตก็ผิดอยู่แล้วไม่ว่าอีกฟิลด์จะเป็นเท่าไร
+	for _, s := range sets {
+		if s.WorkSeconds > WeightSessionMaxSecondsPerSet || restSecondsOrZero(s.RestSeconds) > WeightSessionMaxSecondsPerSet {
+			return false, fmt.Sprintf("เวลาของแต่ละเซตยาวผิดปกติ (สูงสุด %d นาทีต่อเซต รวมเวลาพัก) อาจลืมกดจบการฝึกหรือพักนานเกินไป", WeightSessionMaxSecondsPerSet/60)
+		}
+	}
+	totalDurationSeconds := WeightSessionTotalSeconds(sets)
 	if totalDurationSeconds < len(sets)*WeightSessionMinSecondsPerSet {
 		return false, "เวลารวมสั้นเกินไปเมื่อเทียบกับจำนวนเซต กรุณาตรวจสอบเวลาการฝึก"
 	}
@@ -288,7 +314,8 @@ func ValidateWeightSession(sets []WeightSetCheck, hasWeight bool, hasReps bool) 
 		if !hasWeight && s.WeightKg != 0 {
 			return false, "ท่านี้ไม่ต้องบันทึกน้ำหนัก"
 		}
-		if s.WeightKg < 0 || s.WeightKg > WeightSetMaxWeightKg {
+		// NaN ผ่านทั้ง "< 0" และ "> เพดาน" เป็นเท็จ ต้องกันเอง (JSON ส่ง NaN มาไม่ได้ แต่ validator ไม่ควรพึ่งชั้นอื่น)
+		if math.IsNaN(s.WeightKg) || s.WeightKg < 0 || s.WeightKg > WeightSetMaxWeightKg {
 			return false, fmt.Sprintf("น้ำหนักที่ยกต้องอยู่ระหว่าง 0-%.2f กก.", WeightSetMaxWeightKg)
 		}
 		if s.RestSeconds != nil {
@@ -490,6 +517,16 @@ func restSecondsOrZero(r *int) int {
 		return 0
 	}
 	return *r
+}
+
+// ValidateDailyWeightSets - เพดานจำนวนเซตสะสมต่อ (สมาชิก, ท่า, วัน) = WeightDailyMaxSetsPerExercise (ให้ wtrs_set_no ไม่ล้น TINYINT)
+// existingSets = จำนวนแถวที่บันทึกไปแล้ววันนี้ (ท่านี้) · newSets = จำนวนเซตที่กำลังจะบันทึก
+// [USED] workout_controller.go (SaveWorkoutResult)
+func ValidateDailyWeightSets(existingSets, newSets int) (bool, string) {
+	if existingSets+newSets > WeightDailyMaxSetsPerExercise {
+		return false, fmt.Sprintf("จำนวนเซตของท่านี้ในวันนี้รวมเกิน %d เซต (บันทึกไปแล้ว %d เซต) กรุณาตรวจสอบว่าบันทึกซ้ำหรือไม่", WeightDailyMaxSetsPerExercise, existingSets)
+	}
+	return true, ""
 }
 
 // ValidateDailyWeightSeconds - เพดานเวลารวมต่อ (สมาชิก, ท่า, วัน) = WeightDailyMaxSecondsPerExercise — กันส่งบันทึกซ้ำ/แบ่งส่ง

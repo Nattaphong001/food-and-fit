@@ -88,7 +88,8 @@ func (s *Submission) Done() <-chan struct{} { return s.done }
 func (s *Submission) Result() (status int, body any, ok bool) { return s.status, s.body, s.ok }
 
 // WeightSessionFingerprint สร้างคีย์ระบุ "คำขอบันทึกเวทเซสชันเดียวกัน" จากสมาชิก ท่า และทุกเซต
-// (Reps น้ำหนัก เวลาทำเซต เวลาพัก) — ผู้ใช้ 2 คนหรือ 2 เซสชันจริงที่ต่างกันแม้แต่ค่าเดียวได้คีย์ต่างกัน
+// (Reps น้ำหนัก เวลาทำเซต เวลาพัก คำตอบหมดแรง) — ผู้ใช้ 2 คนหรือ 2 เซสชันจริงที่ต่างกันแม้แต่ค่าเดียวได้คีย์ต่างกัน
+// (รวม near_failure เพราะคำตอบเปลี่ยน METs ได้ — ผู้ใช้แก้คำตอบแล้วบันทึกใหม่ต้องได้ผลใหม่ ไม่ใช่ผลเดิม)
 func WeightSessionFingerprint(memberID, exerciseID uint, sets []WeightSetCheck) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d|%d", memberID, exerciseID)
@@ -97,8 +98,19 @@ func WeightSessionFingerprint(memberID, exerciseID uint, sets []WeightSetCheck) 
 		if s.RestSeconds != nil {
 			rest = fmt.Sprint(*s.RestSeconds)
 		}
-		fmt.Fprintf(&b, "|%d,%.2f,%d,%s", s.Reps, s.WeightKg, s.WorkSeconds, rest)
+		near := "nil"
+		if s.NearFailure != nil {
+			near = fmt.Sprint(*s.NearFailure)
+		}
+		fmt.Fprintf(&b, "|%d,%.2f,%d,%s,%s", s.Reps, s.WeightKg, s.WorkSeconds, rest, near)
 	}
 	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
+}
+
+// CardioFingerprint สร้างคีย์ระบุ "คำขอบันทึกคาร์ดิโอครั้งเดียวกัน" จากสมาชิก กิจกรรม วันที่ เวลา และระยะทาง
+// (ระยะทางปัด 2 ตำแหน่งตามคอลัมน์ cdors_distance) — ใช้คู่กับ RecentSubmissions กดบันทึกซ้ำ/ลองใหม่หลังเน็ตหลุดแล้วไม่ได้แถวซ้ำ
+func CardioFingerprint(memberID, cardioID uint, date string, durationSeconds int, distanceKm float64) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("cardio|%d|%d|%s|%d|%.2f", memberID, cardioID, date, durationSeconds, distanceKm)))
 	return hex.EncodeToString(sum[:])
 }
