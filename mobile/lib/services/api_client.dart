@@ -30,7 +30,7 @@ class ApiClient {
   // ใช้เฉพาะตอน autoDetectServer() หา backend เองไม่เจอจริงๆ (ไม่มี Wi-Fi/ไฟร์วอลล์บล็อก
   // ทั้งวง client isolation) — ไม่ใช่ทางหลักแล้ว ไม่ต้องแก้เลขนี้เวลาเปลี่ยน Wi-Fi
   static const _fallbackIp =
-      String.fromEnvironment('REAL_IP', defaultValue: '192.168.1.207');
+      String.fromEnvironment('REAL_IP', defaultValue: '192.168.1.122');
 
   // ผลลัพธ์จาก autoDetectServer() — cache ไว้ในหน่วยความจำระหว่างรันแอปครั้งนี้
   static String? _detectedIp;
