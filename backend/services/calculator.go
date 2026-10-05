@@ -11,8 +11,21 @@ import (
 // CalculateGoals คำนวณ BMI, BMR, TDEE, Target Calories จากข้อมูลร่างกาย+เป้าหมาย ทีเดียวครบชุด
 // (ค่าที่ได้ ปัดทศนิยม 2 ตำแหน่งก่อนคืนค่าทุกตัว)
 //
-// ตัวแปร: weight=น้ำหนัก(kg), height=ส่วนสูง(cm), age=อายุ(ปี), gender=เพศ(1=ชาย),
-// activityLevel=ตัวคูณระดับกิจกรรม, target=เป้าหมาย(1=ลด 2=เพิ่ม 3=รักษา)
+// ลำดับคิด: BMI (อิสระ) → BMR → TDEE (= BMR × กิจกรรม) → Target (= TDEE ปรับตามเป้าหมาย)
+//
+// ตัวแปรรับเข้า:
+//   - weight        = น้ำหนักตัว (kg)
+//   - height        = ส่วนสูง (cm — หน่วยเซนติเมตร ไม่ใช่เมตร)
+//   - age           = อายุ (ปี)
+//   - gender        = เพศ: 1 = ชาย, ค่าอื่นทั้งหมด = หญิง
+//   - activityLevel = ตัวคูณระดับกิจกรรม (Activity Factor) 1.2 / 1.375 / 1.55 / 1.725 / 1.9
+//   - target        = เป้าหมาย: 1 = ลดน้ำหนัก, 2 = เพิ่มน้ำหนัก, ค่าอื่นทั้งหมด = รักษาน้ำหนัก
+//
+// ค่าที่คืน (kcal ต่อวัน ยกเว้น bmi ที่ไม่มีหน่วย):
+//   - bmi            = ดัชนีมวลกาย
+//   - bmr            = พลังงานพื้นฐานตอนพักนิ่ง
+//   - tdee           = พลังงานที่ใช้จริงต่อวันรวมกิจกรรม
+//   - targetCalories = พลังงานเป้าหมายที่ควรกินต่อวัน
 func CalculateGoals(weight, height float64, age, gender int, activityLevel float64, target int) (bmi, bmr, tdee, targetCalories float64) {
 	// BMI = น้ำหนัก(kg) ÷ ส่วนสูง(m)²
 	heightInMeters := height / 100
@@ -49,6 +62,8 @@ func CalculateGoals(weight, height float64, age, gender int, activityLevel float
 // ═══════════════════════════════════════════════════════════════════════
 
 // SedentaryCoefficient: ตัวคูณคงที่คำนวณ Baseline Expenditure จาก BMR (ไม่ใช่ activity level ของผู้ใช้)
+// 1.2 = Activity Factor ระดับนั่งทำงานแทบไม่ขยับ — ใช้แทน "การใช้ชีวิตประจำวัน" ส่วนการออกกำลังกายแยกไปนับต่างหาก
+// (ถ้าใช้ AF จริงของผู้ใช้ การออกกำลังกายจะถูกนับซ้ำ 2 รอบ)
 const SedentaryCoefficient = 1.2
 
 // ค่าประมาณ (fallback) ใช้ตอนสมาชิกยังไม่มีประวัติ BMR/TDEE เลย — ใช้ร่วมกันทั้ง Go และ SQL
@@ -61,6 +76,7 @@ const (
 
 // CalculateBaselineExpenditure คำนวณ Baseline Expenditure (พลังงานพื้นฐานตอนพัก ไม่รวมออกกำลังกาย)
 // จาก BMR — ใช้ตัวคูณคงที่ 1.2 เสมอ
+// bmr = BMR ของสมาชิก (kcal/วัน) → คืน Baseline (kcal/วัน) = bmr × 1.2 (ไม่ปัดเศษ ปัดตอนแสดงผล)
 func CalculateBaselineExpenditure(bmr float64) float64 {
 	return bmr * SedentaryCoefficient
 }
@@ -69,9 +85,11 @@ func CalculateBaselineExpenditure(bmr float64) float64 {
 // 2b. สัดส่วนสารอาหารมหัพภาค (Macronutrient Distribution) — CalculateMacroTargets
 // ═══════════════════════════════════════════════════════════════════════
 // สัดส่วนโปรตีน:คาร์บ:ไขมัน คงที่ต่อเป้าหมาย
+// แต่ละช่องเป็นเศษส่วนของพลังงานเป้าหมาย (0.40 = 40%) รวมกันทั้ง 3 ช่องต้องได้ 1.0 เสมอ
 type macroPercent struct{ protein, carb, fat float64 }
 
 // สัดส่วน % ต่อเป้าหมาย goalType: 1=ลดน้ำหนัก, 2=เพิ่มน้ำหนัก, 3=รักษาน้ำหนัก
+// (ตรงกับตารางใน ../CLAUDE.md ข้อ 4 ซึ่งเขียนลำดับ คาร์บ:โปรตีน:ไขมัน — ในตารางนี้เรียงเป็น protein, carb, fat)
 var macroPercentByGoal = map[int]macroPercent{
 	1: {protein: 0.40, carb: 0.35, fat: 0.25},
 	2: {protein: 0.30, carb: 0.50, fat: 0.20},
@@ -81,6 +99,9 @@ var macroPercentByGoal = map[int]macroPercent{
 // CalculateMacroTargets แปลง Target Calories เป็นกรัมโปรตีน/คาร์บ/ไขมัน ตามสัดส่วนของเป้าหมาย
 // โปรตีน/คาร์บ = ปริมาณพลังงาน ÷ 4 (kcal ต่อกรัม), ไขมัน = ปริมาณพลังงาน ÷ 9
 // goalType ที่ไม่ใช่ 1/2/3 หรือ targetCalories <= 0 → คืน 0 ทั้ง 3 ค่า (ไม่รู้จักเป้าหมาย ไม่เดาให้)
+//
+// ตัวอย่าง: Target 2,000 kcal, ลดน้ำหนัก (โปรตีน 40%) → โปรตีน = 2,000 × 0.40 ÷ 4 = 200 g
+// targetCalories = พลังงานเป้าหมายต่อวัน (kcal) · goalType = รหัสเป้าหมาย 1/2/3 · คืนค่าเป็นกรัม ปัด 2 ตำแหน่ง
 func CalculateMacroTargets(targetCalories float64, goalType int) (proteinG, carbG, fatG float64) {
 	pct, ok := macroPercentByGoal[goalType]
 	if !ok || targetCalories <= 0 {
@@ -102,13 +123,14 @@ const (
 	EpleyMaxReps     = 10 // Epley ใช้กับ reps 1-10 (ช่วงจำนวนครั้งต่ำถึงปานกลาง)
 	DesgorcesMaxReps = 20 // Desgorces ใช้กับ reps 11-20 (ช่วงจำนวนครั้งสูง) เกิน 20 ไม่ประเมิน 1RM
 
-	EpleyDivisor = 30.0 // Epley: W × (1 + r/30)
+	EpleyDivisor = 30.0 // Epley (2528): W × (1 + r/30) — 30 คือตัวหารจำนวนครั้ง
 
 	// Desgorces et al. (2553): 1RM = 100W / (83.7677 × e^(−0.0338r) + 17.6846)
-	DesgorcesNumerator = 100.0
-	DesgorcesA         = 83.7677
-	DesgorcesB         = 0.0338
-	DesgorcesC         = 17.6846
+	// W = น้ำหนักที่ยก, r = จำนวนครั้ง, e = ค่าคงที่เนเปียร์ (math.Exp)
+	DesgorcesNumerator = 100.0   // ตัวคูณน้ำหนักด้านบนเศษ (100W)
+	DesgorcesA         = 83.7677 // สัมประสิทธิ์หน้า e^(−B·r)
+	DesgorcesB         = 0.0338  // อัตราลดลงตามจำนวนครั้ง (ยิ่งยกหลายครั้ง e^(−B·r) ยิ่งเล็ก)
+	DesgorcesC         = 17.6846 // ค่าคงที่บวกท้ายตัวหาร
 )
 
 // EstimateOneRepMax - Estimated 1RM แบบ Dual-Formula
@@ -117,7 +139,9 @@ const (
 //   - reps > 20, reps < 1 หรือน้ำหนัก ≤ 0 → 0 (ประเมินไม่ได้)
 //
 // 1RM = น้ำหนักสูงสุดที่ยกได้ 1 ครั้ง (ประมาณจากเซตที่ยกหลายครั้ง)
-// weightKg=น้ำหนักที่ยก, reps=จำนวนครั้งที่ทำได้
+// weightKg=น้ำหนักที่ยก (kg), reps=จำนวนครั้งที่ทำได้ → คืนน้ำหนัก 1RM โดยประมาณ (kg) ปัด 2 ตำแหน่ง
+// ตัวอย่าง: 100 kg × 10 ครั้ง (Epley) = 100 × (1 + 10/30) = 133.33 kg
+// ข้อสังเกต: ผลไม่ต่อเนื่องที่ขอบ 10/11 ครั้ง (100×10 = 133.33 แต่ 100×11 = 132.55) เพราะเป็น 2 สมการ
 func EstimateOneRepMax(weightKg float64, reps int) float64 {
 	if weightKg <= 0 || reps < 1 || reps > DesgorcesMaxReps {
 		return 0
@@ -134,13 +158,22 @@ func EstimateOneRepMax(weightKg float64, reps int) float64 {
 // ═══════════════════════════════════════════════════════════════════════
 // NetEnergyKcal คือสูตรแกนกลาง (ACSM) — จุดคำนวณพลังงานเพียงจุดเดียวของทั้งระบบ
 // ═══════════════════════════════════════════════════════════════════════
-// คาร์ดิโอ เเละ เวทเทรนนิ่ง จะใช้ Net Energy Kcal ร่วมกัน
+// คาร์ดิโอ และ เวทเทรนนิ่ง จะใช้ Net Energy Kcal ร่วมกัน
 //
 // Net Energy Kcal คำนวณพลังงานสุทธิที่เผาผลาญจริง (ไม่รวมพลังงานพักนิ่งที่ Baseline BMR × 1.2 นับไปแล้ว)
 // สูตร ACSM: Kcal (NET) = [(METs − 1) × 3.5 × น้ำหนักตัว(kg) / 200] × ระยะเวลา(นาที)
+//
+// ตัวแปรรับเข้า:
+//   - mets         = ความหนักของกิจกรรม (METs) — 1 MET = นั่งพักนิ่ง
+//   - bodyWeightKg = น้ำหนักตัวผู้ออกกำลังกาย (kg)
+//   - minutes      = เวลา "นาที" (ผู้เรียกต้องแปลงวินาที ÷ 60 มาก่อน)
+//
+// ตัวอย่าง: METs 6.0, น้ำหนัก 70 kg, 30 นาที → (6−1) × 3.5 × 70 / 200 × 30 = 183.75 kcal
+// ไม่ปัดเศษ — ผู้เรียกปัดเองตามที่ต้องการ
 func NetEnergyKcal(mets, bodyWeightKg, minutes float64) float64 {
 	const metOxygenMlPerKgPerMin = 3.5 // ออกซิเจนที่ใช้ตอนพัก (1 MET) หน่วย ml/kg/นาที
-	const metKcalDivisor = 200.0       // ตัวหารแปลงเป็น kcal/นาที
+	// ตัวหารแปลง "ml ออกซิเจน/นาที" เป็น "kcal/นาที": ÷1000 ให้เป็นลิตร × 5 kcal ต่อออกซิเจน 1 ลิตร = ÷200
+	const metKcalDivisor = 200.0
 
 	// หัก 1 MET ออกก่อน (คือพลังงานตอนพักนิ่งที่ถูกนับใน Baseline ไปแล้ว กันนับซ้ำ)
 	netMets := mets - 1
@@ -155,7 +188,10 @@ func NetEnergyKcal(mets, bodyWeightKg, minutes float64) float64 {
 // ═══════════════════════════════════════════════════════════════════════
 
 // ค่า METs จาก 2024 Adult Compendium of Physical Activities (Herrmann et al., 2567) ตามตารางที่ 2.2
+// (METs = ความหนักของกิจกรรมเทียบตอนนั่งพัก: 1 = นั่งพัก ตัวเลขยิ่งมากยิ่งหนัก)
 const (
+	// ใช้เฉพาะเคสผิดปกติ: ท่าที่ใช้อุปกรณ์แต่ผู้ใช้กรอกน้ำหนัก 0 — ไม่ได้อยู่ในตารางที่ 2.2 ของเล่ม
+	// (ท่าบอดี้เวท/ท่าค้างเวลาจริงๆ ใช้ MetsBodyweightLight/Moderate ด้านล่างผ่าน BodyweightMets)
 	MetsBodyweight = 3.0 // น้ำหนักถ่วง = 0 ในท่าที่ใช้อุปกรณ์ — Compendium 02056 บอดี้เวททั่วไป
 	MetsEndurance  = 3.5 // ความทนทานของกล้ามเนื้อ (%1RM < 70) หรือ reps > 20 — Compendium 02054
 	MetsHeavy      = 6.0 // เพิ่มขนาดกล้ามเนื้อ/ความแข็งแรง (%1RM ≥ 70) — Compendium 02050
@@ -177,6 +213,14 @@ const (
 //   - reps > 20 → MetsEndurance (เกินขอบเขตสมการ 1RM)
 //   - ไม่มี 1RM อ้างอิง → MetsEndurance
 //   - %1RM = (W / 1RM อ้างอิง) × 100 → ≥ 70 = MetsHeavy, < 70 = MetsEndurance
+//
+// ตัวแปร: weightKg=น้ำหนักที่ยกในเซตนี้ (kg), reps=จำนวนครั้งของเซตนี้,
+// reference1RM=1RM อ้างอิง (kg) ตัวหารของ %1RM (0 = ยังไม่มี),
+// hasWeight=ท่าใช้อุปกรณ์ (ไม่ใช่บอดี้เวท), hasReps=ท่านับจำนวนครั้งได้ (ไม่ใช่ท่าค้างเวลา)
+//
+// ตัวอย่าง: 1RM อ้างอิง 100 kg → ยก 60 kg = 60% (< 70) ได้ 3.5 · ยก 80 kg = 80% (≥ 70) ได้ 6.0
+// หมายเหตุ: ใน CalculateWeightTrainingCalories ท่าบอดี้เวท/ท่าค้างเวลาแยกไปใช้ BodyweightMets ก่อนเรียกฟังก์ชันนี้
+// ดังนั้นในทางปฏิบัติ MetsBodyweight (3.0) จะออกมาเฉพาะท่าอุปกรณ์ที่กรอกน้ำหนัก 0
 func WeightSetMets(weightKg float64, reps int, reference1RM float64, hasWeight, hasReps bool) float64 {
 	if !hasWeight || !hasReps || weightKg <= 0 {
 		return MetsBodyweight
@@ -195,6 +239,7 @@ func WeightSetMets(weightKg float64, reps int, reference1RM float64, hasWeight, 
 
 // BodyweightMets เลือก METs ของท่าบอดี้เวท/ท่าค้างเวลา ตามระดับความยากของท่า (wet_difficulty)
 // ความยาก 1 → 2.8 (02024) · ความยาก 2-3 หรือค่าอื่น → 3.8 (02022)
+// difficulty = wet_difficulty ของท่า (1=ง่าย, 2=กลาง, 3=ยาก) · ท่าพวกนี้ไม่มีน้ำหนักให้หา %1RM จึงใช้ค่าคงที่ตามความยากแทน
 // ไม่ใช้ 02020/02057 (7.5/6.5) เพราะเป็นค่าของ circuit ต่อเนื่อง ระบบแยกไม่ได้ว่าผู้ใช้ทำแบบนั้น
 func BodyweightMets(difficulty int) float64 {
 	if difficulty <= 1 {
@@ -203,7 +248,7 @@ func BodyweightMets(difficulty int) float64 {
 	return MetsBodyweightModerate
 }
 
-// WeightSetEnergyInput ข้อมูล 1 เซตที่เข้าสูตรพลังงาน
+// WeightSetEnergyInput ข้อมูล 1 เซตที่เข้าสูตรพลังงาน (1 ตัว = 1 เซต, ส่งเป็น slice ตามลำดับเซต)
 type WeightSetEnergyInput struct {
 	WeightKg float64 // น้ำหนักที่ยก (kg)
 	Reps     int     // จำนวนครั้ง
@@ -236,11 +281,12 @@ func SessionReferenceOneRepMax(sets []WeightSetEnergyInput) float64 {
 }
 
 // ReferenceOneRepMax แหล่งที่มาของ 1RM อ้างอิง (ตรงกับ response calculation.reference_source)
+// (PR = Personal Record สถิติ e1RM สูงสุดเดิมของสมาชิกในท่านั้น; e1RM = Estimated 1RM)
 const (
 	ReferenceHistory         = "history"          // PR ก่อนเซสชันนี้
 	ReferenceSession         = "session"          // e1RM สูงสุดของเซตที่ผู้ใช้ยืนยันว่ายกใกล้หมดแรง
 	ReferenceSessionDeclined = "session_declined" // ไม่มี PR และผู้ใช้ไม่ยืนยัน/ไม่ตอบ → ไม่ใช้ตัวอ้างอิง
-	ReferenceNone            = "none"             // ไม่มีเซตที่ประเมิน 1RM ได้ (ทุกเซต reps > 20)
+	ReferenceNone            = "none"             // ผู้ใช้ยืนยันหมดแรงแล้ว แต่ไม่มีเซตที่ยืนยันประเมิน 1RM ได้ (reps > 20 ทุกเซตที่ยืนยัน)
 	ReferenceNotApplicable   = "not_applicable"   // บอดี้เวท/ท่าค้างเวลา
 )
 
@@ -254,6 +300,10 @@ const (
 //	   (กันกรณียกเบาแล้วหยุดทั้งที่ยังไหว ได้ 6.0 เกินจริง — ระบบแยกเองไม่ได้ จึงถามผู้ใช้)
 //
 // ท่าบอดี้เวท/ท่าค้างเวลา ไม่ใช้ 1RM เลย (not_applicable)
+//
+// ตัวแปรรับเข้า: history=PR เดิมของท่านี้ (kg, 0 = ยังไม่เคยมีประวัติ), sets=ทุกเซตของเซสชันนี้,
+// hasWeight/hasReps=ชนิดท่า (เหมือน WeightSetMets)
+// ค่าที่คืน: (1RM อ้างอิง kg, ป้ายแหล่งที่มา Reference* — ส่งกลับใน response เพื่อให้แอปอธิบายผู้ใช้ได้)
 func ResolveReferenceOneRepMax(history float64, sets []WeightSetEnergyInput, hasWeight, hasReps bool) (float64, string) {
 	if !hasWeight || !hasReps {
 		return 0, ReferenceNotApplicable
@@ -285,6 +335,12 @@ func ResolveReferenceOneRepMax(history float64, sets []WeightSetEnergyInput, has
 // แต่ละเซตได้ METs ตามความหนักของตัวเอง (WeightSetMets) — ยกหนักกับยกเบาที่ใช้เวลาเท่ากันจึงได้
 // พลังงานต่างกัน kcalPerSet ปัด 2 ตำแหน่งก่อนรวม เพื่อให้ SUM(wtrs_calories) ใน DB เท่ากับ totalKcal พอดี
 // reference1RM = 1RM อ้างอิง (PR ก่อนเซสชันนี้) — 0 = ยังไม่มีประวัติ ทุกเซตที่มีน้ำหนักได้ MetsEndurance
+//
+// ขั้นตอนต่อเซต: (1) เลือก METs — ท่าบอดี้เวท/ท่าค้างเวลา ใช้ BodyweightMets ตามความยาก, ท่าอุปกรณ์ใช้ WeightSetMets ตาม %1RM
+// (2) แปลงเวลาวินาที → นาที (3) ส่งเข้า NetEnergyKcal (4) ปัด 2 ตำแหน่ง (5) บวกเข้ายอดรวม
+//
+// ค่าที่คืน (ความยาวเท่า sets เรียงตามเซตเดิม): kcalPerSet=พลังงานแต่ละเซต (kcal) →
+// เก็บที่ wtrs_calories ของแถวนั้น · metsPerSet=METs ที่ใช้ของแต่ละเซต (ส่งกลับให้แอปแสดง) · totalKcal=ผลรวมทุกเซต (kcal)
 func CalculateWeightTrainingCalories(
 	sets []WeightSetEnergyInput,
 	reference1RM float64,
@@ -316,6 +372,8 @@ func CalculateWeightTrainingCalories(
 // 5. พลังงานคาร์ดิโอ (บทที่ 2 ข้อ 2.1.4.12 ตารางที่ 2.3)
 // ═══════════════════════════════════════════════════════════════════════
 // CalculateCardioCalories คำนวณพลังงานสุทธิของคาร์ดิโอ 1 ครั้ง — mets มาจากตาราง cardio
+// คืนค่าเป็น kcal ปัด 2 ตำแหน่ง (เก็บที่ cdors_calories) · ตัวอย่าง: METs 8.0, 70 kg, 1,800 วินาที (30 นาที)
+// → (8−1) × 3.5 × 70 / 200 × 30 = 257.25 kcal · ระยะทางไม่เข้าสูตร (ใช้แค่ METs × เวลา)
 func CalculateCardioCalories(
 	mets float64, // METs ของท่านี้
 	bodyWeightKg float64, // น้ำหนักของผู้ออกกำลังกาย
