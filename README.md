@@ -96,8 +96,7 @@
 ตารางที่ 2.2 — ไม่มี 1RM = 3.0, %1RM < 70 หรือ reps > 20 = 3.5, %1RM ≥ 70 = 6.0) 1RM แบบ Dual-Formula
 (Epley reps 1-10, Desgorces reps 11-20) อ้างอิง 2024 Adult Compendium of Physical Activities (Herrmann
 et al., 2567) — ประวัติโมเดลก่อนหน้าที่ตัดออกแล้วทั้งหมด (Session MET+RIR, Effort Ratio, Compendium
-Per-Set MET Matrix, Two-Compartment Energy Model, METs คงที่ต่อท่า ฯลฯ) →
-`docs/formula_history_weight_training.md`
+Per-Set MET Matrix, Two-Compartment Energy Model, METs คงที่ต่อท่า ฯลฯ)
 
 ---
 
